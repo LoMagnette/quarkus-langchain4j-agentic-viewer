@@ -380,3 +380,11 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
 - **TASK-8.4 patterns samples** (profile `patterns`, `integration-tests/src/patterns/java`): TripGoalPlanner (GOAP),
   ResearchTeam (P2P, exit condition), IncidentResponder (blackboard, custom conflict resolution). Default build excludes
   the module; switch the profile only with `clean` (stale Quarkus app model otherwise). TASK-8 (T0.3) done.
+
+### TASK-9 (T0.4) listener hook spike — done (Oct 6, 2026)
+
+- CDI `AgentListener` beans are attached by quarkus-langchain4j-agentic to **AI agents only** (no workflow nodes, no scope
+  lifecycle, no HITL). A listener registered on each **root** agent via the internal
+  `InternalAgent.registerInheritedParentListener` (with `inheritedBySubagents() = true`) sees the whole system.
+- Neither path reports supervisor/planner decisions (T0.7) or error-handler retries (T2.10).
+- Finding: Backlog doc-3. Executable record: `integration-tests/.../it/spike/ListenerHookSpikeTest` (5 tests, 27 in module).

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-06 06:13'
-updated_date: '2026-10-06 09:22'
+updated_date: '2026-10-06 09:36'
 labels:
   - upstream
   - quarkus-langchain4j
@@ -39,4 +39,6 @@ If quarkus-langchain4j-agentic has no hook to add listeners to agents it creates
 
 <!-- SECTION:NOTES:BEGIN -->
 Input from TASK-67 (doc-1): the requested behaviour (AgentListener CDI beans applied to annotation-built agents) appears to exist already in quarkus-langchain4j-agentic 1.14.1. Close as not needed once TASK-9 confirms it.
+
+TASK-9 result (doc-3): the existing CDI AgentListener support reaches AI agents only (no workflow nodes, no scope lifecycle, no HITL). Root registration via the internal InternalAgent API works as a workaround. Refined proposal: a public hook to attach an inherited listener to the root agents the extension builds, or apply CDI listeners with inheritedBySubagents() = true at the root.
 <!-- SECTION:NOTES:END -->
