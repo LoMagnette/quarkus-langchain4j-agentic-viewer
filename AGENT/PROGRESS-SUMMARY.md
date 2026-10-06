@@ -410,3 +410,10 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   scope state, HITL, run ids, push and truncation).
 - decision-5: streaming agents show their final output when the stream completes (streaming marker while running).
   Caution: `StreamingResponse.toString()` blocks; listeners must never stringify outputs inline.
+
+### TASK-17 (T1.1) topology model — done (Oct 6, 2026)
+
+- `runtime/.../runtime/topology`: `AgenticSystem` (with `root` tree, `rootNodeId` checked), `AgentNode`, `Guard` (loop exit
+  on the LOOP node, activation condition on each CONDITIONAL branch), `PlannerInfo`, `SourceRef`, `SystemInput`, enums.
+  Prototype `runtime/model` records stay until TASK-26.
+- Tests: JSON round trip (default ObjectMapper) and build-time recording via `BytecodeRecorderImpl`.
