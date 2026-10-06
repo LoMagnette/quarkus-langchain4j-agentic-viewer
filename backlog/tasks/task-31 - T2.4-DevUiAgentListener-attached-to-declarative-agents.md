@@ -4,7 +4,7 @@ title: 'T2.4: DevUiAgentListener attached to declarative agents'
 status: To Do
 assignee: []
 created_date: '2026-10-06 06:14'
-updated_date: '2026-10-06 09:36'
+updated_date: '2026-10-06 11:14'
 labels:
   - runtime-dev
   - live-view
@@ -36,4 +36,6 @@ Spec: T2.4 (F6.2). Depends on the hook found by the T0.4 spike, or on U5 if the 
 
 <!-- SECTION:NOTES:BEGIN -->
 Design input from TASK-9 (doc-3): register the Dev UI listener on each root agent instance at dev-mode startup (InternalAgent.registerInheritedParentListener, inheritedBySubagents = true); do not make it a CDI AgentListener bean (duplicate AI-agent callbacks). Re-register after hot reload.
+
+From TASK-15 (decision-5): a streaming agent output can be a StreamingResponse/TokenStream whose toString() blocks until the stream completes. Never stringify or truncate such outputs inside the listener callback; emit the finished event when the delayed response completes.
 <!-- SECTION:NOTES:END -->

@@ -4,6 +4,7 @@ title: Execution event model records
 status: To Do
 assignee: []
 created_date: '2026-10-06 06:14'
+updated_date: '2026-10-06 11:12'
 labels:
   - runtime-dev
   - model
@@ -31,3 +32,9 @@ Not a separate spec task; prerequisite of T2.2, T2.4 and T2.5. The spec "Executi
 - [ ] #2 Every event carries runId and a timestamp and serializes to JSON
 - [ ] #3 The model follows the recorded trace-model decision
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Input from TASK-14 (decision-4): own event records as in the spec; reuse AgentMonitor semantics for agent ids, parent correlation (agent().parent().agentId()), loop iteration index and token usage (AgentResponse.chatResponse().metadata().tokenUsage()).
+<!-- SECTION:NOTES:END -->

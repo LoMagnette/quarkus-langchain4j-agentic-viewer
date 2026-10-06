@@ -402,3 +402,11 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   elkjs computes a hierarchical layout used as a Cytoscape preset (no cytoscape-elk on mvnpm); import `elkjs/elk.bundled.js`.
 - Spike page "Graph (spike)" (`qwc-agentic-graph-spike.js`): compound nodes for the loop-in-sequence fixture, `highlight()`
   API, light/dark theme via `themeState`. Verified with headless Chromium. To be replaced by T1.6.
+
+### TASK-14 / TASK-15 decisions — done (Oct 6, 2026)
+
+- decision-4: own execution event model, reusing AgentMonitor semantics (ids, parent correlation, loop iteration index,
+  token usage); AgentMonitor is a test oracle, not storage (it lacks scope lifecycle, tool start, planner decisions,
+  scope state, HITL, run ids, push and truncation).
+- decision-5: streaming agents show their final output when the stream completes (streaming marker while running).
+  Caution: `StreamingResponse.toString()` blocks; listeners must never stringify outputs inline.

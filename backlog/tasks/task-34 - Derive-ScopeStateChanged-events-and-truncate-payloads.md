@@ -4,6 +4,7 @@ title: Derive ScopeStateChanged events and truncate payloads
 status: To Do
 assignee: []
 created_date: '2026-10-06 06:14'
+updated_date: '2026-10-06 11:14'
 labels:
   - runtime-dev
   - live-view
@@ -29,3 +30,9 @@ Not a separate spec task; covers the ScopeStateChanged event and F6.3. The scope
 - [ ] #2 Every value in event payloads is truncated to a configurable size (default 2 KB) with a truncation marker
 - [ ] #3 Unit tests cover truncation of strings, collections and nested objects
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+From TASK-15 (decision-5): a streaming agent output can be a StreamingResponse/TokenStream whose toString() blocks until the stream completes. Never stringify or truncate such outputs inside the listener callback; emit the finished event when the delayed response completes.
+<!-- SECTION:NOTES:END -->
