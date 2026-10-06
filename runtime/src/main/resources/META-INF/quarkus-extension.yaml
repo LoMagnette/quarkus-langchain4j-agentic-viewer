@@ -1,0 +1,13 @@
+name: "Quarkus LangChain4j Agentic Viewer"
+description: "Visualizes LangChain4j agentic code patterns in the Quarkus Dev UI"
+metadata:
+  keywords:
+    - langchain4j
+    - agentic
+    - ai
+    - visualization
+    - dev-ui
+  categories:
+    - "ai"
+    - "development-tools"
+  status: "preview"

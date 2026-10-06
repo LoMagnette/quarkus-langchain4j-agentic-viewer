@@ -1,0 +1,382 @@
+# Quarkus LangChain4j Agentic Viewer - Progress Summary
+
+## Project Overview
+
+A **Quarkus extension** that scans LangChain4j agentic code patterns and generates an interactive **Mermaid.js diagram** in the Quarkus Dev UI, helping developers visualize their AI agent architecture.
+
+**Location**: `/Users/lma/sandbox/lab-quarkus/quarkus-langchain4j-agentic-viewer`
+
+---
+
+## What We Built
+
+### Extension Structure
+```
+quarkus-langchain4j-agentic-viewer/
+├── deployment/
+│   └── src/main/
+│       ├── java/.../deployment/
+│       │   ├── AgenticViewerProcessor.java      # Main build processor
+│       │   ├── scanner/
+│       │   │   ├── DeclarativeAgentScanner.java # Jandex annotation scanning
+│       │   │   └── ImperativeAgentScanner.java  # ASM bytecode scanning
+│       │   └── model/
+│       │       └── AgenticGraphBuildItem.java
+│       └── resources/dev-ui/
+│           └── qwc-agentic-viewer.js            # Lit + Mermaid diagram
+├── runtime/
+│   └── src/main/java/.../runtime/
+│       ├── AgenticViewerRecorder.java
+│       └── model/
+│           ├── AgenticGraph.java
+│           ├── AgentNode.java
+│           ├── AgentParameter.java              # NEW
+│           ├── ToolNode.java
+│           ├── DataFlow.java
+│           ├── WorkflowComposition.java
+│           └── ImperativePattern.java           # NEW
+└── integration-tests/
+```
+
+---
+
+## Features Implemented
+
+### 1. Declarative Pattern Detection (via Jandex)
+Scans for annotations:
+- `@Agent`, `@SequenceAgent`, `@ParallelAgent`, `@ConditionalAgent`, `@LoopAgent`
+- `@RegisterAiService`, `@Tool`, `@ToolBox`
+- `@SystemMessage`, `@UserMessage`, `@V`, `@MemoryId`
+- `@Output`, `@A2AClientAgent`
+
+### 2. Imperative Pattern Detection (via ASM)
+Detects calls to:
+- `AgenticServices.sequenceBuilder()`, `parallelBuilder()`, `conditionalBuilder()`, `loopBuilder()`
+- `AgenticServices.agentBuilder(Class)`
+
+Shows warning with details about which builder types are used and where.
+
+### 3. Mermaid Diagram Visualization
+- Different shapes for agent types (rectangle, stadium, hexagon, diamond, circle)
+- Color-coded styling (agents, sequences, parallels, tools, AI services)
+- Workflow compositions (parent → child connections)
+- Data flow connections (via `@V` bindings and `outputKey`)
+- Tool connections (dashed lines)
+
+### 4. Dev UI Features
+- Agent/Tool count stats
+- Layout direction toggle (LR, TD, RL, BT)
+- Show/Hide Tools filter
+- Show/Hide AI Services filter
+- Copy Mermaid Code button
+- Debug panel with raw JSON data
+
+---
+
+## Key Fixes Applied (Jan 28, 2026)
+
+/### 1. Duplicate Agent Fix
+**Problem**: Same class appeared twice (e.g., `PuppyFormFiller` as both `agent_5` and `aiservice_31`)
+
+**Solution**: In `scanAiServices()`, skip classes that already have an agent registered:
+```java
+if (classToAgentId.containsKey(fullClassName) || classToAgentId.containsKey(simpleClassName)) {
+    LOG.infof("Skipping AI service %s - already has agent registered", simpleClassName);
+    continue;
+}
+```
+
+### 2. Input Parameters Display
+**Added**: `AgentParameter` model with `name`, `type`, `isMemoryId` fields
+
+**Scanner**: `extractInputParameters()` method extracts:
+- Parameter names from `@V` annotations
+- `@MemoryId` detection
+- Skips framework params like `AgenticScope`
+
+**Viewer**: Shows `methodName(param1: Type1, param2: Type2)` format
+
+### 3. Imperative Pattern Enhancement
+- Captures which builder types are used (SEQUENCE, PARALLEL, etc.)
+- Captures agent class references from `agentBuilder(Class)` calls
+- Shows detailed warning panel with builder badges
+- Creates synthetic nodes for detected imperative patterns (dashed style)
+
+### 4. Earlier Fixes (from previous sessions)
+- Fixed `subAgents` parsing (nested `@SubAgent[]` annotations, not `Class[]`)
+- Fixed Dev UI folder structure (`dev-ui/` not `dev-ui/subfolder/`)
+- Added class name display in labels
+- Fixed tool linking via `@ToolBox` and `@RegisterAiService(tools={...})`
+
+---
+
+## Current State
+
+**Working**:
+- ✅ Declarative agent detection and visualization
+- ✅ Workflow compositions (sequence, parallel, conditional, loop)
+- ✅ Tool detection and linking
+- ✅ Data flow via `@V` bindings
+- ✅ Input parameters display
+- ✅ No duplicate nodes
+- ✅ Imperative pattern warning with details
+
+**Limitations**:
+- ⚠️ Imperative patterns (builder API) cannot show full structure since it's runtime-determined
+- ⚠️ Lambdas in conditional builders cannot be analyzed
+
+---
+
+## To Test
+
+```bash
+cd /Users/lma/sandbox/lab-quarkus/quarkus-langchain4j-agentic-viewer
+mvn clean install -DskipTests
+```
+
+Then add to a project with LangChain4j agents and open Dev UI at `http://localhost:8080/q/dev-ui/`
+
+---
+
+## Files Modified (Jan 28, 2026)
+
+1. `runtime/.../model/AgentNode.java` - Added `inputParameters` field
+2. `runtime/.../model/AgentParameter.java` - NEW file
+3. `runtime/.../model/AgenticGraph.java` - Added `imperativePatterns` field
+4. `runtime/.../model/ImperativePattern.java` - NEW file
+5. `deployment/.../scanner/DeclarativeAgentScanner.java` - Duplicate fix + input params
+6. `deployment/.../scanner/ImperativeAgentScanner.java` - Enhanced pattern detection
+7. `deployment/.../AgenticViewerProcessor.java` - Serialization updates
+8. `deployment/resources/dev-ui/qwc-agentic-viewer.js` - UI improvements
+
+---
+
+---
+
+## Code Review & Fixes (Feb 2, 2026)
+
+A comprehensive code review was performed identifying **15 issues** across the extension.
+
+### Issues Fixed
+
+#### Critical Fixes
+
+| # | Issue | File | Fix Applied |
+|---|-------|------|-------------|
+| 1 | Null safety in recorder | `AgenticViewerRecorder.java` | Added null check before setting graph |
+| 2 | Tool ID collision | `DeclarativeAgentScanner.java` | Changed to `putIfAbsent()` for simple names |
+
+#### High Severity Fixes
+
+| # | Issue | File | Fix Applied |
+|---|-------|------|-------------|
+| 3 | Resource leak with UncheckedIOException | `ImperativeAgentScanner.java` | Added `UncheckedIOException` to catch blocks |
+| 4 | Missing classToAgentId for A2A | `DeclarativeAgentScanner.java` | Added registration for A2A agents |
+| 5 | Missing classToAgentId for Output | `DeclarativeAgentScanner.java` | Added registration for Output methods |
+| 6 | Wrong AgentType for A2A | `DeclarativeAgentScanner.java` | Changed from `AGENT` to new `A2A` type |
+
+#### Medium Severity Fixes
+
+| # | Issue | File | Fix Applied |
+|---|-------|------|-------------|
+| 7 | Debug logging in production | `DeclarativeAgentScanner.java` | Changed all `LOG.infof` to `LOG.debugf` |
+| 8 | New A2A agent type | `AgentType.java` | Added `A2A` enum value |
+| 9 | Frontend A2A support | `qwc-agentic-viewer.js` | Added shape, styling, and remote URL display |
+
+### Files Modified (Feb 2, 2026)
+
+1. `runtime/.../AgenticViewerRecorder.java` - Added null check
+2. `runtime/.../model/AgentType.java` - Added `A2A` type
+3. `deployment/.../scanner/ImperativeAgentScanner.java` - UncheckedIOException handling
+4. `deployment/.../scanner/DeclarativeAgentScanner.java` - Multiple fixes:
+   - Tool/agent ID collision prevention (`putIfAbsent`)
+   - Debug logging cleanup
+   - A2A/Output agent registration
+   - Added alternative annotation support for testing (`io.quarkiverse.langchain4j.agentic.*`)
+5. `deployment/resources/dev-ui/qwc-agentic-viewer.js` - A2A visualization support
+6. `integration-tests/.../Agent.java` - Added `value()` attribute
+7. `integration-tests/.../SequenceAgent.java` - Added `subAgents` attribute
+8. `integration-tests/.../DeclarativeWorkflowExample.java` - NEW test case for subAgents linking
+9. `integration-tests/.../MixedPatternExample.java` - NEW test case for mixed patterns
+
+---
+
+## Remaining Issues (Not Yet Fixed)
+
+These require more significant refactoring:
+
+### Medium Priority
+
+| # | Issue | Description | Effort |
+|---|-------|-------------|--------|
+| 1 | Scanner state accumulation | Scanner maps accumulate if `scan()` called twice | Medium |
+| 2 | findMethod returns first overload | With overloaded methods, wrong one may be matched | Medium |
+| 3 | ASM visitor state tracking | `lastLdcClass` tracking is fragile with intervening instructions | High |
+
+### Low Priority
+
+| # | Issue | Description | Effort |
+|---|-------|-------------|--------|
+| 4 | Mermaid CDN without SRI | Script loaded without subresource integrity check | Low |
+| 5 | Inconsistent null handling | Model records allow nullable fields without documentation | Low |
+| 6 | Silent JS failures | Mermaid load failures logged but not shown to user | Low |
+
+### Scanning Gaps (Feature Additions)
+
+| Gap | Description | Effort |
+|-----|-------------|--------|
+| Superclass tools | `@Tool` methods in superclasses not detected | Medium |
+| Interface defaults | Default methods in `@RegisterAiService` interfaces not scanned | Medium |
+| Multiple agents per class | Same class registered multiple times causes collision | Low |
+| Condition classes | `@ConditionalAgent`/`@LoopAgent` predicates not captured | Medium |
+
+### Mixed Declarative/Imperative Pattern Bridge (Feb 3, 2026)
+
+**Implemented**: `bridgeImperativeToDeclarative()` in `AgenticViewerProcessor` now bridges imperative patterns to declarative agents.
+
+| Scenario | Works? | How |
+|----------|--------|-----|
+| `@SequenceAgent(subAgents={A.class, B.class})` where A,B have `@Agent` | ✅ Yes | Declarative scanner handles directly |
+| `sequenceBuilder().add(A.class)` where A has `@Agent` methods | ✅ Yes | Bridge creates synthetic parent, links to A's agents |
+| `sequenceBuilder().add(SameClass.class)` (self-referencing) | ✅ Yes | Bridge creates "Workflow" parent, links to all class agents |
+| `sequenceBuilder().add(A.class).add(B.class)` (cross-class) | ✅ Yes | Bridge creates parent, links to agents from both A and B |
+| `@SequenceAgent(subAgents={A.class})` where A created via `agentBuilder()` | ❌ No | Imperative agents not registered in graph |
+
+**Key design decisions**:
+- `classToAllAgentIds` map: A single class can have multiple `@Agent` methods. The bridge resolves a class reference to ALL its agents, not just one.
+- Self-reference detection: When `sequenceBuilder().add(X.class)` is called from within class X itself, a synthetic parent node ("X Workflow") is created to avoid self-referencing compositions.
+- Deduplication: Child agent IDs are deduplicated before creating compositions.
+
+**Files involved**:
+- `ImperativeAgentScanner` detects `builder.add(Class)` calls via ASM (captures `INVOKEVIRTUAL add()` on builder classes)
+- `AgenticViewerProcessor.bridgeImperativeToDeclarative()` resolves class refs to agent IDs and creates synthetic nodes/compositions
+- `AgenticGraph.withAdditionalAgentsAndCompositions()` merges synthetic data into the graph
+
+---
+
+### Files Modified (Feb 3, 2026)
+
+1. `deployment/.../AgenticViewerProcessor.java` - Added `bridgeImperativeToDeclarative()` method with:
+   - `classToAllAgentIds` multi-value map (class → all agent IDs)
+   - Self-referencing pattern detection
+   - Synthetic parent node creation
+   - Composition generation
+2. `deployment/.../scanner/ImperativeAgentScanner.java` - Enhanced to capture `builder.add(Class)` calls; reverted temp logging to debug
+3. `runtime/.../model/AgenticGraph.java` - Added `withAdditionalAgentsAndCompositions()` method
+4. `integration-tests/.../AgenticServices.java` - NEW mock builder API for testing
+5. `integration-tests/.../MixedPatternExample.java` - NEW/REWRITTEN with 3 declarative agents + imperative workflow
+6. `integration-tests/.../AgenticViewerDevModeTest.java` - Fixed missing `inputParameters` param; added bridge unit test
+
+## Current State
+
+**Working**:
+- ✅ Declarative agent detection and visualization
+- ✅ Workflow compositions (sequence, parallel, conditional, loop)
+- ✅ Tool detection and linking (with collision prevention)
+- ✅ Data flow via `@V` bindings
+- ✅ Input parameters display
+- ✅ No duplicate nodes
+- ✅ Imperative pattern warning with details
+- ✅ A2A remote agent support with distinct styling
+- ✅ Debug logging configurable via log level
+- ✅ Mixed declarative/imperative pattern bridging
+
+**Limitations**:
+- ⚠️ Purely imperative agents (not annotated) cannot be linked to graph
+- ⚠️ Lambdas in conditional builders cannot be analyzed
+- ⚠️ Tools in superclasses not detected
+- ⚠️ Overloaded methods may cause incorrect data flow analysis
+
+---
+
+## To Test
+
+```bash
+cd /Users/lma/sandbox/lab-quarkus/quarkus-langchain4j-agentic-viewer
+mvn clean install -DskipTests
+
+# Run integration tests
+mvn test -pl integration-tests
+
+# Enable debug logging (in application.properties)
+quarkus.log.category."io.quarkiverse.langchain4j.agentic.viewer".level=DEBUG
+```
+
+Then add to a project with LangChain4j agents and open Dev UI at `http://localhost:8080/q/dev-ui/`
+
+---
+
+## Next Steps (suggestions)
+
+1. Fix remaining medium-priority issues (scanner state, findMethod overloads)
+2. Add SRI hash for Mermaid CDN script
+3. Implement superclass tool scanning
+4. Add condition/predicate class capture for conditional/loop agents
+5. Consider adding click-to-expand for detailed agent info
+6. Consider runtime trace overlay (future enhancement)
+7. ~~Bridge imperative patterns to declarative agents~~ ✅ Done (Feb 3, 2026)
+
+---
+
+## Spec-driven rework: Backlog + extension skeleton (Oct 6, 2026)
+
+Work now follows `spec-breakdown.md`, decomposed into Backlog.md tasks (`backlog task list --plain`, milestones m-0 … m-7).
+Decisions recorded in Backlog: decision-1 (separate Quarkiverse extension, may move into quarkus-langchain4j later),
+decision-2 (declarative first; builder API support deferred to milestone m-5).
+
+### TASK-7 (T0.2) Extension skeleton — done
+
+- **New `runtime-dev` module** (`quarkus-langchain4j-agentic-viewer-dev`): dev-mode-only, declared through
+  `conditionalDevDependencies` in the runtime extension descriptor (same pattern as `quarkus-arc` / `quarkus-arc-dev`).
+  `AgenticViewerRecorder` and `AgenticViewerJsonRpcService` moved there (package `...viewer.runtime.dev`);
+  `runtime` now only holds model records. The `recordGraph` build step is dev-only.
+- **Real dependencies**: Quarkus 3.30.8 → 3.33.3.1, `quarkus-langchain4j-bom` 1.14.1 (langchain4j-agentic 1.20.2-beta30).
+  Stub annotations removed from integration-tests; samples use `dev.langchain4j.agentic(.declarative)`.
+- **Dev UI**: new "Agentic Systems" page (`qwc-agentic-systems.js`) calling JSON-RPC `getAgentCount`; JSON-RPC
+  service registered dev-only. The Mermaid "Agentic Diagram" page is kept until TASK-26.
+- **Prototype scanners**: `ImperativeAgentScanner` targets the real `AgenticServices` and captures all classes passed to
+  varargs `subAgents(...)` (replaces the single `lastLdcClass`, remaining issue #3 above). Both scanners now skip
+  langchain4j library classes/archives, which are indexed too.
+- **Tests** (deployment): `AgenticViewerJsonRpcDevModeTest` (QuarkusDevModeTest + `quarkus-devui-test-spi`),
+  `AgenticViewerOutsideDevModeTest` (no card / JSON-RPC outside dev mode). 9 tests in total.
+
+### Things learned
+
+- quarkus-langchain4j-agentic validates agent wiring at build time: every agent parameter must be an output key,
+  a supervised key, or a parameter of a root agent that is **injected** somewhere. Output keys of non-AI agents only
+  count when listed in a declarative `subAgents` (builder-only chains of non-AI agents fail the build).
+- Sub-agents must be separate types listed in `subAgents`; `@Output` methods are `static`.
+- Without a model provider extension, an application `ChatModel` bean satisfies quarkus-langchain4j
+  (`PlaceholderChatModel` in integration-tests, to be replaced by the scripted fake in TASK-8.1).
+- Dev UI JSON-RPC method names are `<namespace>_<method>` in Quarkus 3.33 (namespace `quarkus-langchain4j-agentic-viewer`).
+- `QuarkusUnitTest` build-chain customizer steps run in another class loader: report results via system properties,
+  compare classes by name.
+
+### To Test
+
+```bash
+mvn clean install                       # 9 tests
+cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui/extensions
+```
+
+### TASK-8.1 / TASK-8.2 (T0.3) Deterministic samples — done (Oct 6, 2026)
+
+- **Fake model** (`integration-tests/.../it/fake`): `ScriptedChatModel`, stateless ordered rules matched on request
+  content (text replies, tool calls, supervisor decisions); `ChatModelScript` beans contribute rules;
+  `ScriptedChatModelProducer` makes it the app's only `ChatModel`. No API key anywhere.
+- **9 declarative samples** (`.../it/samples`): StoryWriter (sequence + @Output), ResearchGatherer (parallel),
+  PhraseTranslator (parallel mapper), StoryCreator (loop in sequence, 3 iterations), ExpertRouter (conditional),
+  BankSupervisor (supervisor + @ToolBox tools), DraftReviewer (custom planner), TripPlanner (human in the loop),
+  ResilientStoryWriter (@ErrorHandler). `DeclarativeSamplesTest` runs each one end to end (22 tests in the module).
+- **Upstream bug workaround**: quarkus-langchain4j 1.14.1 only wires an application `ChatModel` bean into AI services
+  when a provider extension is present, so integration-tests depends on `quarkus-langchain4j-openai` with
+  `quarkus.langchain4j.openai.enable-integration=false` (never called).
+- **Script lessons**: format instructions are appended to prompts for non-String return types (match the prompt
+  line); tool names are not unique (scope tool-result rules to the agent); order supervisor rules most specific first.
+- **Finding**: quarkus-langchain4j-agentic 1.14.1 has its own Dev UI (Agents, Topology, Executions, Testing pages),
+  overlapping the spec's F1-F4. Decision pending with the project owner.
+- **Decision (decision-3)**: after evaluating the upstream Dev UI (TASK-67, Backlog doc-1), the project owner chose to keep
+  the full original plan. Upstream bug report drafts are in Backlog doc-2 (not posted).
+- **TASK-8.4 patterns samples** (profile `patterns`, `integration-tests/src/patterns/java`): TripGoalPlanner (GOAP),
+  ResearchTeam (P2P, exit condition), IncidentResponder (blackboard, custom conflict resolution). Default build excludes
+  the module; switch the profile only with `clean` (stale Quarkus app model otherwise). TASK-8 (T0.3) done.
