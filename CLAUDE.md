@@ -43,6 +43,10 @@ This is a standard **Quarkus extension** with four modules:
 
 The extension uses two complementary scanning approaches:
 
+New scanning (spec-driven, Phase 1): `deployment/.../scan/AgenticAnnotationScanner` produces one `AgentDescriptor` per agent method
+(`AgenticDescriptorsBuildItem`), feeding the topology model in `runtime/.../topology`. The two scanners below belong to the
+prototype Mermaid view and are retired by TASK-26.
+
 1. **Jandex (DeclarativeAgentScanner)** - Annotation-based scanning for declarative patterns:
    - `@Agent`, `@SequenceAgent`, `@ParallelAgent`, `@ConditionalAgent`, `@LoopAgent`
    - `@RegisterAiService`, `@Tool`, `@ToolBox`

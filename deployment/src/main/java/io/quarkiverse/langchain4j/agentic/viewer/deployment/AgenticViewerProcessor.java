@@ -21,6 +21,8 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.model.ToolParameter;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.model.WorkflowComposition;
 
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.model.AgenticGraphBuildItem;
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotationScanner;
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticDescriptorsBuildItem;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scanner.DeclarativeAgentScanner;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scanner.ImperativeAgentScanner;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerJsonRpcService;
@@ -53,7 +55,15 @@ public class AgenticViewerProcessor {
     }
 
     /**
-     * Discovers agents and tools from the codebase using Jandex and ASM.
+     * Describes every agent method of the application (T1.2).
+     */
+    @BuildStep
+    AgenticDescriptorsBuildItem scanAgenticAnnotations(CombinedIndexBuildItem combinedIndex) {
+        return new AgenticDescriptorsBuildItem(new AgenticAnnotationScanner().scan(combinedIndex.getIndex()));
+    }
+
+    /**
+     * Discovers agents and tools from the codebase using Jandex and ASM (prototype view, see TASK-26).
      */
     @BuildStep
     AgenticGraphBuildItem discoverAgents(

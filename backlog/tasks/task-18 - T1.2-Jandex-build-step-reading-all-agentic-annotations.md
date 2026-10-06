@@ -1,9 +1,11 @@
 ---
 id: TASK-18
 title: 'T1.2: Jandex build step reading all agentic annotations'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-10-06 06:13'
+updated_date: '2026-10-06 11:31'
 labels:
   - deployment
   - discovery
