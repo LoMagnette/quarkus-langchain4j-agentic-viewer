@@ -4,7 +4,7 @@ title: 'T3.2: PlannerDecorator for declarative planners'
 status: To Do
 assignee: []
 created_date: '2026-10-06 06:15'
-updated_date: '2026-10-06 06:26'
+updated_date: '2026-10-06 09:41'
 labels:
   - runtime-dev
   - planner
@@ -37,4 +37,6 @@ Spec: T3.2. Builds on the T0.7 spike. Until U3 lands, the only way to see planne
 
 <!-- SECTION:NOTES:BEGIN -->
 Scope reduced to declarative planners (decision-2); builder plannerBuilder wrapping is covered by T5.3.
+
+Design input from TASK-12 (doc-4): install the decorator at dev-mode startup on each root by replacing PlannerBasedInvocationHandler.plannerSupplier (reflection), next to the T0.4 root listener registration; guard it so failures only disable decision events. Covers built-in planners (supervisor, sequence...) as well as @PlannerSupplier ones. Nested planner agents need a walk of subagents() (unverified).
 <!-- SECTION:NOTES:END -->

@@ -388,3 +388,10 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   `InternalAgent.registerInheritedParentListener` (with `inheritedBySubagents() = true`) sees the whole system.
 - Neither path reports supervisor/planner decisions (T0.7) or error-handler retries (T2.10).
 - Finding: Backlog doc-3. Executable record: `integration-tests/.../it/spike/ListenerHookSpikeTest` (5 tests, 27 in module).
+
+### TASK-12 (T0.7) planner decision spike — done (Oct 6, 2026)
+
+- No public hook to wrap planners of declarative agents before build. After build, the planner supplier is a private final
+  field of `PlannerBasedInvocationHandler`; replacing it by reflection on each root works (Java 25) and a delegating
+  decorator records every Action for custom, supervisor and sequence planners.
+- Finding: Backlog doc-4. Executable record: `integration-tests/.../it/spike/PlannerWrapSpikeTest` (3 tests, 30 in module).
