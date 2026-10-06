@@ -10,6 +10,7 @@ import java.util.Optional;
 import org.jboss.jandex.AnnotationInstance;
 import org.jboss.jandex.AnnotationTarget;
 import org.jboss.jandex.AnnotationValue;
+import org.jboss.jandex.ClassInfo;
 import org.jboss.jandex.DotName;
 import org.jboss.jandex.IndexView;
 import org.jboss.jandex.MethodInfo;
@@ -19,7 +20,8 @@ import org.jboss.jandex.Type;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
 
 /**
- * Finds the agent methods of the application in the Jandex index and describes them.
+ * Finds the agent methods of the application in the Jandex index and describes them: {@code @Agent}, the workflow
+ * annotations, {@code @SupervisorAgent}, {@code @PlannerAgent} and {@code @HumanInTheLoop}.
  * Agents declared by the langchain4j libraries themselves are skipped.
  */
 public class AgenticAnnotationScanner {
@@ -31,6 +33,10 @@ public class AgenticAnnotationScanner {
             .createSimple("dev.langchain4j.agentic.declarative.ParallelMapperAgent");
     static final DotName LOOP_AGENT = DotName.createSimple("dev.langchain4j.agentic.declarative.LoopAgent");
     static final DotName CONDITIONAL_AGENT = DotName.createSimple("dev.langchain4j.agentic.declarative.ConditionalAgent");
+    static final DotName SUPERVISOR_AGENT = DotName.createSimple("dev.langchain4j.agentic.declarative.SupervisorAgent");
+    static final DotName PLANNER_AGENT = DotName.createSimple("dev.langchain4j.agentic.declarative.PlannerAgent");
+    static final DotName HUMAN_IN_THE_LOOP = DotName.createSimple("dev.langchain4j.agentic.declarative.HumanInTheLoop");
+    static final DotName PLANNER_SUPPLIER = DotName.createSimple("dev.langchain4j.agentic.declarative.PlannerSupplier");
 
     private static final DotName V = DotName.createSimple("dev.langchain4j.service.V");
     private static final DotName MEMORY_ID = DotName.createSimple("dev.langchain4j.service.MemoryId");
@@ -44,7 +50,10 @@ public class AgenticAnnotationScanner {
             PARALLEL_AGENT, NodeKind.PARALLEL,
             PARALLEL_MAPPER_AGENT, NodeKind.PARALLEL_MAPPER,
             LOOP_AGENT, NodeKind.LOOP,
-            CONDITIONAL_AGENT, NodeKind.CONDITIONAL);
+            CONDITIONAL_AGENT, NodeKind.CONDITIONAL,
+            SUPERVISOR_AGENT, NodeKind.SUPERVISOR,
+            PLANNER_AGENT, NodeKind.PLANNER,
+            HUMAN_IN_THE_LOOP, NodeKind.HUMAN_IN_THE_LOOP);
 
     /**
      * @return one descriptor per agent method, sorted by id
@@ -87,8 +96,8 @@ public class AgenticAnnotationScanner {
         String declaringClass = method.declaringClass().name().toString();
         String name = nonBlank(stringValue(annotation, "name"));
         String description = nonBlank(stringValue(annotation, "description"));
-        if (description == null && (kind == NodeKind.AI_AGENT || kind == NodeKind.NON_AI_AGENT)) {
-            description = nonBlank(stringValue(annotation, "value")); // @Agent("...") is a description
+        if (description == null) {
+            description = nonBlank(stringValue(annotation, "value")); // @Agent("...") / @HumanInTheLoop("...")
         }
         return new AgentDescriptor(
                 declaringClass + "#" + method.name(),
@@ -100,7 +109,19 @@ public class AgenticAnnotationScanner {
                 outputKey(annotation),
                 inputKeys(method),
                 subAgents(annotation),
-                nonBlank(stringValue(annotation, "itemsProvider")));
+                nonBlank(stringValue(annotation, "itemsProvider")),
+                kind == NodeKind.PLANNER ? plannerSupplier(method.declaringClass()) : null);
+    }
+
+    /**
+     * The concrete planner class is only known when the supplier runs; the supplier method is what the build sees.
+     */
+    private static String plannerSupplier(ClassInfo declaringClass) {
+        return declaringClass.methods().stream()
+                .filter(method -> method.hasDeclaredAnnotation(PLANNER_SUPPLIER))
+                .map(method -> declaringClass.name() + "#" + method.name())
+                .findFirst()
+                .orElse(null);
     }
 
     private static String outputKey(AnnotationInstance annotation) {

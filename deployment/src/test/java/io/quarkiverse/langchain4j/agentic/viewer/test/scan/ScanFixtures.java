@@ -8,12 +8,18 @@ import jakarta.inject.Inject;
 import dev.langchain4j.agentic.Agent;
 import dev.langchain4j.agentic.declarative.ActivationCondition;
 import dev.langchain4j.agentic.declarative.ConditionalAgent;
+import dev.langchain4j.agentic.declarative.HumanInTheLoop;
 import dev.langchain4j.agentic.declarative.LoopAgent;
 import dev.langchain4j.agentic.declarative.ParallelAgent;
 import dev.langchain4j.agentic.declarative.ParallelMapperAgent;
+import dev.langchain4j.agentic.declarative.PlannerAgent;
+import dev.langchain4j.agentic.declarative.PlannerSupplier;
 import dev.langchain4j.agentic.declarative.SequenceAgent;
+import dev.langchain4j.agentic.declarative.SupervisorAgent;
 import dev.langchain4j.agentic.declarative.TypedKey;
+import dev.langchain4j.agentic.planner.Planner;
 import dev.langchain4j.agentic.scope.AgenticScope;
+import dev.langchain4j.agentic.workflow.impl.SequentialPlanner;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
@@ -21,7 +27,7 @@ import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.service.V;
 
 /**
- * One agentic system per workflow annotation, valid for quarkus-langchain4j-agentic so it also builds as an app.
+ * One agentic system per workflow, supervisor, planner and human-in-the-loop annotation, valid for quarkus-langchain4j-agentic so it also builds as an app.
  */
 public interface ScanFixtures {
 
@@ -118,6 +124,44 @@ public interface ScanFixtures {
         }
     }
 
+    // ---- supervisor ----
+
+    interface Bank {
+        @SupervisorAgent(description = "Banking supervisor", outputKey = "result", subAgents = { Teller.class })
+        String transact(@V("request") String request);
+    }
+
+    interface Teller {
+        @Agent(description = "Moves money", outputKey = "receipt")
+        String move(@V("amount") double amount);
+    }
+
+    // ---- planner ----
+
+    interface DraftPlanner {
+        @PlannerAgent(outputKey = "draft", subAgents = { Writer.class })
+        String plan(@V("topic") String topic);
+
+        @PlannerSupplier
+        static Planner planner() {
+            return new SequentialPlanner();
+        }
+    }
+
+    // ---- human in the loop ----
+
+    interface Approval {
+        @HumanInTheLoop(value = "Asks for approval", outputKey = "approval")
+        static String ask(@V("draft") String draft) {
+            return "yes";
+        }
+    }
+
+    interface ApprovedStory {
+        @SequenceAgent(outputKey = "approval", subAgents = { Writer.class, Approval.class })
+        String write(@V("topic") String topic);
+    }
+
     // ---- app plumbing ----
 
     /**
@@ -135,6 +179,12 @@ public interface ScanFixtures {
         Polisher polisher;
         @Inject
         Router router;
+        @Inject
+        Bank bank;
+        @Inject
+        DraftPlanner draftPlanner;
+        @Inject
+        ApprovedStory approvedStory;
     }
 
     @ApplicationScoped

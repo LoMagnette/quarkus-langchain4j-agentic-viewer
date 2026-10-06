@@ -18,6 +18,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
  * @param inputKeys AgenticScope keys read through the method parameters, in order
  * @param subAgents fully qualified class names of the sub-agents, in declaration order
  * @param itemsProvider scope key of the collection a parallel mapper iterates on, null otherwise
+ * @param plannerSupplier {@code Class#method} of the {@code @PlannerSupplier} method of a planner agent, null otherwise
  */
 public record AgentDescriptor(
         String id,
@@ -29,7 +30,8 @@ public record AgentDescriptor(
         String outputKey,
         List<String> inputKeys,
         List<String> subAgents,
-        String itemsProvider) {
+        String itemsProvider,
+        String plannerSupplier) {
 
     public AgentDescriptor {
         inputKeys = inputKeys == null ? List.of() : List.copyOf(inputKeys);

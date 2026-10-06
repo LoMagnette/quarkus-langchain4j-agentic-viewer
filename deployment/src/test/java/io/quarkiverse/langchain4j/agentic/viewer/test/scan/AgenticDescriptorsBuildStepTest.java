@@ -12,7 +12,8 @@ import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.test.QuarkusUnitTest;
 
 /**
- * In a real application build, the extension produces a descriptor for every agentic annotation of the fixtures.
+ * In a real application build, the extension produces a descriptor for every agentic annotation of the fixtures,
+ * including supervisor, planner and human-in-the-loop agents.
  */
 public class AgenticDescriptorsBuildStepTest {
 
@@ -35,8 +36,12 @@ public class AgenticDescriptorsBuildStepTest {
     @Test
     void descriptorForEveryAnnotation() {
         assertEquals(List.of(
+                "Approval#ask HUMAN_IN_THE_LOOP out=approval in=[draft] sub=[]",
+                "ApprovedStory#write SEQUENCE out=approval in=[topic] sub=[Writer, Approval]",
+                "Bank#transact SUPERVISOR out=result in=[request] sub=[Teller]",
                 "Batch#translateAll PARALLEL_MAPPER out=translations in=[items] sub=[Translator]",
                 "DbSearch#searchDb AI_AGENT out=db in=[topic] sub=[]",
+                "DraftPlanner#plan PLANNER out=draft in=[topic] sub=[Writer]",
                 "Editor#edit AI_AGENT out=draft in=[draft] sub=[]",
                 "Expert#answer AI_AGENT out=answer in=[topic] sub=[]",
                 "Polisher#polish LOOP out=draft in=[draft] sub=[Scorer, Editor]",
@@ -46,6 +51,7 @@ public class AgenticDescriptorsBuildStepTest {
                 "Scorer#score AI_AGENT out=Score in=[draft] sub=[]",
                 "Shouter#shout NON_AI_AGENT out=shout in=[draft] sub=[]",
                 "StoryFlow#write SEQUENCE out=review in=[topic] sub=[Writer, Reviewer]",
+                "Teller#move AI_AGENT out=receipt in=[amount] sub=[]",
                 "Translator#translate AI_AGENT out=translation in=[item] sub=[]",
                 "WebSearch#searchWeb AI_AGENT out=web in=[topic] sub=[]",
                 "Writer#write AI_AGENT out=draft in=[topic] sub=[]"),

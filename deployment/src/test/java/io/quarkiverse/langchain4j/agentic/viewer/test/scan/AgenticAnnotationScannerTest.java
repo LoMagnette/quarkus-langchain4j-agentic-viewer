@@ -39,7 +39,9 @@ class AgenticAnnotationScannerTest {
                 ScanFixtures.ResearchFan.class, ScanFixtures.WebSearch.class, ScanFixtures.DbSearch.class,
                 ScanFixtures.Batch.class, ScanFixtures.Translator.class, ScanFixtures.Polisher.class,
                 ScanFixtures.Scorer.class, ScanFixtures.Editor.class, ScanFixtures.Router.class, ScanFixtures.Expert.class,
-                ScanFixtures.Shouter.class, WithMemory.class);
+                ScanFixtures.Shouter.class, ScanFixtures.Bank.class, ScanFixtures.Teller.class,
+                ScanFixtures.DraftPlanner.class, ScanFixtures.Approval.class, ScanFixtures.ApprovedStory.class,
+                WithMemory.class);
         List<AgentDescriptor> descriptors = new AgenticAnnotationScanner().scan(index);
         byId = descriptors.stream().collect(Collectors.toMap(AgentDescriptor::id, Function.identity()));
         assertEquals(descriptors.stream().map(AgentDescriptor::id).sorted().toList(),
@@ -125,7 +127,36 @@ class AgenticAnnotationScannerTest {
     }
 
     @Test
+    void supervisor() {
+        AgentDescriptor bank = get("Bank", "transact");
+        assertEquals(NodeKind.SUPERVISOR, bank.kind());
+        assertEquals("Banking supervisor", bank.description());
+        assertEquals(List.of(P + "Teller"), bank.subAgents());
+        assertEquals(List.of("request"), bank.inputKeys());
+        assertNull(bank.plannerSupplier());
+    }
+
+    @Test
+    void plannerWithSupplier() {
+        AgentDescriptor planner = get("DraftPlanner", "plan");
+        assertEquals(NodeKind.PLANNER, planner.kind());
+        assertEquals(List.of(P + "Writer"), planner.subAgents());
+        assertEquals(P + "DraftPlanner#planner", planner.plannerSupplier());
+        assertTrue(byId.keySet().stream().noneMatch(id -> id.endsWith("#planner")), "the supplier is not an agent");
+    }
+
+    @Test
+    void humanInTheLoop() {
+        AgentDescriptor approval = get("Approval", "ask");
+        assertEquals(NodeKind.HUMAN_IN_THE_LOOP, approval.kind());
+        assertEquals("Asks for approval", approval.description(), "@HumanInTheLoop value is the description");
+        assertEquals("approval", approval.outputKey());
+        assertEquals(List.of("draft"), approval.inputKeys());
+        assertEquals(List.of(P + "Writer", P + "Approval"), get("ApprovedStory", "write").subAgents());
+    }
+
+    @Test
     void onlyAgentMethods() {
-        assertEquals(15, byId.size(), byId.keySet()::toString);
+        assertEquals(20, byId.size(), byId.keySet()::toString);
     }
 }
