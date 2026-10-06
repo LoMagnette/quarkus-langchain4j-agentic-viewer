@@ -395,3 +395,10 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   field of `PlannerBasedInvocationHandler`; replacing it by reflection on each root works (Java 25) and a delegating
   decorator records every Action for custom, supervisor and sequence planners.
 - Finding: Backlog doc-4. Executable record: `integration-tests/.../it/spike/PlannerWrapSpikeTest` (3 tests, 30 in module).
+
+### TASK-13 (T0.8) graph spike — done (Oct 6, 2026)
+
+- Cytoscape.js 3.34.3 + elkjs 0.12.0 from mvnpm (deployment-only; Dev UI serves mvnpm import maps under `/q/_static`).
+  elkjs computes a hierarchical layout used as a Cytoscape preset (no cytoscape-elk on mvnpm); import `elkjs/elk.bundled.js`.
+- Spike page "Graph (spike)" (`qwc-agentic-graph-spike.js`): compound nodes for the loop-in-sequence fixture, `highlight()`
+  API, light/dark theme via `themeState`. Verified with headless Chromium. To be replaced by T1.6.

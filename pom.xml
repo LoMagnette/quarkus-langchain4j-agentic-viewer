@@ -25,6 +25,9 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <quarkus.version>3.33.3.1</quarkus.version>
         <quarkus-langchain4j.version>1.14.1</quarkus-langchain4j.version>
+        <!-- Dev UI graph libraries (mvnpm) -->
+        <mvnpm.cytoscape.version>3.34.3</mvnpm.cytoscape.version>
+        <mvnpm.elkjs.version>0.12.0</mvnpm.elkjs.version>
         <compiler-plugin.version>3.13.0</compiler-plugin.version>
         <surefire-plugin.version>3.5.2</surefire-plugin.version>
     </properties>

@@ -4,6 +4,7 @@ title: 'T1.6a: Graph component with compound nodes and ELK layout'
 status: To Do
 assignee: []
 created_date: '2026-10-06 06:13'
+updated_date: '2026-10-06 09:55'
 labels:
   - dev-ui
   - graph
@@ -29,3 +30,9 @@ Part of T1.6 (F2.1). Nested patterns are drawn as compound nodes, e.g. a loop in
 - [ ] #2 Layout uses ELK and stays readable for every sample system
 - [ ] #3 The component exposes an API to highlight a node by id (used by the live view)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Input from TASK-13 (T0.8 spike, qwc-agentic-graph-spike.js): elkjs computes positions (layered DOWN, INCLUDE_CHILDREN) for a Cytoscape preset layout; import elkjs/elk.bundled.js (window.ELK); exclude loop back-edges from the ELK graph; cap initial zoom at 1; restyle from Lumo variables via observeState + themeState. Known cosmetic issues: edges into compound nodes end on the label; tight loop edges overlap.
+<!-- SECTION:NOTES:END -->
