@@ -13,6 +13,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ExecutionEvent;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunManager;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunSummary;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunTrace;
 import io.smallrye.mutiny.Multi;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemInput;
@@ -81,6 +83,30 @@ public class AgenticViewerJsonRpcService {
      */
     public Multi<ExecutionEvent> streamRun(String runId) {
         return runManager.stream(runId);
+    }
+
+    /**
+     * @return the runs of a system kept in the history, newest first (T2.2)
+     */
+    public List<RunSummary> listRuns(String systemId) {
+        return runManager.listRuns(systemId);
+    }
+
+    /**
+     * @return the run with all its events
+     * @throws IllegalArgumentException for an unknown (or evicted) run
+     */
+    public RunTrace getRun(String runId) {
+        return runManager.trace(runId).orElseThrow(() -> new IllegalArgumentException("Unknown run: " + runId));
+    }
+
+    /**
+     * Cancels a running run, best effort.
+     *
+     * @return whether the run was running and is now cancelled
+     */
+    public boolean cancelRun(String runId) {
+        return runManager.cancel(runId);
     }
 
     private AgenticSystem system(String systemId) {

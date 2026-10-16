@@ -6,5 +6,7 @@ package io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs;
 public enum RunStatus {
     RUNNING,
     SUCCEEDED,
-    FAILED
+    FAILED,
+    /** ended by cancelRun; the system may still be busy in a call that ignores interruption */
+    CANCELLED
 }

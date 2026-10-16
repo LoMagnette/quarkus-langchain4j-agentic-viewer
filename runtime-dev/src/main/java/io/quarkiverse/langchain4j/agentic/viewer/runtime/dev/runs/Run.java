@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ExecutionEvent;
 import io.smallrye.mutiny.subscription.MultiEmitter;
@@ -23,6 +25,10 @@ public final class Run {
     private volatile RunStatus status = RunStatus.RUNNING;
     private volatile Object output;
     private volatile boolean ended;
+    private volatile Long durationMillis;
+    /** set by whoever ends the run first: its result, its failure or a cancellation */
+    private final AtomicBoolean ending = new AtomicBoolean();
+    private volatile Future<?> task;
     /** Live subscribers; only touched on the event thread of the run manager. */
     private final List<MultiEmitter<? super ExecutionEvent>> subscribers = new ArrayList<>();
 
@@ -67,6 +73,28 @@ public final class Run {
     /** @return completes with this run when it ends, whatever the outcome */
     public CompletableFuture<Run> completion() {
         return completion;
+    }
+
+    /** @return the duration of an ended run, null while running */
+    public Long durationMillis() {
+        return durationMillis;
+    }
+
+    /** @return true for the first caller only: the one that ends the run */
+    boolean claimEnd(long duration) {
+        if (ending.compareAndSet(false, true)) {
+            durationMillis = duration;
+            return true;
+        }
+        return false;
+    }
+
+    void task(Future<?> future) {
+        task = future;
+    }
+
+    Future<?> task() {
+        return task;
     }
 
     /** @return whether the run ended (all its events were delivered) */

@@ -1,14 +1,22 @@
 package io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs;
 
 import java.lang.reflect.InvocationTargetException;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -55,25 +63,35 @@ public class RunManager {
     /** One thread delivers every event in order, so emitting never waits for the listeners. */
     private final ExecutorService dispatcher;
     private final Map<String, Run> runs = new ConcurrentHashMap<>();
+    /** Run ids per system, oldest first; guarded by itself. */
+    private final Map<String, Deque<String>> history = new HashMap<>();
+    private final int historySize;
     private final PayloadTruncator truncator;
     private final List<Consumer<ExecutionEvent>> listeners = new CopyOnWriteArrayList<>();
 
     /** Payload values longer than this many characters of JSON are truncated (T6.1 turns it into a config root). */
     public static final String MAX_PAYLOAD_SIZE = "quarkus.langchain4j.agentic.dev-ui.max-payload-size";
+    /** Runs kept per system in the history (T6.1 turns it into a config root). */
+    public static final String HISTORY_SIZE = "quarkus.langchain4j.agentic.dev-ui.history-size";
+    public static final int DEFAULT_HISTORY_SIZE = 20;
 
     @Inject
     public RunManager(AgenticSystemRegistry registry) {
-        this(registry::find, new CdiRunInvoker(), ConfigProvider.getConfig()
-                .getOptionalValue(MAX_PAYLOAD_SIZE, Integer.class).orElse(PayloadTruncator.DEFAULT_MAX_SIZE));
+        this(registry::find, new CdiRunInvoker(),
+                ConfigProvider.getConfig().getOptionalValue(MAX_PAYLOAD_SIZE, Integer.class)
+                        .orElse(PayloadTruncator.DEFAULT_MAX_SIZE),
+                ConfigProvider.getConfig().getOptionalValue(HISTORY_SIZE, Integer.class).orElse(DEFAULT_HISTORY_SIZE));
     }
 
     public RunManager(Function<String, Optional<AgenticSystem>> systems, RunInvoker invoker) {
-        this(systems, invoker, PayloadTruncator.DEFAULT_MAX_SIZE);
+        this(systems, invoker, PayloadTruncator.DEFAULT_MAX_SIZE, DEFAULT_HISTORY_SIZE);
     }
 
-    public RunManager(Function<String, Optional<AgenticSystem>> systems, RunInvoker invoker, int maxPayloadSize) {
+    public RunManager(Function<String, Optional<AgenticSystem>> systems, RunInvoker invoker, int maxPayloadSize,
+            int historySize) {
         this.systems = systems;
         this.invoker = invoker;
+        this.historySize = Math.max(1, historySize);
         this.truncator = new PayloadTruncator(maxPayloadSize);
         // run threads load the application classes: they keep the class loader of whoever created the manager
         ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
@@ -104,9 +122,71 @@ public class RunManager {
         Map<String, Object> runInputs = inputs == null ? Map.of() : inputs;
         Run run = new Run(UUID.randomUUID().toString(), systemId, runInputs, System.currentTimeMillis());
         runs.put(run.id(), run);
+        remember(run);
         emit(run, new RunStarted(run.id(), run.startedAt(), systemId, runInputs));
-        executor.execute(() -> execute(run, system));
+        run.task(executor.submit(() -> execute(run, system)));
         return run.id();
+    }
+
+    /** Adds the run to its system's history and drops the oldest ended runs beyond the limit. */
+    private void remember(Run run) {
+        synchronized (history) {
+            Deque<String> ids = history.computeIfAbsent(run.systemId(), id -> new ArrayDeque<>());
+            ids.addLast(run.id());
+            for (var it = ids.iterator(); ids.size() > historySize && it.hasNext();) {
+                Run old = runs.get(it.next());
+                if (old == null || old.ended()) {
+                    it.remove();
+                    if (old != null) {
+                        runs.remove(old.id());
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * @return the runs of a system kept in the history, newest first
+     */
+    public List<RunSummary> listRuns(String systemId) {
+        List<String> ids;
+        synchronized (history) {
+            ids = new ArrayList<>(history.getOrDefault(systemId, new ArrayDeque<>()));
+        }
+        Collections.reverse(ids);
+        return ids.stream().map(runs::get).filter(Objects::nonNull).map(RunSummary::of).toList();
+    }
+
+    /**
+     * @return the run with all its events, empty for an unknown (or evicted) run
+     */
+    public Optional<RunTrace> trace(String runId) {
+        return run(runId).map(run -> new RunTrace(RunSummary.of(run), run.events()));
+    }
+
+    /**
+     * Cancels a running run, best effort: it ends at once as CANCELLED and its thread is interrupted, but a call that
+     * ignores interruption (e.g. a blocking model call) may keep going; its result is then ignored.
+     *
+     * @return whether the run was running and is now cancelled
+     */
+    public boolean cancel(String runId) {
+        Run run = run(runId).orElse(null);
+        if (run == null || !run.claimEnd(elapsedSince(run))) {
+            return false;
+        }
+        emit(run, new RunFailed(run.id(), System.currentTimeMillis(),
+                ErrorInfo.of(new CancellationException("Run cancelled")), run.durationMillis()));
+        end(run, RunStatus.CANCELLED, null);
+        Future<?> task = run.task();
+        if (task != null) {
+            task.cancel(true);
+        }
+        return true;
+    }
+
+    private static long elapsedSince(Run run) {
+        return Math.max(0, System.currentTimeMillis() - run.startedAt());
     }
 
     private void execute(Run run, AgenticSystem system) {
@@ -114,12 +194,16 @@ public class RunManager {
         CURRENT.set(run);
         try {
             Object output = invoker.invoke(system, run.inputs());
-            emit(run, new RunFinished(run.id(), System.currentTimeMillis(), output, elapsedMillis(start)));
-            end(run, RunStatus.SUCCEEDED, output);
+            if (run.claimEnd(elapsedMillis(start))) { // not cancelled meanwhile
+                emit(run, new RunFinished(run.id(), System.currentTimeMillis(), output, run.durationMillis()));
+                end(run, RunStatus.SUCCEEDED, output);
+            }
         } catch (Throwable error) {
             Throwable cause = error instanceof InvocationTargetException e && e.getCause() != null ? e.getCause() : error;
-            emit(run, new RunFailed(run.id(), System.currentTimeMillis(), ErrorInfo.of(cause), elapsedMillis(start)));
-            end(run, RunStatus.FAILED, null);
+            if (run.claimEnd(elapsedMillis(start))) {
+                emit(run, new RunFailed(run.id(), System.currentTimeMillis(), ErrorInfo.of(cause), run.durationMillis()));
+                end(run, RunStatus.FAILED, null);
+            }
         } finally {
             CURRENT.remove();
         }
@@ -181,6 +265,9 @@ public class RunManager {
     }
 
     private void deliver(Run run, ExecutionEvent raw) {
+        if (run.ended()) {
+            return; // e.g. callbacks of a cancelled run whose thread kept going
+        }
         ExecutionEvent event = bounded(raw);
         run.add(event);
         for (Consumer<ExecutionEvent> listener : listeners) {

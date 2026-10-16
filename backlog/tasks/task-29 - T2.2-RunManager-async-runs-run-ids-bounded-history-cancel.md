@@ -1,9 +1,11 @@
 ---
 id: TASK-29
 title: 'T2.2: RunManager - async runs, run ids, bounded history, cancel'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-10-06 06:14'
+updated_date: '2026-10-16 14:48'
 labels:
   - runtime-dev
   - run
@@ -26,5 +28,11 @@ Spec: T2.2. Runs can take long (model calls), so they start on a worker thread a
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Concurrent runs are tracked separately
+- [x] #1 Concurrent runs are tracked separately
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+RunManager with async runs, run ids, a bounded history, traces and best-effort cancel (T2.2a-b).
+<!-- SECTION:FINAL_SUMMARY:END -->

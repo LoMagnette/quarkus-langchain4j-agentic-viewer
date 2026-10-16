@@ -104,6 +104,34 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
     }
 
     @Test
+    void runHistory() throws Exception {
+        String runId = executeJsonRPCMethod("startRun", Map.of("systemId", ROOT, "inputs", Map.of("topic", "history")))
+                .asText();
+        // the fixture run fails at once (no model provider in the fixture app): wait for its end in the history
+        JsonNode summary = null;
+        for (int i = 0; i < 50 && (summary == null || "RUNNING".equals(summary.path("status").asText())); i++) {
+            Thread.sleep(100);
+            for (JsonNode run : executeJsonRPCMethod("listRuns", Map.of("systemId", ROOT))) {
+                if (runId.equals(run.path("runId").asText())) {
+                    summary = run;
+                }
+            }
+        }
+        assertEquals("FAILED", summary.path("status").asText(), String.valueOf(summary));
+        assertEquals("history", summary.path("inputs").path("topic").asText());
+
+        JsonNode trace = executeJsonRPCMethod("getRun", Map.of("runId", runId));
+        assertEquals(runId, trace.path("summary").path("runId").asText());
+        List<String> types = new ArrayList<>();
+        trace.path("events").forEach(event -> types.add(event.path("type").asText()));
+        assertEquals(List.of("RunStarted", "RunFailed"), types);
+
+        assertEquals(false, executeJsonRPCMethod("cancelRun", Map.of("runId", runId)).asBoolean(), "already ended");
+        String unknown = rawJsonRpc("quarkus-langchain4j-agentic-viewer_getRun", "{\"runId\":\"nope\"}");
+        assertTrue(unknown.contains("\"error\"") && unknown.contains("Unknown run: nope"), unknown);
+    }
+
+    @Test
     void unknownSystemIdIsAnError() throws Exception {
         String startRun = rawJsonRpc("quarkus-langchain4j-agentic-viewer_startRun",
                 "{\"systemId\":\"com.example.Nope#run\",\"inputs\":{}}");
