@@ -44,7 +44,7 @@ public class TopologyBuilder {
                     rootNode.id(),
                     SystemOrigin.DECLARATIVE,
                     new SourceRef(descriptor.declaringClass(), descriptor.methodName(), null),
-                    List.of(), // T1.9 generates the inputs with their JSON schemas
+                    descriptor.inputs(),
                     rootNode));
         }
         return systems;

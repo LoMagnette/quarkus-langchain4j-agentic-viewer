@@ -41,7 +41,7 @@ public final class TopologyFixtures {
                 List.of(draft, polish), null, null, null);
         return new AgenticSystem("StoryCreator.create", "StoryCreator", create.id(), SystemOrigin.DECLARATIVE,
                 new SourceRef("io.quarkiverse.langchain4j.agentic.viewer.it.samples.StoryCreator", "create", null),
-                List.of(new SystemInput("topic", "java.lang.String", "{\"type\":\"string\"}")),
+                List.of(new SystemInput("topic", "java.lang.String", "{\"type\":\"string\"}", true)),
                 create);
     }
 
@@ -66,8 +66,8 @@ public final class TopologyFixtures {
                 "response", false, false, List.of(experts, planner), null, null, null);
         return new AgenticSystem("Router.ask", "Router", root.id(), SystemOrigin.MIXED,
                 new SourceRef("com.example.Router", "ask", "Router.java:42"),
-                List.of(new SystemInput("request", "java.lang.String", "{\"type\":\"string\"}"),
-                        new SystemInput("city", "java.lang.String", "{\"type\":\"string\"}")),
+                List.of(new SystemInput("request", "java.lang.String", "{\"type\":\"string\"}", true),
+                        new SystemInput("city", "java.lang.String", "{\"type\":\"string\"}", false)),
                 root);
     }
 }

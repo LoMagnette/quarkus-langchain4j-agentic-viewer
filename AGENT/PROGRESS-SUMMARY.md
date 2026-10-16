@@ -461,3 +461,17 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
 - Verified with headless Chromium (Playwright, scripts in the session scratchpad) on all 9 samples, light and dark, plus a
   synthetic system injected into the build-time data. The T0.8 spike page is removed; the prototype "Agentic Diagram"
   page stays until TASK-26.
+
+### TASK-23 / TASK-24 / TASK-25 (T1.7, T1.8, T1.9) details panel, data-flow view, input schemas — done (Oct 16, 2026)
+
+- `qwc-agentic-node-details.js`: clicking a graph node opens a panel (description, keys, flags, guard, planner; prompts,
+  model and tools for AI agents; "none" for empty fields); background click or close clears it; the graph refits.
+- Data-flow view (toggle in the graph toolbar, `toDataFlowGraph`): agents linked from writer to readers of each scope
+  key along ELK orthogonal routes; system inputs are input nodes; keys fed by a parallel mapper ("x ← each xs") or a
+  supervisor (its arguments) are attributed to them. Cytoscape ignores `curve-style` in an element's initial bypass:
+  set it through a class.
+- `InputSchemaGenerator` (deployment/scan): JSON schema per root scope parameter from Jandex types (primitives, strings,
+  enums, records, arrays, collections, maps, Optional, date/time/UUID; unknown -> `{}`), on `AgentDescriptor.inputs` and
+  `AgenticSystem.inputs`; `SystemInput.required` is false for Optional or any `@Nullable`. `@MemoryId` parameters are not
+  inputs (to handle in the run form, T2.7).
+- Phase 1 (milestone m-1) tasks T1.1 to T1.9 are done; TASK-26 (retire the prototype view) remains.

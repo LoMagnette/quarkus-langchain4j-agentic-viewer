@@ -25,6 +25,7 @@ import org.jboss.jandex.Type;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AiAgentDetails;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.Guard;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemInput;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.ToolInfo;
 
 /**
@@ -145,7 +146,8 @@ public class AgenticAnnotationScanner {
                 isWorkflow(kind) ? methodRef(annotatedMethod(method.declaringClass(), OUTPUT)) : null,
                 booleanValue(annotation, "optional"),
                 booleanValue(annotation, "async"),
-                kind == NodeKind.AI_AGENT ? aiDetails(index, method) : null);
+                kind == NodeKind.AI_AGENT ? aiDetails(index, method) : null,
+                inputs(index, method));
     }
 
     /**
@@ -323,16 +325,40 @@ public class AgenticAnnotationScanner {
     private static List<String> inputKeys(MethodInfo method) {
         List<String> keys = new ArrayList<>();
         for (MethodParameterInfo parameter : method.parameters()) {
-            if (parameter.type().name().equals(AGENTIC_SCOPE) || parameter.hasAnnotation(MEMORY_ID)) {
-                continue;
-            }
-            AnnotationInstance v = parameter.annotation(V);
-            String key = v != null ? nonBlank(v.value().asString()) : parameter.name();
+            String key = scopeKey(parameter);
             if (key != null) {
                 keys.add(key);
             }
         }
         return keys;
+    }
+
+    /**
+     * The scope parameters with their JSON schemas, for the run form of a root system.
+     */
+    private static List<SystemInput> inputs(IndexView index, MethodInfo method) {
+        InputSchemaGenerator schemas = new InputSchemaGenerator(index);
+        List<SystemInput> inputs = new ArrayList<>();
+        for (MethodParameterInfo parameter : method.parameters()) {
+            String key = scopeKey(parameter);
+            if (key != null) {
+                inputs.add(new SystemInput(key, parameter.type().toString(), schemas.schema(parameter.type()),
+                        InputSchemaGenerator.required(parameter.type(), parameter)));
+            }
+        }
+        return inputs;
+    }
+
+    /**
+     * @return the AgenticScope key of a parameter ({@code @V} value or parameter name), null for the scope itself, a
+     *         memory id or a parameter without name
+     */
+    private static String scopeKey(MethodParameterInfo parameter) {
+        if (parameter.type().name().equals(AGENTIC_SCOPE) || parameter.hasAnnotation(MEMORY_ID)) {
+            return null;
+        }
+        AnnotationInstance v = parameter.annotation(V);
+        return v != null ? nonBlank(v.value().asString()) : parameter.name();
     }
 
     private static List<String> subAgents(AnnotationInstance annotation) {

@@ -17,6 +17,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentDescriptor
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentTree;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotationScanner;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.RootSystemDetector;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemInput;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.ToolInfo;
 
 /**
@@ -99,6 +100,17 @@ class SampleDescriptorsTest {
                 "StoryWriter[StoryWriter$IntroWriter, StoryWriter$AdventureWriter]",
                 "TripPlanner[TripPlanner$DestinationProposer, TripPlanner$TravelerApproval, TripPlanner$ItineraryWriter]"),
                 new RootSystemDetector().detect(descriptors).stream().map(SampleDescriptorsTest::render).toList());
+    }
+
+    @Test
+    void rootInputsHaveJsonSchemas() {
+        assertEquals(List.of(new SystemInput("phrases", "java.util.List<java.lang.String>",
+                "{\"type\":\"array\",\"items\":{\"type\":\"string\"}}", true)),
+                byClass.get(PhraseTranslator.class.getName()).inputs());
+        assertEquals(List.of(new SystemInput("request", "java.lang.String", "{\"type\":\"string\"}", true)),
+                byClass.get(BankSupervisor.class.getName()).inputs());
+        new RootSystemDetector().detect(descriptors).forEach(root -> assertEquals(root.descriptor().inputKeys(),
+                root.descriptor().inputs().stream().map(SystemInput::name).toList(), root.agentClass()));
     }
 
     @Test

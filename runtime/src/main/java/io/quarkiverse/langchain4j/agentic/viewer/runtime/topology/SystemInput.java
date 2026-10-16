@@ -6,6 +6,7 @@ package io.quarkiverse.langchain4j.agentic.viewer.runtime.topology;
  * @param name parameter name, i.e. the AgenticScope key it is stored under
  * @param javaType Java type name (generic types included, e.g. {@code java.util.List<java.lang.String>})
  * @param jsonSchema JSON schema of the value, as JSON text
+ * @param required whether a value must be given (false for an {@code Optional} or {@code @Nullable} parameter)
  */
-public record SystemInput(String name, String javaType, String jsonSchema) {
+public record SystemInput(String name, String javaType, String jsonSchema, boolean required) {
 }

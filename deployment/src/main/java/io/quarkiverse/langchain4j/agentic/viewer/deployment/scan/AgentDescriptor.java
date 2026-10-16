@@ -8,6 +8,7 @@ import java.util.Map;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AiAgentDetails;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.Guard;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemInput;
 
 /**
  * Build-time description of one agent method found in the index.
@@ -31,6 +32,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
  * @param optional whether the agent is optional ({@code @Agent(optional)})
  * @param async whether the agent runs asynchronously ({@code @Agent(async)}, {@code @HumanInTheLoop(async)})
  * @param aiDetails prompts, model and tools of an AI_AGENT, null otherwise
+ * @param inputs the scope parameters (same names and order as {@code inputKeys}) with their JSON schemas
  */
 public record AgentDescriptor(
         String id,
@@ -49,10 +51,12 @@ public record AgentDescriptor(
         String outputMethod,
         boolean optional,
         boolean async,
-        AiAgentDetails aiDetails) {
+        AiAgentDetails aiDetails,
+        List<SystemInput> inputs) {
 
     public AgentDescriptor {
         inputKeys = inputKeys == null ? List.of() : List.copyOf(inputKeys);
+        inputs = inputs == null ? List.of() : List.copyOf(inputs);
         subAgents = subAgents == null ? List.of() : List.copyOf(subAgents);
         // keeps the sub-agent order of the scanner
         branchGuards = branchGuards == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(branchGuards));
