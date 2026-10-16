@@ -11,6 +11,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunManager;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemInput;
 
@@ -23,6 +24,9 @@ public class AgenticViewerJsonRpcService {
 
     @Inject
     AgenticSystemRegistry registry;
+
+    @Inject
+    RunManager runManager;
 
     /**
      * @return a summary of every agentic system, in registration order
@@ -57,6 +61,17 @@ public class AgenticViewerJsonRpcService {
         schema.put("properties", properties);
         schema.put("required", required);
         return schema;
+    }
+
+    /**
+     * Starts a run and returns at once (T2.2): the run executes on a worker thread and reports its events.
+     *
+     * @param inputs input values by name, as filled in the run form
+     * @return the run id
+     * @throws IllegalArgumentException for an unknown id
+     */
+    public String startRun(String systemId, Map<String, Object> inputs) {
+        return runManager.startRun(systemId, inputs);
     }
 
     private AgenticSystem system(String systemId) {

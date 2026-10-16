@@ -61,6 +61,14 @@ This is a standard **Quarkus extension** with four modules:
 
 Builder (`AgenticServices.*Builder()`) systems are discovered at runtime in Phase 5.
 
+### Runs (runtime-dev, dev mode only)
+
+`runs/RunManager` starts a run on its own daemon threads (`startRun` returns the run id at once) and emits the
+`events/ExecutionEvent` records; `runs/CdiRunInvoker` converts the form JSON to the root method parameters (Jackson) and
+calls the root CDI bean inside a fresh request context (request-scoped chat memory must not leak between runs).
+runtime-dev beans only exist in dev mode: tests build `RunManager` directly (`new RunManager(lookup, new CdiRunInvoker())`,
+see `integration-tests/.../samples/SampleRunsTest`).
+
 ### Dev UI Integration
 
 `AgenticViewerProcessor.registerDevUI()` registers the card with one page, "Agentic Systems" (`qwc-agentic-systems.js`),

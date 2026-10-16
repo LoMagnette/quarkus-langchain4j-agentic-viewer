@@ -10,6 +10,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticSystemRegist
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerJsonRpcService;
 import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerRecorder;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunManager;
 import io.quarkus.deployment.IsDevelopment;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.annotations.ExecutionTime;
@@ -67,11 +68,12 @@ public class AgenticViewerProcessor {
     }
 
     /**
-     * The registry the JSON-RPC service reads; dev mode only, like runtime-dev.
+     * The registry and run manager the JSON-RPC service uses; dev mode only, like runtime-dev.
      */
     @BuildStep(onlyIf = IsDevelopment.class)
-    AdditionalBeanBuildItem registerSystemRegistry() {
-        return AdditionalBeanBuildItem.unremovableOf(AgenticSystemRegistry.class);
+    AdditionalBeanBuildItem registerRuntimeDevBeans() {
+        return AdditionalBeanBuildItem.builder().addBeanClasses(AgenticSystemRegistry.class, RunManager.class)
+                .setUnremovable().build();
     }
 
     /**

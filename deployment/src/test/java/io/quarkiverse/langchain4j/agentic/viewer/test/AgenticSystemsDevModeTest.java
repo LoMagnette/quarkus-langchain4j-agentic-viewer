@@ -75,7 +75,18 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
     }
 
     @Test
+    void startRunReturnsARunId() throws Exception {
+        JsonNode runId = executeJsonRPCMethod("startRun", Map.of("systemId", ROOT, "inputs", Map.of("topic", "dragons")));
+
+        assertEquals(36, runId.asText().length(), runId::toString);
+    }
+
+    @Test
     void unknownSystemIdIsAnError() throws Exception {
+        String startRun = rawJsonRpc("quarkus-langchain4j-agentic-viewer_startRun",
+                "{\"systemId\":\"com.example.Nope#run\",\"inputs\":{}}");
+        assertTrue(startRun.contains("\"error\"") && startRun.contains("Unknown agentic system: com.example.Nope#run"),
+                startRun);
         for (String method : List.of("getTopology", "getInputSchema")) {
             String response = rawJsonRpc("quarkus-langchain4j-agentic-viewer_" + method,
                     "{\"systemId\":\"com.example.Nope#run\"}");
