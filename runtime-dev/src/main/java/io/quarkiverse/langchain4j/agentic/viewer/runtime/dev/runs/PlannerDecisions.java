@@ -1,6 +1,7 @@
 package io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs;
 
 import java.lang.reflect.Field;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -14,6 +15,7 @@ import dev.langchain4j.agentic.planner.InitPlanningContext;
 import dev.langchain4j.agentic.planner.Planner;
 import dev.langchain4j.agentic.planner.PlanningContext;
 import dev.langchain4j.agentic.scope.AgenticScope;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.PatternAdapter;
 
 /**
  * Reports the decisions of planners (T3.2): each Action a supervisor, {@code @PlannerSupplier} or pattern planner
@@ -75,12 +77,15 @@ final class PlannerDecisions {
 
         private final Planner delegate;
         private final DevUiAgentListener listener;
+        /** what is known about the planner's pattern, null for a planner of no known pattern */
+        private final PatternAdapter adapter;
         private volatile AgentInstance plannerAgent;
         private volatile List<AgentInstance> subagents = List.of();
 
         ReportingPlanner(Planner delegate, DevUiAgentListener listener) {
             this.delegate = delegate;
             this.listener = listener;
+            this.adapter = listener.patternAdapters().adapterFor(delegate).orElse(null);
         }
 
         @Override
@@ -105,12 +110,27 @@ final class PlannerDecisions {
             Run run = listener.run(scope);
             if (run != null && action != null && plannerAgent != null) {
                 try {
-                    listener.plannerDecision(run, plannerAgent, subagents, action);
+                    listener.plannerDecision(run, plannerAgent, subagents, action, patternExtras(action, scope));
                 } catch (RuntimeException e) {
                     LOG.debugf(e, "Agentic viewer: cannot report a decision of %s", plannerAgent.name());
                 }
             }
             return action;
+        }
+
+        /** The pattern of the planner and what its adapter tells about the decision; a failing adapter tells nothing. */
+        private Map<String, Object> patternExtras(Action action, AgenticScope scope) {
+            if (adapter == null) {
+                return Map.of();
+            }
+            Map<String, Object> extras = new HashMap<>();
+            try {
+                extras.putAll(adapter.decisionExtras(delegate, action, scope));
+            } catch (RuntimeException e) {
+                LOG.debugf(e, "Agentic viewer: the %s adapter failed on a decision", adapter.patternType());
+            }
+            extras.put("pattern", adapter.patternType().name());
+            return extras;
         }
 
         @Override

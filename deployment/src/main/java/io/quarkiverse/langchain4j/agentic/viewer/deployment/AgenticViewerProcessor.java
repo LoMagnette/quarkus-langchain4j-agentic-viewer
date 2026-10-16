@@ -1,6 +1,9 @@
 package io.quarkiverse.langchain4j.agentic.viewer.deployment;
 
 import java.lang.reflect.Modifier;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Predicate;
 
 import org.jboss.jandex.DotName;
 
@@ -13,7 +16,9 @@ import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.TopologyBui
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticSystemRegistry;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerJsonRpcService;
 import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
+import io.quarkus.bootstrap.classloading.QuarkusClassLoader;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerRecorder;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.PatternAdapters;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunManager;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunObservation;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.spi.AgenticTopologyContributor;
@@ -31,6 +36,8 @@ import io.quarkus.devui.spi.page.Page;
  * Main build processor for the Agentic Viewer extension.
  */
 public class AgenticViewerProcessor {
+
+    private static final String PATTERNS_PACKAGE = "io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.";
 
     private static final String FEATURE = "langchain4j-agentic-viewer";
 
@@ -91,6 +98,32 @@ public class AgenticViewerProcessor {
     /**
      * Registers the Dev UI card and its page (only in dev mode).
      */
+    /**
+     * Adapter of each pattern planner of langchain4j-agentic-patterns, by planner class. Names only: an adapter class
+     * refers to the module, so it must not be loaded (here or at runtime) when the module is absent.
+     */
+    static final Map<String, String> PATTERN_ADAPTERS = Map.of(
+            "dev.langchain4j.agentic.patterns.goap.GoalOrientedPlanner", PATTERNS_PACKAGE + "GoapAdapter",
+            "dev.langchain4j.agentic.patterns.p2p.P2PPlanner", PATTERNS_PACKAGE + "P2PAdapter",
+            "dev.langchain4j.agentic.patterns.blackboard.BlackboardPlanner", PATTERNS_PACKAGE + "BlackboardAdapter");
+
+    /**
+     * @param present whether a class is on the application class path
+     * @return the adapters to register: those whose pattern planner is present (apps add langchain4j-agentic-patterns
+     *         directly, there is no Quarkus extension for it)
+     */
+    static List<String> patternAdapters(Predicate<String> present) {
+        return PATTERN_ADAPTERS.entrySet().stream().filter(entry -> present.test(entry.getKey()))
+                .map(Map.Entry::getValue).sorted().toList();
+    }
+
+    @BuildStep(onlyIf = IsDevelopment.class)
+    AdditionalBeanBuildItem registerPatternAdapters() {
+        return AdditionalBeanBuildItem.builder().addBeanClass(PatternAdapters.class)
+                .addBeanClasses(patternAdapters(QuarkusClassLoader::isClassPresentAtRuntime))
+                .setUnremovable().build();
+    }
+
     @BuildStep(onlyIf = IsDevelopment.class)
     CardPageBuildItem registerDevUI(AgenticSystemsBuildItem systems) {
         CardPageBuildItem card = new CardPageBuildItem();

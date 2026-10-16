@@ -566,3 +566,11 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
 - The graph draws a contributed planner with the contribution instead of the generic hub + candidates; during a run
   the step numbers go on the nodes ("steps 1, 3, 5"), leaves grow a line and boxes widen to their title when needed.
 - Phase 3 (T3.1 to T3.4) is complete.
+
+### T4.1 patterns module detection — done (Oct 16, 2026)
+
+- No Quarkus extension exists for langchain4j-agentic-patterns: apps add it directly; detection checks its planner
+  classes at build time. GOAP / P2P / blackboard adapters (runtime-dev `patterns`, optional dependency) are registered
+  only for the planners present; `PatternAdapters` hands them to the listener and decisions get `extras.pattern`.
+- Without the module: no adapter bean, nothing loaded or logged (dev-mode test); with it (dev mode -Ppatterns): the
+  three pattern samples' decisions are tagged GOAP, P2P, BLACKBOARD, the custom planner none.

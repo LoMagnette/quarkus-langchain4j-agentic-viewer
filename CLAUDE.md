@@ -101,6 +101,12 @@ and matched to PLANNER nodes by the class of their `@PlannerSupplier`; `getContr
 resolved ids (`<planner node id>::<id>` for contributed nodes) and the graph draws them instead of the hub and
 candidates (step numbers then go on the nodes). Sample: `integration-tests/.../samples/DraftReviewTopology`.
 
+Patterns module: there is no Quarkus extension for `langchain4j-agentic-patterns`, apps add it directly. runtime-dev
+depends on it as optional; `runtime-dev/.../patterns/*Adapter` classes refer to it and are registered as beans only when
+their planner class is present (`AgenticViewerProcessor.patternAdapters`, names only, never loaded otherwise);
+`PatternAdapters` (always registered) hands them to the Dev UI listener, and pattern planners' decisions carry
+`extras.pattern`. Never reference an adapter class from code that runs without the module.
+
 ### Dev UI Integration
 
 `AgenticViewerProcessor.registerDevUI()` registers the card with one page, "Agentic Systems" (`qwc-agentic-systems.js`),

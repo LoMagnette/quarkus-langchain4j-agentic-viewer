@@ -44,6 +44,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ScopeStateCh
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.TokenUsage;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ToolFinished;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ToolStarted;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.PatternAdapters;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgentNode;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
 
@@ -118,8 +119,22 @@ public class DevUiAgentListener implements AgentListener {
         }
     }
 
+    private final PatternAdapters patternAdapters;
+
     public DevUiAgentListener(RunManager runManager) {
+        this(runManager, PatternAdapters.none());
+    }
+
+    /**
+     * @param patternAdapters what is known about the planners of langchain4j-agentic-patterns (none without it)
+     */
+    public DevUiAgentListener(RunManager runManager, PatternAdapters patternAdapters) {
         this.runManager = runManager;
+        this.patternAdapters = patternAdapters;
+    }
+
+    PatternAdapters patternAdapters() {
+        return patternAdapters;
     }
 
     @Override
@@ -346,7 +361,8 @@ public class DevUiAgentListener implements AgentListener {
      * whose invocation is open. The agents chosen map to the workflow node's children by their position among the
      * planner's sub-agents (declaration order, as in the topology).
      */
-    void plannerDecision(Run run, AgentInstance plannerAgent, List<AgentInstance> subagents, Action action) {
+    void plannerDecision(Run run, AgentInstance plannerAgent, List<AgentInstance> subagents, Action action,
+            Map<String, Object> patternExtras) {
         if (action.getClass().getSimpleName().equals("NoOpAction")) {
             return; // nothing decided
         }
@@ -366,7 +382,7 @@ public class DevUiAgentListener implements AgentListener {
                         : nodeId + "/" + simpleName(chosen.type()));
             }
         }
-        Map<String, Object> extras = new HashMap<>();
+        Map<String, Object> extras = new HashMap<>(patternExtras == null ? Map.of() : patternExtras);
         extras.put("action", action.isSuspended() ? "suspend"
                 : action instanceof Action.AgentCallAction ? "call"
                         : action.getClass().getSimpleName().equals("DoneWithResultAction") ? "doneWithResult" : "done");

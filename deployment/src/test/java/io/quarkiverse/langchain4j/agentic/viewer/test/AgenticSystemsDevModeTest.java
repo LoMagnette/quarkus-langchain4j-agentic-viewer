@@ -35,12 +35,26 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
 
     @RegisterExtension
     static final QuarkusDevModeTest config = new QuarkusDevModeTest()
-            .withApplicationRoot(jar -> jar.addClasses(StoryWorkflow.class));
+            .withApplicationRoot(jar -> jar.addClasses(StoryWorkflow.class))
+            .setLogRecordPredicate(record -> true);
 
     private static final String ROOT = StoryWorkflow.class.getName() + "#writeStory";
 
     public AgenticSystemsDevModeTest() {
         super("quarkus-langchain4j-agentic-viewer");
+    }
+
+    /** Without langchain4j-agentic-patterns (not on this class path): no adapter bean, nothing about patterns logged. */
+    @Test
+    void noPatternAdapterWithoutTheModule() throws Exception {
+        JsonNode beans = new DevUIBuildTimeDataTest("quarkus-arc") {
+        }.getBuildTimeData("beans");
+        List<String> classes = new ArrayList<>();
+        beans.findValues("providerType").forEach(type -> classes.add(type.toString()));
+        assertTrue(classes.stream().anyMatch(type -> type.contains("PatternAdapters")), () -> "registry bean in " + classes);
+        assertTrue(classes.stream().noneMatch(type -> type.matches(".*(Goap|P2P|Blackboard)Adapter.*")), classes::toString);
+        assertTrue(config.getLogRecords().stream().noneMatch(record -> record.getLoggerName().contains(".patterns")
+                || String.valueOf(record.getThrown()).contains("NoClassDefFoundError")), "no pattern class loading issue");
     }
 
     @Test

@@ -21,6 +21,13 @@
             <artifactId>quarkus-langchain4j-agentic-viewer</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- Pattern adapters (patterns package) compile against it; applications add it themselves when they use the
+             patterns, and the adapters are only registered (and loaded) when its classes are present. -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-agentic-patterns</artifactId>
+            <optional>true</optional>
+        </dependency>
     </dependencies>
 
     <build>

@@ -18,6 +18,10 @@ import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotati
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.RootSystemDetector;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.TopologyBuilder;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.PlannerDecision;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.BlackboardAdapter;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.GoapAdapter;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.P2PAdapter;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.PatternAdapters;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.CdiRunInvoker;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.DevUiAgentListener;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RootListeners;
@@ -45,7 +49,8 @@ class PatternPlannerDecisionsTest {
                 .detect(new AgenticAnnotationScanner().scan(Index.of(samples))));
         runManager = new RunManager(id -> systems.stream().filter(s -> s.id().equals(id)).findFirst(),
                 new CdiRunInvoker());
-        RootListeners.attach(systems, new DevUiAgentListener(runManager));
+        RootListeners.attach(systems, new DevUiAgentListener(runManager,
+                new PatternAdapters(List.of(new GoapAdapter(), new P2PAdapter(), new BlackboardAdapter()))));
     }
 
     private static Set<String> nodeIds(AgentNode node) {
@@ -55,8 +60,8 @@ class PatternPlannerDecisionsTest {
         return ids;
     }
 
-    private static void assertDecisions(String name, Map<String, Object> inputs, String output, List<String> expected)
-            throws Exception {
+    private static void assertDecisions(String name, Map<String, Object> inputs, String output, String pattern,
+            List<String> expected) throws Exception {
         AgenticSystem system = systems.stream().filter(s -> s.name().equals(name)).findFirst().orElseThrow();
         Run run = runManager.run(runManager.startRun(system.id(), inputs)).orElseThrow();
         run.completion().get(30, TimeUnit.SECONDS);
@@ -67,6 +72,8 @@ class PatternPlannerDecisionsTest {
         assertEquals(expected, decisions.stream().map(d -> d.extras().get("action") + " "
                 + d.selectedNodeIds().stream().map(id -> id.substring(id.lastIndexOf('/') + 1)).toList()).toList(), name);
         assertTrue(decisions.get(decisions.size() - 1).done(), name + ": ends with a done decision");
+        assertTrue(decisions.stream().allMatch(d -> pattern.equals(d.extras().get("pattern"))),
+                name + ": decisions tagged by the pattern adapter " + decisions);
         Set<String> nodes = nodeIds(system.root());
         assertTrue(decisions.stream().allMatch(d -> nodes.contains(d.nodeId())
                 && nodes.containsAll(d.selectedNodeIds())), name + ": node ids from the topology " + decisions);
@@ -76,13 +83,13 @@ class PatternPlannerDecisionsTest {
     @Test
     void goalOrientedPlanner() throws Exception {
         assertDecisions("TripGoalPlanner", Map.of("city", "Lisbon", "budget", "medium"),
-                "Stay at Hotel Central in Lisbon, enjoy a boat tour and a picnic", List.of("call [HotelFinder]",
+                "Stay at Hotel Central in Lisbon, enjoy a boat tour and a picnic", "GOAP", List.of("call [HotelFinder]",
                         "call [WeatherForecaster]", "call [ActivityPlanner]", "call [ItineraryBuilder]", "done []"));
     }
 
     @Test
     void peerToPeer() throws Exception {
-        assertDecisions("ResearchTeam", Map.of("topic", "quantum batteries"), "Hypothesis v3 about quantum batteries",
+        assertDecisions("ResearchTeam", Map.of("topic", "quantum batteries"), "Hypothesis v3 about quantum batteries", "P2P",
                 List.of("call [LiteratureSearcher]", "call [HypothesisFormulator]", "call [Critic]", "call [Refiner]",
                         "call [Critic]", "call [Refiner]", "call [Critic]", "done []"));
     }
@@ -90,7 +97,7 @@ class PatternPlannerDecisionsTest {
     @Test
     void blackboard() throws Exception {
         assertDecisions("IncidentResponder", Map.of("incident", "Checkout fails since 10:00"),
-                "Bound the order cache to 10,000 entries", List.of("call [MetricsAnalyzer]", "call [LogAnalyzer]",
+                "Bound the order cache to 10,000 entries", "BLACKBOARD", List.of("call [MetricsAnalyzer]", "call [LogAnalyzer]",
                         "call [Diagnoser]", "call [FixProposer]", "done []"));
     }
 }

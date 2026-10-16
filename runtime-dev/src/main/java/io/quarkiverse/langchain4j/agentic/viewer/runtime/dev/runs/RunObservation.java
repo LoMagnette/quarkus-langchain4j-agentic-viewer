@@ -4,6 +4,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticSystemRegistry;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.PatternAdapters;
 import io.quarkus.runtime.StartupEvent;
 
 /**
@@ -13,7 +14,8 @@ import io.quarkus.runtime.StartupEvent;
 @ApplicationScoped
 public class RunObservation {
 
-    void attach(@Observes StartupEvent startup, AgenticSystemRegistry registry, RunManager runManager) {
-        RootListeners.attach(registry.systems(), new DevUiAgentListener(runManager));
+    void attach(@Observes StartupEvent startup, AgenticSystemRegistry registry, RunManager runManager,
+            PatternAdapters patternAdapters) {
+        RootListeners.attach(registry.systems(), new DevUiAgentListener(runManager, patternAdapters));
     }
 }

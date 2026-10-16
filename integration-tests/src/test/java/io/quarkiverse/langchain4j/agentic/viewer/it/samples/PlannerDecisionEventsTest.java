@@ -116,6 +116,8 @@ class PlannerDecisionEventsTest {
         assertEquals("A polished draft about solar panels", run.output(), "behaviour unchanged");
         assertEquals(List.of("call: [Drafter]", "call: [Reviewer]", "call: [Drafter]", "call: [Reviewer]",
                 "done (done): []"), decisions(run));
+        assertTrue(run.events().stream().filter(PlannerDecision.class::isInstance)
+                .noneMatch(e -> ((PlannerDecision) e).extras().containsKey("pattern")), "a custom planner has no pattern");
     }
 
     @Test
