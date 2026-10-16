@@ -36,10 +36,14 @@ public class RunManager {
 
     private static final Logger LOG = Logger.getLogger(RunManager.class);
     private static final AtomicInteger THREADS = new AtomicInteger();
+    /** The run executed by the current run thread, for listeners that need to know which run a callback belongs to. */
+    private static final ThreadLocal<Run> CURRENT = new ThreadLocal<>();
 
     private final Function<String, Optional<AgenticSystem>> systems;
     private final RunInvoker invoker;
     private final ExecutorService executor;
+    /** One thread delivers every event in order, so emitting never waits for the listeners. */
+    private final ExecutorService dispatcher;
     private final Map<String, Run> runs = new ConcurrentHashMap<>();
     private final List<Consumer<ExecutionEvent>> listeners = new CopyOnWriteArrayList<>();
 
@@ -55,6 +59,12 @@ public class RunManager {
         ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
         this.executor = Executors.newCachedThreadPool(task -> {
             Thread thread = new Thread(task, "agentic-viewer-run-" + THREADS.incrementAndGet());
+            thread.setDaemon(true);
+            thread.setContextClassLoader(classLoader);
+            return thread;
+        });
+        this.dispatcher = Executors.newSingleThreadExecutor(task -> {
+            Thread thread = new Thread(task, "agentic-viewer-events-" + THREADS.incrementAndGet());
             thread.setDaemon(true);
             thread.setContextClassLoader(classLoader);
             return thread;
@@ -81,15 +91,34 @@ public class RunManager {
 
     private void execute(Run run, AgenticSystem system) {
         long start = System.nanoTime();
+        CURRENT.set(run);
         try {
             Object output = invoker.invoke(system, run.inputs());
             emit(run, new RunFinished(run.id(), System.currentTimeMillis(), output, elapsedMillis(start)));
-            run.end(RunStatus.SUCCEEDED, output);
+            end(run, RunStatus.SUCCEEDED, output);
         } catch (Throwable error) {
             Throwable cause = error instanceof InvocationTargetException e && e.getCause() != null ? e.getCause() : error;
             emit(run, new RunFailed(run.id(), System.currentTimeMillis(), ErrorInfo.of(cause), elapsedMillis(start)));
-            run.end(RunStatus.FAILED, null);
+            end(run, RunStatus.FAILED, null);
+        } finally {
+            CURRENT.remove();
         }
+    }
+
+    /** Ends the run once every event emitted before is delivered. */
+    private void end(Run run, RunStatus status, Object output) {
+        dispatcher.execute(() -> run.end(status, output));
+    }
+
+    /**
+     * @return the run executed by the current thread, if it is a run thread
+     */
+    static Optional<Run> currentRun() {
+        return Optional.ofNullable(CURRENT.get());
+    }
+
+    Optional<AgenticSystem> system(String systemId) {
+        return systems.apply(systemId);
     }
 
     public Optional<Run> run(String runId) {
@@ -97,16 +126,22 @@ public class RunManager {
     }
 
     /**
-     * Adds a listener receiving every event of every run, on the thread that emits it: it must not block.
+     * Adds a listener receiving every event of every run, in order, on the event thread: a slow listener delays the
+     * other listeners, never the runs.
      */
     public void addListener(Consumer<ExecutionEvent> listener) {
         listeners.add(listener);
     }
 
     /**
-     * Records an event of a run and passes it to the listeners.
+     * Queues an event of a run and returns at once: the event thread records it on the run and passes it to the
+     * listeners, in emission order.
      */
     public void emit(Run run, ExecutionEvent event) {
+        dispatcher.execute(() -> deliver(run, event));
+    }
+
+    private void deliver(Run run, ExecutionEvent event) {
         run.add(event);
         for (Consumer<ExecutionEvent> listener : listeners) {
             try {
@@ -120,6 +155,7 @@ public class RunManager {
     @PreDestroy
     void shutdown() {
         executor.shutdownNow();
+        dispatcher.shutdown();
     }
 
     private static long elapsedMillis(long startNanos) {

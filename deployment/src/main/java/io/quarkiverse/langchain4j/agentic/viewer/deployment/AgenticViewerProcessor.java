@@ -11,6 +11,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerJsonRp
 import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerRecorder;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunManager;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunObservation;
 import io.quarkus.deployment.IsDevelopment;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.annotations.ExecutionTime;
@@ -68,11 +69,12 @@ public class AgenticViewerProcessor {
     }
 
     /**
-     * The registry and run manager the JSON-RPC service uses; dev mode only, like runtime-dev.
+     * The registry and run manager the JSON-RPC service uses, and the observation of the root agents; dev mode only,
+     * like runtime-dev.
      */
     @BuildStep(onlyIf = IsDevelopment.class)
     AdditionalBeanBuildItem registerRuntimeDevBeans() {
-        return AdditionalBeanBuildItem.builder().addBeanClasses(AgenticSystemRegistry.class, RunManager.class)
+        return AdditionalBeanBuildItem.builder().addBeanClasses(AgenticSystemRegistry.class, RunManager.class, RunObservation.class)
                 .setUnremovable().build();
     }
 
