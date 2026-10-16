@@ -1,4 +1,5 @@
 import { LitElement, html, css } from 'lit';
+import '@vaadin/button';
 import { observeState } from 'lit-element-state';
 import { themeState } from 'theme-state';
 import cytoscape from 'cytoscape';
@@ -23,6 +24,7 @@ export const KIND_LABELS = {
     SUPERVISOR: 'Supervisor',
     PLANNER: 'Planner',
     HUMAN_IN_THE_LOOP: 'Human in the loop',
+    INPUT_KEY: 'System input',
 };
 
 /**
@@ -40,6 +42,7 @@ export const KIND_STYLES = {
     CONDITIONAL: { shape: 'round-rectangle', color: '#f97316', border: 'dotted' },
     SUPERVISOR: { shape: 'round-rectangle', color: '#ec4899', border: 'solid', width: 3 },
     PLANNER: { shape: 'round-rectangle', color: '#d946ef', border: 'solid', width: 3 },
+    INPUT_KEY: { shape: 'round-tag', color: '#94a3b8', border: 'dashed' },
 };
 
 /** Separates a topology node id from the role of a helper node drawn for it (never used in topology ids). */
@@ -131,6 +134,97 @@ export function toGraph(system) {
     return { nodes, edges };
 }
 
+/** Kinds drawn as a single box in the data-flow view: the agents (a workflow is only an agent when it has no children). */
+function isAgent(node) {
+    return !(node.children?.length > 0);
+}
+
+/**
+ * Turns an AgenticSystem topology into its data-flow graph: the agents, with an edge per AgenticScope key from each
+ * agent writing it (output key) to each other agent reading it (input keys), labelled with the key. Agent ids are the
+ * topology node ids, as in the structure view. A key no agent writes comes from:
+ * <ol>
+ * <li>the caller when the root method takes it: a system input node;</li>
+ * <li>the items of an enclosing parallel mapper: edges from the sources of the mapper's input keys;</li>
+ * <li>an enclosing supervisor, which passes arguments to the agents it calls: an edge from the supervisor node;</li>
+ * <li>otherwise an unknown origin, drawn as a system input too.</li>
+ * </ol>
+ *
+ * @return {{nodes: Array<{id, label, kind, compound, helper?, inputKey?}>, edges: Array<{id, source, target, kind, label}>}}
+ */
+export function toDataFlowGraph(system) {
+    const agents = []; // { node, ancestors } in tree order
+    const collect = (node, ancestors) => isAgent(node) ? agents.push({ node, ancestors })
+        : node.children.forEach(child => collect(child, [node, ...ancestors]));
+    collect(system.root, []);
+
+    const writers = new Map();
+    agents.forEach(({ node }) => {
+        if (node.outputKey) {
+            writers.set(node.outputKey, [...(writers.get(node.outputKey) ?? []), node.id]);
+        }
+    });
+    const nodes = [];
+    const edges = [];
+    const inputNode = key => {
+        const id = 'key' + HELPER_SEPARATOR + key;
+        if (!nodes.some(n => n.id === id)) {
+            nodes.push({ id, label: key, kind: 'INPUT_KEY', compound: false, helper: true, inputKey: true,
+                width: Math.max(60, key.length * 7 + 24), height: 28 });
+        }
+        return id;
+    };
+    const readers = [...agents]; // agents, then suppliers, whose input keys are drawn
+    const supplier = (node, ancestors) => {
+        if (!nodes.some(n => n.id === node.id)) {
+            nodes.push({ id: node.id, label: node.name, kind: node.kind, compound: false });
+            readers.push({ node, ancestors });
+        }
+        return node.id;
+    };
+    /** Sources of a key, from the point of view of an agent with these ancestors: [{ id, kind, label }] */
+    const sourcesOf = (key, ancestors) => {
+        if (writers.has(key)) {
+            return writers.get(key).map(id => ({ id, kind: 'DATA', label: key }));
+        }
+        if ((system.root.inputKeys ?? []).includes(key)) {
+            return [{ id: inputNode(key), kind: 'INPUT', label: key }];
+        }
+        const mapper = ancestors.find(a => a.kind === 'PARALLEL_MAPPER');
+        if (mapper?.inputKeys?.length) {
+            return mapper.inputKeys.flatMap(items => sourcesOf(items, ancestors.slice(ancestors.indexOf(mapper) + 1))
+                .map(source => ({ ...source, label: `${key} ← each ${items}` })));
+        }
+        const supervisor = ancestors.find(a => a.kind === 'SUPERVISOR');
+        if (supervisor) {
+            return [{ id: supplier(supervisor, ancestors.slice(ancestors.indexOf(supervisor) + 1)), kind: 'ARGUMENT',
+                label: key }];
+        }
+        return [{ id: inputNode(key), kind: 'INPUT', label: key }];
+    };
+
+    // system inputs and suppliers first, in the order they are first read, so they sit on top of the layout
+    const reads = [];
+    for (let i = 0; i < readers.length; i++) { // suppliers found on the way are appended, and read too
+        const { node, ancestors } = readers[i];
+        (node.inputKeys ?? []).forEach(key => sourcesOf(key, ancestors).forEach(source => reads.push({ source, reader: node })));
+    }
+    agents.forEach(({ node }) => nodes.push({ id: node.id, label: node.name, kind: node.kind, compound: false }));
+    // system inputs, then suppliers, then agents: the layout breaks cycles against this order, so sources stay on top
+    nodes.sort((a, b) => (b.inputKey ? 1 : 0) - (a.inputKey ? 1 : 0));
+    // one edge per (source, reader) pair, listing every key it carries
+    reads.filter(({ source, reader }) => source.id !== reader.id).forEach(({ source, reader }) => {
+        const id = `${source.id}->${reader.id}:${source.kind}`;
+        const existing = edges.find(e => e.id === id);
+        if (existing) {
+            existing.label += '\n' + source.label;
+        } else {
+            edges.push({ id, source: source.id, target: reader.id, kind: source.kind, label: source.label });
+        }
+    });
+    return { nodes, edges, dataFlow: true };
+}
+
 function labelWidth(label) {
     return Math.max(0, ...(label ?? '').split('\n').map(line => line.length)) * EDGE_LABEL_CHAR_WIDTH;
 }
@@ -171,6 +265,16 @@ export class QwcAgenticGraph extends observeState(LitElement) {
         .error {
             color: var(--lumo-error-text-color);
         }
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: var(--lumo-space-m);
+        }
+        .views {
+            display: inline-flex;
+            gap: var(--lumo-space-xs);
+        }
         .legend {
             display: flex;
             flex-wrap: wrap;
@@ -206,28 +310,40 @@ export class QwcAgenticGraph extends observeState(LitElement) {
 
     static properties = {
         system: { type: Object },
+        /** 'structure' (workflows as nested boxes) or 'dataflow' (agents linked by the scope keys they share) */
+        view: { type: String },
         _error: { state: true },
     };
+
+    constructor() {
+        super();
+        this.view = 'structure';
+    }
+
+    willUpdate(changed) {
+        if (changed.has('system') || changed.has('view')) {
+            this._graph = this.system ? (this.view === 'dataflow' ? toDataFlowGraph(this.system) : toGraph(this.system))
+                : undefined;
+        }
+    }
 
     render() {
         return html`
             ${this._error ? html`<div class="error">Graph failed: ${this._error}</div>` : ''}
-            ${this._renderLegend()}
+            <div class="toolbar">
+                <span class="views" role="group" aria-label="View">
+                    ${[['structure', 'Structure'], ['dataflow', 'Data flow']].map(([view, label]) => html`
+                        <vaadin-button theme="small ${this.view === view ? 'primary' : 'tertiary'}" data-view=${view}
+                                       aria-pressed=${this.view === view} @click=${() => this.view = view}>${label}</vaadin-button>`)}
+                </span>
+                ${this._renderLegend()}
+            </div>
             <div id="graph"></div>`;
     }
 
-    /** Lists the node kinds present in the system, drawn like in the graph. */
+    /** Lists the node kinds drawn in the current view, drawn like in the graph. */
     _renderLegend() {
-        const kinds = [];
-        const visit = node => {
-            if (!kinds.includes(node.kind)) {
-                kinds.push(node.kind);
-            }
-            node.children?.forEach(visit);
-        };
-        if (this.system) {
-            visit(this.system.root);
-        }
+        const kinds = [...new Set((this._graph?.nodes ?? []).filter(n => !n.helper || n.inputKey).map(n => n.kind))];
         const order = Object.keys(KIND_STYLES);
         kinds.sort((a, b) => order.indexOf(a) - order.indexOf(b));
         return html`<div class="legend">${kinds.map(kind => {
@@ -236,11 +352,12 @@ export class QwcAgenticGraph extends observeState(LitElement) {
                 <span class="swatch ${style.shape} ${style.border}"
                       style="border-color: ${style.color}; border-style: ${style.border}"></span>
                 ${KIND_LABELS[kind] ?? kind}</span>`;
-        })}</div>`;
+        })}
+        ${this.view === 'dataflow' ? html`<span class="legend-item">key: writer → reader</span>` : ''}</div>`;
     }
 
     updated(changed) {
-        if (changed.has('system')) {
+        if (changed.has('system') || changed.has('view')) {
             this._draw();
         } else if (this._cy && this._appliedTheme !== themeState.theme?.name) {
             // observeState re-renders on theme changes: restyle the canvas with the new Lumo colors
@@ -285,10 +402,10 @@ export class QwcAgenticGraph extends observeState(LitElement) {
         }
         const system = this.system;
         try {
-            const graph = toGraph(system);
+            const graph = this._graph;
             const positions = await this._elkLayout(graph);
-            if (system !== this.system) {
-                return; // another system was selected while laying out
+            if (system !== this.system || graph !== this._graph) {
+                return; // another system or view was selected while laying out
             }
             this._cy = cytoscape({
                 container: this.renderRoot.querySelector('#graph'),
@@ -392,7 +509,17 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             'elk.layered.crossingMinimization.forceNodeModelOrder': 'true',
             // unconnected siblings would otherwise be packed as separate components, sorted by id
             'elk.separateConnectedComponents': 'false',
+            // data-flow graphs have cycles (a loop reads what it wrote): reverse the edges against the agent order
+            'elk.layered.cycleBreaking.strategy': 'MODEL_ORDER',
         };
+        if (graph.dataFlow) {
+            // edges carry key labels and are drawn along the routes ELK computes, around the nodes
+            options['elk.layered.spacing.nodeNodeBetweenLayers'] = '50';
+            options['elk.spacing.nodeNode'] = '50';
+            options['elk.spacing.edgeNode'] = '20';
+            options['elk.edgeRouting'] = 'ORTHOGONAL';
+            options['elk.edgeLabels.placement'] = 'CENTER';
+        }
         const root = { id: 'root', layoutOptions: options, children: [], edges: [] };
         const byId = new Map(graph.nodes.map(n => [n.id, { node: n, elk: { id: n.id } }]));
         for (const { node, elk: elkNode } of byId.values()) {
@@ -419,7 +546,10 @@ export class QwcAgenticGraph extends observeState(LitElement) {
         for (const e of graph.edges.filter(e => e.kind !== 'BACK')) {
             const parent = byId.get(e.source).node.parent;
             const owner = parent && parent === byId.get(e.target).node.parent ? byId.get(parent).elk : root;
-            owner.edges.push({ id: e.id, sources: [e.source], targets: [e.target] });
+            owner.edges.push({ id: e.id, sources: [e.source], targets: [e.target],
+                // data-flow edges carry key labels: ELK reserves room for them
+                labels: graph.dataFlow && e.label ? [{ text: e.label, width: labelWidth(e.label),
+                    height: 12 * e.label.split('\n').length }] : undefined });
         }
         const layout = await elk.layout(root);
 
@@ -439,6 +569,14 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             (node.children ?? []).forEach(child => walk(child, x, y));
         };
         layout.children.forEach(child => walk(child, 0, 0));
+        // routes of the edges owned by the root (all data-flow edges), in absolute coordinates
+        positions.routes = {};
+        (layout.edges ?? []).forEach(edge => {
+            const section = edge.sections?.[0];
+            if (section) {
+                positions.routes[edge.id] = { start: section.startPoint, bends: section.bendPoints ?? [], end: section.endPoint };
+            }
+        });
         return positions;
     }
 
@@ -447,8 +585,9 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             ...graph.nodes.map(n => ({
                 group: 'nodes',
                 data: { id: n.id, label: n.label, kind: n.kind, parent: n.parent, helper: n.helper ?? false,
-                    parentKind: n.parentKind,
-                    width: positions[n.id]?.width, height: positions[n.id]?.height },
+                    // compound size from ELK; an input key node is sized from its label
+                    parentKind: n.parentKind, width: n.inputKey ? n.width : positions[n.id]?.width,
+                    height: n.inputKey ? n.height : positions[n.id]?.height },
                 position: n.compound ? undefined : positions[n.id],
                 classes: [n.kind.toLowerCase(), n.compound ? 'workflow' : 'leaf', n.helper ? 'helper' : '']
                         .filter(Boolean).join(' '),
@@ -456,13 +595,42 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             ...graph.edges.map(e => ({
                 group: 'edges',
                 data: { id: e.id, source: e.source, target: e.target, label: e.label ?? '' },
-                classes: e.kind.toLowerCase(),
-                style: e.kind !== 'BACK' ? undefined
+                // the curve style of a routed edge comes from a class: Cytoscape ignores it in an element's initial bypass
+                classes: e.kind.toLowerCase() + (graph.dataFlow && positions.routes[e.id]
+                    ? (positions.routes[e.id].bends.length ? ' routed' : ' routed-straight') : ''),
+                style: positions.routes[e.id] && graph.dataFlow ? this._routedEdgeStyle(positions, e)
+                        : e.kind !== 'BACK' ? undefined
                         : e.source !== e.target ? this._backEdgeStyle(graph, positions, e)
                         // a one-agent loop body: the label goes right of the self-loop curl
                         : { 'text-margin-x': labelWidth(e.label) / 2 + 30 },
             })),
         ];
+    }
+
+    /**
+     * Draws an edge along its ELK route: end points relative to the node centers, bend points as Cytoscape segments
+     * (weight along the line between the node centers, distance perpendicular to it).
+     */
+    _routedEdgeStyle(positions, edge) {
+        const route = positions.routes[edge.id];
+        const s = positions[edge.source];
+        const t = positions[edge.target];
+        const style = {
+            'source-endpoint': `${route.start.x - s.x}px ${route.start.y - s.y}px`,
+            'target-endpoint': `${route.end.x - t.x}px ${route.end.y - t.y}px`,
+        };
+        const dx = t.x - s.x;
+        const dy = t.y - s.y;
+        const length2 = dx * dx + dy * dy;
+        if (route.bends.length === 0 || length2 === 0) {
+            return style;
+        }
+        const length = Math.sqrt(length2);
+        return {
+            ...style,
+            'segment-weights': route.bends.map(b => ((b.x - s.x) * dx + (b.y - s.y) * dy) / length2).join(' '),
+            'segment-distances': route.bends.map(b => ((b.x - s.x) * -dy + (b.y - s.y) * dx) / length).join(' '),
+        };
     }
 
     /**
@@ -522,6 +690,19 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             // fan-out edges leave the fork without an arrow; joins converge on the join point
             { selector: 'edge.fork', style: { 'target-arrow-shape': 'triangle' } },
             { selector: 'edge.join', style: { 'target-arrow-shape': 'none' } },
+            { selector: 'node.input_key', style: {
+                'label': 'data(label)', 'events': 'no', 'width': 'data(width)', 'height': 'data(height)',
+                'shape': 'round-tag', 'border-width': 2, 'background-color': base, 'font-style': 'italic',
+            } },
+            { selector: 'edge.data, edge.input, edge.argument', style: {
+                'text-rotation': 'none', 'font-family': 'monospace', 'text-wrap': 'wrap',
+            } },
+            { selector: 'edge.routed', style: { 'curve-style': 'segments', 'edge-distances': 'node-position' } },
+            { selector: 'edge.routed-straight', style: { 'curve-style': 'straight' } },
+            { selector: 'edge.argument', style: {
+                'line-style': 'dashed', 'line-color': KIND_STYLES.SUPERVISOR.color, 'target-arrow-color': KIND_STYLES.SUPERVISOR.color,
+            } },
+            { selector: 'edge.input', style: { 'line-style': 'dashed' } },
             { selector: 'node.hub', style: { 'shape': 'ellipse', 'width': 18, 'height': 18 } },
             { selector: 'node.hub[parentKind = "SUPERVISOR"]', style: { 'background-color': KIND_STYLES.SUPERVISOR.color } },
             { selector: 'node.hub[parentKind = "PLANNER"]', style: { 'background-color': KIND_STYLES.PLANNER.color } },
