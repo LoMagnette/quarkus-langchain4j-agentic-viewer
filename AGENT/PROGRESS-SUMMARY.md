@@ -485,3 +485,19 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   ellipse / rhomboid in the graph, "Remote" section in the details panel. Tested on a Jandex index only (the A2A/MCP
   runtime modules are not dependencies) and in the browser through a synthetic system.
 - Phase 1 (milestone m-1) is complete.
+
+### Phase 2 backend: T2.1 to T2.6 and TASK-27/34 — done (Oct 16, 2026)
+
+- JSON-RPC (runtime-dev `AgenticViewerJsonRpcService`): `listSystems`, `getTopology`, `getInputSchema`, `startRun`,
+  `streamRun`; unknown ids are JSON-RPC errors (`DevUIJsonRPCTest` cannot read errors or nulls: raw websocket in tests).
+  `AgenticSystemRegistry` holds the systems by id. The Agentic Systems page loads over JSON-RPC.
+- Runs: `RunManager` (own daemon threads, events through one event thread, `stream` replays then follows, slow
+  subscribers never block), `CdiRunInvoker` (form JSON -> parameters with Jackson; root bean called inside a fresh
+  request context, otherwise request-scoped chat memory leaked between runs).
+- Events: sealed `ExecutionEvent` records (decision-4/5), `DevUiAgentListener` attached to every root at dev-mode startup
+  through `InternalAgent` (`RootListeners`); node ids from the parent invocation + topology (a repeated sub-agent's copies
+  share an agentId), loop iterations, mapper item index from the `<agent>_<index>` name; `ScopeStateChanged` per written
+  key; payloads bounded and plain (the Dev UI serializes a `JsonNode` as a bean).
+- Tests drive `RunManager` directly in `@QuarkusTest` (runtime-dev beans only exist in dev mode); test-only
+  `TwiceExclaimed` system in integration-tests/src/test.
+- Next: the run UI (T2.7 run form, T2.8 live highlighting, T2.9 timeline/scope/tool panels).
