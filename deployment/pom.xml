@@ -54,12 +54,6 @@
             <groupId>io.smallrye</groupId>
             <artifactId>jandex</artifactId>
         </dependency>
-        <!-- ASM for bytecode scanning -->
-        <dependency>
-            <groupId>org.ow2.asm</groupId>
-            <artifactId>asm</artifactId>
-        </dependency>
-
         <!-- Test dependencies -->
         <dependency>
             <groupId>io.quarkus</groupId>

@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A Quarkus extension that scans LangChain4j agentic code patterns at build time and generates an interactive Mermaid.js diagram in the Quarkus Dev UI. It helps developers visualize their AI agent architecture including agents, tools, workflows, and data flows.
+A Quarkus extension that scans LangChain4j agentic systems at build time and shows them in the Quarkus Dev UI as
+interactive graphs (structure and data flow, node details), with live runs to come (Phase 2). It helps developers
+understand their agents, workflows, tools and the AgenticScope keys they share.
 
 ## Build Commands
 
@@ -34,56 +36,39 @@ declarative samples in `src/main/java/.../it/samples`, patterns samples in `src/
 
 This is a standard **Quarkus extension** with four modules:
 
-- **runtime/** - Runtime artifacts deployed with the application, also in prod. Only inert model records (`AgentNode`, `ToolNode`, `DataFlow`, etc.); no beans or behaviour.
+- **runtime/** - Runtime artifacts deployed with the application, also in prod. Only inert topology records
+  (`runtime/.../topology`: `AgenticSystem`, `AgentNode`, `Guard`, `PlannerInfo`, `AiAgentDetails`, `ToolInfo`,
+  `SystemInput`, `SourceRef`, enums); no beans or behaviour.
 - **runtime-dev/** - Dev-mode-only artifact (`quarkus-langchain4j-agentic-viewer-dev`), declared via `conditionalDevDependencies` in `runtime/pom.xml`. Holds everything live: the recorder and the JSON-RPC service. Build steps that reference it must be `onlyIf = IsDevelopment.class`.
-- **deployment/** - Build-time processing, only used during compilation. Contains the `AgenticViewerProcessor` with `@BuildStep` methods and scanners.
+- **deployment/** - Build-time processing, only used during compilation: `AgenticViewerProcessor` (`@BuildStep`s),
+  the Jandex scan and the topology builder, and the Dev UI web components (`src/main/resources/dev-ui`).
 - **integration-tests/** - Test application with sample agents and tools.
 
-### Scanning Strategy
+### Build-time chain
 
-The extension uses two complementary scanning approaches:
+1. `deployment/.../scan/AgenticAnnotationScanner` reads the agentic annotations with Jandex and produces one
+   `AgentDescriptor` per agent method (`AgenticDescriptorsBuildItem`): kind, keys, sub-agents, guards, `@Output`,
+   flags, AI agent details (prompts, `@ModelName`, `@ToolBox` tools) and input JSON schemas (`InputSchemaGenerator`).
+   Resolution rules mirror langchain4j-agentic / quarkus-langchain4j-agentic. Descriptors stay deployment-only.
+2. `RootSystemDetector` nests them under root systems (`AgenticRootsBuildItem`): a root is an agent no other agent lists
+   as a sub-agent.
+3. `deployment/.../topology/TopologyBuilder` turns each root into an `AgenticSystem` (`AgenticSystemsBuildItem`). Node ids:
+   `Class#method` for the root, then `/<SubAgentSimpleClassName>` per level (`~2` for a repeated sibling); runtime
+   events will be correlated with them.
+4. Dev mode only: the systems are recorded into runtime-dev (`AgenticViewerRecorder.getSystems()`) and passed to the Dev
+   UI as the `agenticSystems` build-time data.
 
-New scanning (spec-driven, Phase 1): `deployment/.../scan/AgenticAnnotationScanner` produces one `AgentDescriptor` per agent method
-(`AgenticDescriptorsBuildItem`); `RootSystemDetector` nests them under root systems (`AgenticRootsBuildItem`);
-`deployment/.../topology/TopologyBuilder` turns those into `AgenticSystem` values of the topology model in `runtime/.../topology`
-(`AgenticSystemsBuildItem`), recorded into runtime-dev (`AgenticViewerRecorder.getSystems()`) and passed to the Dev UI as the
-`agenticSystems` build-time data. Descriptors stay deployment-only. Node ids: `Class#method` for the root, then
-`/<SubAgentSimpleClassName>` per level (`~2` for a repeated sibling). The two scanners below belong to the prototype
-Mermaid view and are retired by TASK-26.
-
-1. **Jandex (DeclarativeAgentScanner)** - Annotation-based scanning for declarative patterns:
-   - `@Agent`, `@SequenceAgent`, `@ParallelAgent`, `@ConditionalAgent`, `@LoopAgent`
-   - `@RegisterAiService`, `@Tool`, `@ToolBox`
-   - `@SystemMessage`, `@UserMessage`, `@V`, `@MemoryId`
-   - `@Output`, `@A2AClientAgent`
-
-2. **ASM (ImperativeAgentScanner)** - Bytecode scanning for imperative builder patterns:
-   - `AgenticServices.sequenceBuilder()`, `parallelBuilder()`, etc.
-   - Cannot fully analyze runtime-determined structures (lambdas, conditionals)
+Builder (`AgenticServices.*Builder()`) systems are discovered at runtime in Phase 5.
 
 ### Dev UI Integration
 
-The extension registers a Dev UI card via `CardPageBuildItem` in `AgenticViewerProcessor.registerDevUI()`. Build-time data is serialized and passed to the frontend component at `deployment/src/main/resources/dev-ui/qwc-agentic-viewer.js` (Lit + Mermaid.js). The "Agentic Systems" page (`qwc-agentic-systems.js`) lists the `agenticSystems` build-time data and shows the selected
-system with the graph component `qwc-agentic-graph.js` (Cytoscape.js + elkjs from mvnpm; `toGraph()` maps a topology to
-nodes/edges, each compound is laid out separately by ELK to keep declaration order; `highlight(nodeId, state)` for the live
-view). The JSON-RPC service (`AgenticViewerJsonRpcService`, runtime-dev) uses method names
-`quarkus-langchain4j-agentic-viewer_<method>`. Dev mode does not reload a rebuilt extension: restart it to see Dev UI changes.
-
-### Key Data Flow
-
-1. `AgenticViewerProcessor.discoverAgents()` invokes scanners → produces `AgenticGraphBuildItem`
-2. Graph is recorded at static init via `AgenticViewerRecorder` (dev mode only)
-3. Dev UI receives serialized graph as build-time data
-4. Frontend renders Mermaid diagram with nodes for agents/tools and edges for compositions/data flows
-
-### Model Records (runtime/model/)
-
-- `AgenticGraph` - Root container for all discovered entities
-- `AgentNode` - Represents an agent (type, class, method, parameters, tools)
-- `ToolNode` - Represents a tool method
-- `WorkflowComposition` - Parent-child relationships (SEQUENCE, PARALLEL, CONDITIONAL, LOOP)
-- `DataFlow` - Data passing between agents via `@V` bindings and `outputKey`
-- `ImperativePattern` - Detected imperative builder usage locations
+`AgenticViewerProcessor.registerDevUI()` registers the card with one page, "Agentic Systems" (`qwc-agentic-systems.js`),
+whose link shows the number of systems. The page lists the `agenticSystems` build-time data and shows the selected
+system with the graph component `qwc-agentic-graph.js` (Cytoscape.js + elkjs from mvnpm; `toGraph()` / `toDataFlowGraph()`
+map a topology to nodes/edges; each compound is laid out separately by ELK to keep declaration order;
+`highlight(nodeId, state)` for the live view) and the details panel `qwc-agentic-node-details.js`. The JSON-RPC service
+(`AgenticViewerJsonRpcService`, runtime-dev) uses method names `quarkus-langchain4j-agentic-viewer_<method>`.
+Dev mode does not reload a rebuilt extension: restart it to see Dev UI changes.
 
 ### Progress
 All progress made on this project is tracked in [this file](AGENT/PROGRESS-SUMMARY.md).

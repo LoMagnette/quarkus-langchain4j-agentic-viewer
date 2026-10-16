@@ -4,8 +4,6 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import dev.langchain4j.agentic.Agent;
-import dev.langchain4j.agentic.AgenticServices;
-import dev.langchain4j.agentic.UntypedAgent;
 import dev.langchain4j.agentic.declarative.SequenceAgent;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.ChatModel;
@@ -13,7 +11,7 @@ import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 
 /**
- * Fixture app: a declarative sequence of two AI agents, plus a builder sequence reusing them.
+ * Fixture app: a declarative sequence of two AI agents.
  */
 public interface StoryWorkflow {
 
@@ -37,18 +35,6 @@ public interface StoryWorkflow {
     class EntryPoint {
         @Inject
         StoryWorkflow workflow;
-    }
-
-    /**
-     * Builder sequence using the declarative agents as sub-agents.
-     */
-    class BuilderWorkflow {
-        public UntypedAgent create() {
-            return AgenticServices.sequenceBuilder()
-                    .subAgents(Writer.class, Editor.class)
-                    .outputKey("story")
-                    .build();
-        }
     }
 
     @ApplicationScoped
