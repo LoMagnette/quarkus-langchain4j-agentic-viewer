@@ -1,11 +1,11 @@
 ---
 id: TASK-26
 title: Retire the prototype Mermaid view and ASM imperative scanner
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-10-06 06:13'
-updated_date: '2026-10-16 13:26'
+updated_date: '2026-10-16 13:34'
 labels:
   - cleanup
   - dev-ui
@@ -29,7 +29,7 @@ Not in the spec task list. The prototype renders Mermaid diagrams (`qwc-agentic-
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 The Mermaid page, ImperativeAgentScanner and the prototype-only model records are removed
-- [ ] #2 Any prototype behaviour still needed is covered by a spec task
+- [x] #2 Any prototype behaviour still needed is covered by a spec task
 - [x] #3 The build and all tests pass
 <!-- AC:END -->
 
@@ -47,4 +47,12 @@ Not in the spec task list. The prototype renders Mermaid diagrams (`qwc-agentic-
 
 <!-- SECTION:NOTES:BEGIN -->
 Removed: runtime/model records (AgenticGraph, AgentNode, ToolNode, DataFlow, WorkflowComposition, ImperativePattern, ...), deployment scanner/DeclarativeAgentScanner and ImperativeAgentScanner, deployment/model/AgenticGraphBuildItem, processor steps discoverAgents / recordGraph / imperative bridge / graph serialization, the prototype build-time data (agentCount, toolCount, hasImperative, imperativeLocations, agenticGraph), the 'Agentic Diagram' Mermaid page (qwc-agentic-viewer.js), the unregistered qwc-agentic-card.js, the asm dependency, the integration-tests prototype model unit tests and the builder workflow of the StoryWorkflow fixture. runtime-dev: the recorder keeps only the systems; the JSON-RPC service now exposes getSystemCount() (keeps the runtime-dev JSON-RPC plumbing tested until T2.1). CLAUDE.md architecture rewritten for the build-time chain. Coverage of prototype behaviour: builder detection -> Phase 5 (TASK-52 CDI discovery, TASK-56 bytecode transform, TASK-57 mixed merge, TASK-66 builder samples); @RegisterAiService AI services are not agentic systems (out of scope); tools as nodes -> tools in the details panel (T1.7); data flows -> T1.8. Gap: @A2AClientAgent (scanned by the prototype) and @McpClientAgent agents have no spec task; they show as unresolved leaves if used as sub-agents. Asked the project owner whether to create one. Validation: mvn clean install (deployment 61 tests, integration-tests 31), integration-tests -Ppatterns 34 tests, all pass; Dev UI checked in headless Chromium (card lists only Agentic Systems with the count, list, graphs, data flow, no page errors).
+
+Project owner decision: remote agents get their own task, TASK-68 (@A2AClientAgent and @McpClientAgent in the topology, m-1). All prototype behaviour still needed is now covered by spec tasks.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The prototype Mermaid page, both prototype scanners, the prototype model and the asm dependency are gone; the Dev UI card has the single Agentic Systems page and runtime-dev keeps the recorded systems. Remaining prototype behaviour is covered by Phase 5 (builder discovery) and the new TASK-68 (remote A2A/MCP agents). Verified by a clean build with all tests (deployment 61, integration-tests 31, patterns profile 34) and a headless Chromium check of the Dev UI.
+<!-- SECTION:FINAL_SUMMARY:END -->
