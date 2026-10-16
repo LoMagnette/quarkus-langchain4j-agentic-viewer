@@ -2,15 +2,23 @@ package io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs;
 
 import java.lang.reflect.Type;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agentic.observability.AfterAgentToolExecution;
@@ -31,6 +39,8 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ScopeDestroy
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.TokenUsage;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ToolFinished;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ToolStarted;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgentNode;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
 
 /**
  * Turns the agentic callbacks of Dev UI runs into execution events. Attached to every root agent and inherited by its
@@ -43,6 +53,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ToolStarted;
 public class DevUiAgentListener implements AgentListener {
 
     private static final AtomicLong INVOCATIONS = new AtomicLong();
+    private static final Pattern ITEM_SUFFIX = Pattern.compile(".*_(\\d+)");
     private static final List<String> STREAM_TYPES = List.of("dev.langchain4j.service.TokenStream",
             "io.smallrye.mutiny.Multi", "java.util.concurrent.Flow$Publisher");
 
@@ -57,7 +68,46 @@ public class DevUiAgentListener implements AgentListener {
     private final Map<String, Deque<Invocation>> openInvocations = new HashMap<>();
     private final Map<String, Long> toolStarts = new ConcurrentHashMap<>();
 
-    private record Invocation(String agentId, String id, long startNanos) {
+    /** Node kinds of each system's topology, by node id. */
+    private final Map<String, Map<String, AgentNode>> nodesBySystem = new ConcurrentHashMap<>();
+
+    /**
+     * An invocation in progress, with what its children need: the loop counter of a loop, the items of a parallel
+     * mapper and the indexes already given to its children.
+     */
+    private static final class Invocation {
+        final String agentId;
+        final String id;
+        final long startNanos;
+        final String nodeId;
+        final Integer iteration;
+        final Integer itemIndex;
+        int loopCounter = -1;
+        List<Object> items;
+        final Set<Integer> takenItems = new HashSet<>();
+        /** Starts of children per class name, to tell apart a sub-agent listed several times. */
+        final Map<String, Integer> childStarts = new HashMap<>();
+
+        Invocation(String agentId, String id, String nodeId, Integer iteration, Integer itemIndex) {
+            this.agentId = agentId;
+            this.id = id;
+            this.startNanos = System.nanoTime();
+            this.nodeId = nodeId;
+            this.iteration = iteration;
+            this.itemIndex = itemIndex;
+        }
+
+        String id() {
+            return id;
+        }
+
+        String agentId() {
+            return agentId;
+        }
+
+        long startNanos() {
+            return startNanos;
+        }
     }
 
     public DevUiAgentListener(RunManager runManager) {
@@ -93,14 +143,36 @@ public class DevUiAgentListener implements AgentListener {
             return;
         }
         AgentInstance agent = request.agent();
-        String parentInvocation = openInvocation(agent.parent()).map(Invocation::id).orElse(null);
-        Invocation invocation = new Invocation(agent.agentId(), "inv-" + INVOCATIONS.incrementAndGet(), System.nanoTime());
+        Invocation parent = openInvocation(agent.parent()).orElse(null);
+        String nodeId = parent == null ? nodeId(run, agent) : childNodeId(run, parent, agent);
+        Map<String, Object> inputs = copy(request.inputs());
+        Integer iteration = parent == null ? null : parent.iteration;
+        Integer itemIndex = parent == null ? null : parent.itemIndex;
+        AgentNode parentNode = parent == null ? null : node(run, parent.nodeId);
+        if (parentNode != null && parentNode.kind() == NodeKind.LOOP) {
+            synchronized (parent) {
+                // an iteration starts with the first agent of the loop body
+                if (parentNode.children().isEmpty() || parentNode.children().get(0).id().equals(nodeId)
+                        || parent.loopCounter < 0) {
+                    parent.loopCounter++;
+                }
+                iteration = parent.loopCounter;
+            }
+        } else if (parentNode != null && parentNode.kind() == NodeKind.PARALLEL_MAPPER) {
+            itemIndex = itemIndex(parent, request.agentName(), inputs);
+        }
+        Invocation invocation = new Invocation(agent.agentId(), "inv-" + INVOCATIONS.incrementAndGet(), nodeId, iteration,
+                itemIndex);
+        AgentNode node = node(run, nodeId);
+        if (node != null && node.kind() == NodeKind.PARALLEL_MAPPER) {
+            invocation.items = items(inputs);
+        }
         threadInvocations.get().addLast(invocation);
         synchronized (openInvocations) {
             openInvocations.computeIfAbsent(agent.agentId(), a -> new ArrayDeque<>()).addLast(invocation);
         }
-        runManager.emit(run, new AgentStarted(run.id(), now(), nodeId(run, agent), invocation.id(), parentInvocation,
-                request.agentName(), null, copy(request.inputs()), isStreaming(agent)));
+        runManager.emit(run, new AgentStarted(run.id(), now(), nodeId, invocation.id(), parent == null ? null : parent.id,
+                request.agentName(), iteration, itemIndex, inputs, isStreaming(agent)));
     }
 
     @Override
@@ -145,6 +217,65 @@ public class DevUiAgentListener implements AgentListener {
         Long start = toolStarts.remove(toolKey(run, request));
         runManager.emit(run, new ToolFinished(run.id(), now(), callingInvocation(execution.agentInstance()), request.id(),
                 request.name(), execution.toolExecution().result(), start == null ? 0 : (System.nanoTime() - start) / 1_000_000));
+    }
+
+    /**
+     * The item of a parallel mapper an invocation of its sub-agent runs for: the index, in the mapper's items, of the
+     * first input value found there and not given yet (items may repeat); the next free index otherwise. Items run
+     * concurrently, so their start order says nothing.
+     */
+    private static Integer itemIndex(Invocation mapper, String agentName, Map<String, Object> inputs) {
+        synchronized (mapper) {
+            // langchain4j names the invocation of each item <agent name>_<item index>
+            Matcher suffix = ITEM_SUFFIX.matcher(agentName == null ? "" : agentName);
+            if (suffix.matches()) {
+                int index = Integer.parseInt(suffix.group(1));
+                mapper.takenItems.add(index);
+                return index;
+            }
+            List<Object> items = mapper.items == null ? List.of() : mapper.items;
+            for (Object value : inputs.values()) {
+                for (int i = 0; i < items.size(); i++) {
+                    if (!mapper.takenItems.contains(i) && Objects.equals(items.get(i), value)) {
+                        mapper.takenItems.add(i);
+                        return i;
+                    }
+                }
+            }
+            int next = 0;
+            while (mapper.takenItems.contains(next)) {
+                next++;
+            }
+            mapper.takenItems.add(next);
+            return next;
+        }
+    }
+
+    /** The items a parallel mapper iterates on: its collection input. */
+    private static List<Object> items(Map<String, Object> inputs) {
+        for (Object value : inputs.values()) {
+            if (value instanceof Collection<?> collection) {
+                return new ArrayList<>(collection);
+            }
+            if (value != null && value.getClass().isArray() && !value.getClass().getComponentType().isPrimitive()) {
+                return new ArrayList<>(Arrays.asList((Object[]) value));
+            }
+        }
+        return null;
+    }
+
+    private AgentNode node(Run run, String nodeId) {
+        Map<String, AgentNode> nodes = nodesBySystem.computeIfAbsent(run.systemId(), systemId -> {
+            Map<String, AgentNode> index = new HashMap<>();
+            runManager.system(systemId).ifPresent(system -> indexNodes(system.root(), index));
+            return index;
+        });
+        return nodes.get(nodeId);
+    }
+
+    private static void indexNodes(AgentNode node, Map<String, AgentNode> index) {
+        index.put(node.id(), node);
+        node.children().forEach(child -> indexNodes(child, index));
     }
 
     private Run runOf(AgenticScope scope) {
@@ -196,6 +327,26 @@ public class DevUiAgentListener implements AgentListener {
 
     private String callingInvocation(AgentInstance agent) {
         return openInvocation(agent).map(Invocation::id).orElse(null);
+    }
+
+    /**
+     * The topology node of a sub-agent invocation: a child of the parent invocation's node whose id ends with the
+     * sub-agent's class name (TopologyBuilder rules). When the parent lists that class several times (/X, /X~2), the
+     * k-th start under the parent invocation takes the k-th one, cycling for loops.
+     */
+    private String childNodeId(Run run, Invocation parent, AgentInstance agent) {
+        String base = parent.nodeId + "/" + simpleName(agent.type());
+        AgentNode parentNode = node(run, parent.nodeId);
+        List<String> candidates = parentNode == null ? List.of()
+                : parentNode.children().stream().map(AgentNode::id)
+                        .filter(id -> id.equals(base) || id.startsWith(base + "~")).toList();
+        if (candidates.size() <= 1) {
+            return candidates.isEmpty() ? base : candidates.get(0);
+        }
+        synchronized (parent) {
+            int start = parent.childStarts.merge(base, 1, Integer::sum) - 1;
+            return candidates.get(start % candidates.size());
+        }
     }
 
     /**

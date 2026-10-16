@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -54,7 +55,8 @@ class SampleRunEventsTest {
             "BankSupervisor", Map.of("request", BankSupervisor.Script.request()),
             "DraftReviewer", Map.of("topic", "solar panels"),
             "TripPlanner", Map.of("wish", "a city by the sea"),
-            "ResilientStoryWriter", Map.of("topic", "pirates"));
+            "ResilientStoryWriter", Map.of("topic", "pirates"),
+            "TwiceExclaimed", Map.of("text", "hello"));
 
     @Inject
     ScriptedChatModel model;
@@ -68,8 +70,11 @@ class SampleRunEventsTest {
     @BeforeAll
     static void observeRoots() throws Exception {
         File samples = new File(StoryWriter.class.getResource("StoryWriter.class").toURI()).getParentFile();
-        systems = new TopologyBuilder().build(new RootSystemDetector()
-                .detect(new AgenticAnnotationScanner().scan(Index.of(samples))));
+        systems = new ArrayList<>(new TopologyBuilder().build(new RootSystemDetector()
+                .detect(new AgenticAnnotationScanner().scan(Index.of(samples)))));
+        // test-only system (src/test) using the same sub-agent twice
+        systems.addAll(new TopologyBuilder().build(new RootSystemDetector().detect(new AgenticAnnotationScanner()
+                .scan(Index.of(TwiceExclaimed.class, TwiceExclaimed.Exclaimer.class)))));
         runManager = manager();
     }
 
@@ -100,7 +105,7 @@ class SampleRunEventsTest {
     }
 
     private static Set<String> nodeIds(AgentNode node) {
-        Set<String> ids = new java.util.HashSet<>();
+        Set<String> ids = new HashSet<>();
         ids.add(node.id());
         node.children().forEach(child -> ids.addAll(nodeIds(child)));
         return ids;
@@ -150,6 +155,71 @@ class SampleRunEventsTest {
                 .allMatch(e -> ((ToolStarted) e).invocationId() != null), "tool calls belong to the calling agent");
         assertEquals(bank.stream().filter(e -> e.getType().equals("ToolStarted")).count(),
                 bank.stream().filter(e -> e.getType().equals("ToolFinished")).count());
+    }
+
+    private static List<AgentStarted> started(List<ExecutionEvent> events) {
+        return events.stream().filter(AgentStarted.class::isInstance).map(AgentStarted.class::cast).toList();
+    }
+
+    @Test
+    void loopEventsCarryTheIteration() throws Exception {
+        String root = system("StoryCreator").id();
+        List<AgentStarted> started = started(run(runManager, "StoryCreator").events());
+
+        assertEquals(List.of("create:null", "draft:null", "polish:null", "score:0", "edit:0", "score:1", "edit:1",
+                "score:2", "edit:2"), started.stream().map(e -> e.agentName() + ":" + e.iteration()).toList());
+        assertEquals(root + "/StyleReviewLoop", started.get(3).nodeId().substring(0, started.get(3).nodeId().lastIndexOf('/')));
+        String loopInvocation = started.get(2).invocationId();
+        assertTrue(started.stream().skip(3).allMatch(e -> loopInvocation.equals(e.parentInvocationId())));
+    }
+
+    @Test
+    void parallelMapperEventsCarryTheItemIndex() throws Exception {
+        List<String> translations = List.of("bonjour", "merci", "bonne nuit"); // of "hello", "thank you", "good night"
+        String translator = system("PhraseTranslator").id() + "/Translator";
+        for (int i = 0; i < 5; i++) { // items run concurrently: repeat to vary the interleaving
+            reset();
+            List<ExecutionEvent> events = run(runManager, "PhraseTranslator").events();
+            List<AgentStarted> items = started(events).stream().filter(e -> e.nodeId().equals(translator)).toList();
+            assertEquals(3, items.size());
+            // each item invocation returns the translation of its phrase: its index gives the phrase
+            Map<String, Object> outputs = events.stream().filter(AgentFinished.class::isInstance)
+                    .map(AgentFinished.class::cast)
+                    .filter(e -> e.nodeId().equals(translator))
+                    .collect(Collectors.toMap(AgentFinished::invocationId, AgentFinished::output));
+            for (AgentStarted item : items) {
+                assertEquals(translations.get(item.itemIndex()), outputs.get(item.invocationId()), item::toString);
+            }
+            assertEquals(Set.of(0, 1, 2), items.stream().map(AgentStarted::itemIndex).collect(Collectors.toSet()));
+        }
+    }
+
+    @Test
+    void parallelBranchesMapToTheirNodes() throws Exception {
+        String root = system("ResearchGatherer").id();
+        Map<String, String> nodeOfAgent = Map.of("searchWeb", root + "/WebSearcher", "searchDatabase",
+                root + "/DatabaseSearcher", "searchArchives", root + "/ArchiveSearcher");
+        for (int i = 0; i < 5; i++) {
+            reset();
+            List<AgentStarted> started = started(run(runManager, "ResearchGatherer").events());
+            String rootInvocation = started.get(0).invocationId();
+            List<AgentStarted> branches = started.stream().skip(1).toList();
+            assertEquals(3, branches.size());
+            for (AgentStarted branch : branches) {
+                assertEquals(nodeOfAgent.get(branch.agentName()), branch.nodeId(), branch::toString);
+                assertEquals(rootInvocation, branch.parentInvocationId());
+            }
+        }
+    }
+
+    @Test
+    void sameSubAgentTwiceMapsToTwoNodes() throws Exception {
+        String root = system("TwiceExclaimed").id();
+        Run run = run(runManager, "TwiceExclaimed");
+
+        assertEquals("hello!!", run.output());
+        assertEquals(List.of(root, root + "/Exclaimer", root + "/Exclaimer~2"),
+                started(run.events()).stream().map(AgentStarted::nodeId).toList());
     }
 
     @Test

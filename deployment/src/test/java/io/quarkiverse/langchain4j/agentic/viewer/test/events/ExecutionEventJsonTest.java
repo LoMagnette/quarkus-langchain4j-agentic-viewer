@@ -47,7 +47,7 @@ class ExecutionEventJsonTest {
             new RunFailed(RUN, T, ERROR, 30),
             new ScopeCreated(RUN, T, "memory-1"),
             new ScopeDestroyed(RUN, T, "memory-1"),
-            new AgentStarted(RUN, T, NODE, "inv-2", "inv-1", "write", 0, Map.of("topic", "dragons"), false),
+            new AgentStarted(RUN, T, NODE, "inv-2", "inv-1", "write", 0, null, Map.of("topic", "dragons"), false),
             new AgentFinished(RUN, T, NODE, "inv-2", "a draft", new TokenUsage(12, 34, 46), 800),
             new AgentFailed(RUN, T, NODE, "inv-2", ERROR, 15),
             new ToolStarted(RUN, T, "inv-2", "call-1", "credit", "{\"amount\":10}"),
@@ -83,7 +83,7 @@ class ExecutionEventJsonTest {
     void agentEventsFollowAgentMonitorSemantics() throws Exception {
         JsonNode started = mapper.readTree(mapper.writeValueAsString(ONE_OF_EACH.get(5)));
         assertEquals("{\"runId\":\"run-1\",\"timestamp\":1760000000000,\"nodeId\":\"" + NODE + "\",\"invocationId\":\"inv-2\","
-                + "\"parentInvocationId\":\"inv-1\",\"agentName\":\"write\",\"iteration\":0,\"inputs\":{\"topic\":\"dragons\"},"
+                + "\"parentInvocationId\":\"inv-1\",\"agentName\":\"write\",\"iteration\":0,\"itemIndex\":null,\"inputs\":{\"topic\":\"dragons\"},"
                 + "\"streaming\":false,\"type\":\"AgentStarted\"}", started.toString());
         JsonNode finished = mapper.readTree(mapper.writeValueAsString(ONE_OF_EACH.get(6)));
         assertEquals("{\"inputTokens\":12,\"outputTokens\":34,\"totalTokens\":46}", finished.get("tokens").toString());

@@ -51,7 +51,7 @@ class RunStreamTest {
         CountDownLatch release = new CountDownLatch(1);
         RunManager manager = manager(release);
         Run run = manager.run(manager.startRun(SYSTEM, Map.of())).orElseThrow();
-        manager.emit(run, new AgentStarted(run.id(), 1, SYSTEM, "inv-1", null, "run", null, Map.of(), false));
+        manager.emit(run, new AgentStarted(run.id(), 1, SYSTEM, "inv-1", null, "run", null, null, Map.of(), false));
 
         AssertSubscriber<ExecutionEvent> subscriber = manager.stream(run.id())
                 .subscribe().withSubscriber(AssertSubscriber.create(Long.MAX_VALUE));
@@ -90,7 +90,7 @@ class RunStreamTest {
         AssertSubscriber<ExecutionEvent> fast = manager.stream(run.id())
                 .subscribe().withSubscriber(AssertSubscriber.create(Long.MAX_VALUE));
         for (int i = 0; i < 5; i++) {
-            manager.emit(run, new AgentStarted(run.id(), i, SYSTEM, "inv-" + i, null, "run", null, Map.of(), false));
+            manager.emit(run, new AgentStarted(run.id(), i, SYSTEM, "inv-" + i, null, "run", null, null, Map.of(), false));
         }
         release.countDown();
 
