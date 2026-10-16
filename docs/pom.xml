@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>io.quarkiverse.langchain4j</groupId>
+        <artifactId>quarkus-langchain4j-agentic-viewer-parent</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+    <artifactId>quarkus-langchain4j-agentic-viewer-docs</artifactId>
+    <name>Quarkus LangChain4j Agentic Viewer - Documentation</name>
+    <packaging>pom</packaging>
+
+    <dependencies>
+        <!-- built first: the config reference is generated from their config roots -->
+        <dependency>
+            <groupId>io.quarkiverse.langchain4j</groupId>
+            <artifactId>quarkus-langchain4j-agentic-viewer-deployment</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>io.quarkus</groupId>
+                <artifactId>quarkus-config-doc-maven-plugin</artifactId>
+                <version>${quarkus.version}</version>
+                <executions>
+                    <execution>
+                        <id>generate-config-doc</id>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>generate-config-doc</goal>
+                        </goals>
+                        <configuration>
+                            <targetDirectory>${project.basedir}/modules/ROOT/pages/includes/</targetDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -1,0 +1,177 @@
+= LangChain4j Agentic Viewer
+:extension-status: experimental
+
+include::./includes/attributes.adoc[opts=optional]
+
+The Agentic Viewer adds an *Agentic Systems* page to the Quarkus Dev UI. It shows the LangChain4j agentic systems of
+your application as interactive graphs (structure and data flow), and runs them with live highlighting, a timeline of
+every agent and tool call, the AgenticScope state, and dedicated views for supervisors, planners and the patterns of
+`langchain4j-agentic-patterns`.
+
+It only exists in dev mode: nothing of it is part of a production or native build.
+
+== Installation
+
+Add the extension next to `quarkus-langchain4j-agentic`:
+
+[source,xml,subs=attributes+]
+----
+<dependency>
+    <groupId>io.quarkiverse.langchain4j</groupId>
+    <artifactId>quarkus-langchain4j-agentic-viewer</artifactId>
+    <version>{project-version}</version>
+</dependency>
+----
+
+Start the application in dev mode (`mvn quarkus:dev`), open the Dev UI (`http://localhost:8080/q/dev-ui`) and click
+*Agentic Systems* on the *LangChain4j Agentic Viewer* card.
+
+== The systems of your application
+
+Every root agentic system declared with the agentic annotations (`@SequenceAgent`, `@ParallelAgent`,
+`@ParallelMapperAgent`, `@LoopAgent`, `@ConditionalAgent`, `@SupervisorAgent`, `@PlannerAgent`, `@Agent`,
+`@HumanInTheLoop`, `@A2AClientAgent`, `@McpClientAgent`...) is found at build time: a root is an agent that no other
+agent lists as a sub-agent. The page lists them with the patterns they use.
+
+image::list.png[The list of agentic systems]
+
+NOTE: Systems built programmatically with `AgenticServices.*Builder()` are not listed yet.
+
+=== Structure
+
+The structure view draws each workflow as a box containing its sub-agents, in declaration order: arrows for a
+sequence, a fork and a join for parallel branches (with the activation condition of each branch of a conditional), a
+back edge with the exit condition for a loop, and dashed candidates for a supervisor or a planner, whose sub-agents
+are only chosen at run time.
+
+image::structure.png[The structure of a system with a loop]
+
+=== Data flow
+
+The data-flow view links the agents by the AgenticScope keys they share: an edge from the agent writing a key (its
+`outputKey`) to every agent reading it (its `@V` parameters), and the inputs of the system on top.
+
+image::dataflow.png[The data flow of a supervisor]
+
+=== Details
+
+Clicking a node opens its details: description, input and output keys, flags, the exit or activation condition, and
+for an AI agent its system and user messages, model and tools.
+
+image::details.png[The details of an AI agent]
+
+== Running a system
+
+The *Run* button opens a form generated from the parameters of the root method (text, numbers, booleans, enums, and
+JSON for anything else), then runs the system in the application, exactly as your code would.
+
+[IMPORTANT]
+====
+A run executes the system for real: its models are called, and its tools run with their side effects and cost.
+Before the first run of a system in a browser session, the Dev UI lists every tool the system can reach (`@Tool`
+methods, tool providers, MCP tools, remote A2A agents) and asks for a confirmation.
+
+In dev, prefer a model that costs nothing and changes nothing: a local model, or a fake one. For example, any
+OpenAI-compatible local server, such as Ollama, works with `quarkus-langchain4j-openai`:
+
+[source,properties]
+----
+%dev.quarkus.langchain4j.openai.base-url=http://localhost:11434/v1
+%dev.quarkus.langchain4j.openai.api-key=ollama
+%dev.quarkus.langchain4j.openai.chat-model.model-name=qwen2.5:14b
+----
+
+The viewer never chooses a model: each agent uses the model your application configures for it. Tests and samples
+can also provide their own `ChatModel` bean answering scripted replies.
+====
+
+image::tools-confirmation.png[The confirmation listing the tools a run can reach]
+
+=== Live view
+
+While the run executes, the graph highlights the agents as they start and finish, with their duration and token
+usage, the iterations of loops and the items of parallel mappers. The timeline below the graph shows every
+invocation, nested by its parent, with the tool calls (click one for its arguments and result); the *Scope* tab shows
+the AgenticScope keys as agents write them.
+
+image::live.png[A supervisor run with its timeline]
+
+A supervisor shows the path it took: the sub-agents it called are linked by solid, numbered edges over the dashed
+candidates. A planner (a `@PlannerAgent` with its own `@PlannerSupplier`) is shown step by step: each decision is a
+numbered step on the graph and a row of the timeline.
+
+A `@HumanInTheLoop` step pauses the run: the Dev UI shows what the step asks and its inputs, and the answer you type
+resumes the run (the annotated method is not called in a run started from the Dev UI; anywhere else it is).
+
+image::human-in-the-loop.png[A run waiting for a human answer]
+
+Errors show the failing agent and the exception; an `@ErrorHandler` that retried or recovered is shown on the node and
+in the timeline. Past runs stay in the *Recent runs* list (20 per system by default) and can be replayed on the graph,
+also after a page reload.
+
+== Pattern views
+
+When `dev.langchain4j:langchain4j-agentic-patterns` is on the class path (there is no Quarkus extension for it: add it
+directly), the planners it provides get dedicated views. Without it, nothing of these views is loaded.
+
+Goal-oriented planner (GOAP):: The planner node shows the dependency graph of its agents by keys, with the goal key.
+The run form previews the path the planner will take for the inputs entered, using the planner's own search; during
+the run the path is highlighted, then walked step by step.
++
+image::goap.png[A goal-oriented planner with its path preview]
+
+Peer-to-peer:: The planner node shows its agents and the state keys they read and write (cycles included). During the
+run, keys light up as they are written, agents as they can activate, an invocation counter runs against the maximum,
+and the end tells why the planner stopped: exit condition, maximum invocations or stable state.
++
+image::p2p.png[A peer-to-peer run that stopped on its exit condition]
+
+Blackboard:: The agents are drawn around the blackboard (the scope). Each step shows the candidates that could fire,
+the one the conflict resolution strategy picked, and the goal status; the end tells whether the goal was reached or
+no agent could fire.
++
+image::blackboard.png[A blackboard run]
+
+== Describing a custom planner
+
+A custom planner's structure is in its code: by default the viewer draws its sub-agents as candidates. To draw what it
+does, implement `AgenticTopologyContributor` (an interface of the extension's runtime artifact) with a public
+no-argument constructor; it is found at build time and only called in dev mode:
+
+[source,java]
+----
+public class DraftReviewTopology implements AgenticTopologyContributor {
+
+    @Override
+    public Class<?> plannerAgent() {
+        return DraftReviewer.class; // the @PlannerAgent interface declaring the @PlannerSupplier
+    }
+
+    @Override
+    public TopologyContribution contribute(AgentNode plannerNode) {
+        return new TopologyContribution(
+                List.of(new ContributedNode("done", "approved or 3 drafts")),
+                List.of(new ContributedEdge("writeDraft", "review", "draft"),
+                        new ContributedEdge("review", "writeDraft", "rejected"),
+                        new ContributedEdge("review", "done", "approved")));
+    }
+}
+----
+
+Edges name sub-agents by agent name (or node id) and contributed nodes by id. The contribution replaces the
+candidates of that planner node; during a run, the step numbers go on the nodes.
+
+image::contributor.png[A custom planner drawn by its topology contributor]
+
+== Limitations
+
+* Only declarative systems are discovered; builder systems will follow.
+* Runs, human-in-the-loop answers, planner decisions and the pattern views rely on internal parts of
+  `langchain4j-agentic` and `langchain4j-agentic-patterns` (there is no public API for them yet). A version of these
+  libraries that changes them may disable some of the live information; the structure views do not depend on them.
+* Everything is dev mode only: `quarkus.langchain4j.agentic.dev-ui.enabled=false` also turns it off in dev mode.
+
+[[extension-configuration-reference]]
+== Extension Configuration Reference
+
+include::includes/quarkus-langchain4j-agentic-viewer.adoc[leveloffset=+1, opts=optional]

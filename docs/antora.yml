@@ -1,0 +1,5 @@
+name: quarkus-langchain4j-agentic-viewer
+title: LangChain4j Agentic Viewer
+version: dev
+nav:
+  - modules/ROOT/nav.adoc

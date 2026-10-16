@@ -1,0 +1,74 @@
+[.configuration-legend]
+icon:lock[title=Fixed at build time] Configuration property fixed at build time - All other configuration properties are overridable at runtime
+[.configuration-reference.searchable, cols="80,.^10,.^10"]
+|===
+
+h|[.header-title]##Configuration property##
+h|Type
+h|Default
+
+a|icon:lock[title=Fixed at build time] [[quarkus-langchain4j-agentic-viewer_quarkus-langchain4j-agentic-dev-ui-enabled]] [.property-path]##link:#quarkus-langchain4j-agentic-viewer_quarkus-langchain4j-agentic-dev-ui-enabled[`+++quarkus.langchain4j.agentic.dev-ui.enabled+++`]##
+ifdef::add-copy-button-to-config-props[]
+config_property_copy_button:+++quarkus.langchain4j.agentic.dev-ui.enabled+++[]
+endif::add-copy-button-to-config-props[]
+
+
+[.description]
+--
+Whether the Agentic Systems Dev UI is enabled in dev mode: its page and JSON-RPC service, and the listener and planner decorators it attaches to agentic systems for runs. Nothing of it is ever part of a production build.
+
+
+ifdef::add-copy-button-to-env-var[]
+Environment variable: env_var_with_copy_button:+++QUARKUS_LANGCHAIN4J_AGENTIC_DEV_UI_ENABLED+++[]
+endif::add-copy-button-to-env-var[]
+ifndef::add-copy-button-to-env-var[]
+Environment variable: `+++QUARKUS_LANGCHAIN4J_AGENTIC_DEV_UI_ENABLED+++`
+endif::add-copy-button-to-env-var[]
+--
+|boolean
+|`+++true+++`
+
+a| [[quarkus-langchain4j-agentic-viewer_quarkus-langchain4j-agentic-dev-ui-history-size]] [.property-path]##link:#quarkus-langchain4j-agentic-viewer_quarkus-langchain4j-agentic-dev-ui-history-size[`+++quarkus.langchain4j.agentic.dev-ui.history-size+++`]##
+ifdef::add-copy-button-to-config-props[]
+config_property_copy_button:+++quarkus.langchain4j.agentic.dev-ui.history-size+++[]
+endif::add-copy-button-to-config-props[]
+
+
+[.description]
+--
+Runs kept per agentic system in the run history of the Dev UI; when a run starts beyond this number, the oldest ended runs are dropped.
+
+
+ifdef::add-copy-button-to-env-var[]
+Environment variable: env_var_with_copy_button:+++QUARKUS_LANGCHAIN4J_AGENTIC_DEV_UI_HISTORY_SIZE+++[]
+endif::add-copy-button-to-env-var[]
+ifndef::add-copy-button-to-env-var[]
+Environment variable: `+++QUARKUS_LANGCHAIN4J_AGENTIC_DEV_UI_HISTORY_SIZE+++`
+endif::add-copy-button-to-env-var[]
+--
+|int
+|`+++20+++`
+
+a| [[quarkus-langchain4j-agentic-viewer_quarkus-langchain4j-agentic-dev-ui-max-payload-size]] [.property-path]##link:#quarkus-langchain4j-agentic-viewer_quarkus-langchain4j-agentic-dev-ui-max-payload-size[`+++quarkus.langchain4j.agentic.dev-ui.max-payload-size+++`]##
+ifdef::add-copy-button-to-config-props[]
+config_property_copy_button:+++quarkus.langchain4j.agentic.dev-ui.max-payload-size+++[]
+endif::add-copy-button-to-config-props[]
+
+
+[.description]
+--
+Maximum size, in characters of JSON, of a value carried by a run event (inputs, outputs, scope values, tool arguments and results); a longer value is truncated, and marked as such in the Dev UI.
+
+
+ifdef::add-copy-button-to-env-var[]
+Environment variable: env_var_with_copy_button:+++QUARKUS_LANGCHAIN4J_AGENTIC_DEV_UI_MAX_PAYLOAD_SIZE+++[]
+endif::add-copy-button-to-env-var[]
+ifndef::add-copy-button-to-env-var[]
+Environment variable: `+++QUARKUS_LANGCHAIN4J_AGENTIC_DEV_UI_MAX_PAYLOAD_SIZE+++`
+endif::add-copy-button-to-env-var[]
+--
+|int
+|`+++2048+++`
+
+|===
+
