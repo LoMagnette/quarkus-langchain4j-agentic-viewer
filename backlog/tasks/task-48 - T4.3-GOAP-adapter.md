@@ -1,9 +1,11 @@
 ---
 id: TASK-48
 title: 'T4.3: GOAP adapter'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-10-06 06:15'
+updated_date: '2026-10-16 20:07'
 labels:
   - patterns
   - goap

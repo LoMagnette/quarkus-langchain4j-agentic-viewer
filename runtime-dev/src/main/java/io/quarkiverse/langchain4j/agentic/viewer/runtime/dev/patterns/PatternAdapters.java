@@ -9,6 +9,7 @@ import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 
 import dev.langchain4j.agentic.planner.Planner;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.PatternType;
 
 /**
  * The pattern adapters of the application: none without langchain4j-agentic-patterns.
@@ -34,6 +35,13 @@ public class PatternAdapters {
 
     public List<PatternAdapter> adapters() {
         return adapters;
+    }
+
+    /**
+     * @return the adapter of a pattern, empty without it (e.g. without langchain4j-agentic-patterns)
+     */
+    public Optional<PatternAdapter> adapterFor(PatternType pattern) {
+        return adapters.stream().filter(adapter -> adapter.patternType() == pattern).findFirst();
     }
 
     /**

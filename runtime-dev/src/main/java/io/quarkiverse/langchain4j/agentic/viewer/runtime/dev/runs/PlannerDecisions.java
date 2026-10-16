@@ -81,11 +81,17 @@ final class PlannerDecisions {
         private final PatternAdapter adapter;
         private volatile AgentInstance plannerAgent;
         private volatile List<AgentInstance> subagents = List.of();
+        private volatile boolean decided;
 
         ReportingPlanner(Planner delegate, DevUiAgentListener listener) {
             this.delegate = delegate;
             this.listener = listener;
-            this.adapter = listener.patternAdapters().adapterFor(delegate).orElse(null);
+            this.adapter = listener.patternAdapters().adapterFor(planner()).orElse(null);
+        }
+
+        /** The planner itself: reporting planners stack when several Dev UI listeners are attached (tests). */
+        Planner planner() {
+            return delegate instanceof ReportingPlanner reporting ? reporting.planner() : delegate;
         }
 
         @Override
@@ -110,7 +116,10 @@ final class PlannerDecisions {
             Run run = listener.run(scope);
             if (run != null && action != null && plannerAgent != null) {
                 try {
-                    listener.plannerDecision(run, plannerAgent, subagents, action, patternExtras(action, scope));
+                    boolean first = !decided;
+                    decided = true;
+                    PatternAdapter.Insight insight = insight(action, scope, first);
+                    listener.plannerDecision(run, plannerAgent, subagents, action, insight.extras(), insight.path());
                 } catch (RuntimeException e) {
                     LOG.debugf(e, "Agentic viewer: cannot report a decision of %s", plannerAgent.name());
                 }
@@ -119,18 +128,19 @@ final class PlannerDecisions {
         }
 
         /** The pattern of the planner and what its adapter tells about the decision; a failing adapter tells nothing. */
-        private Map<String, Object> patternExtras(Action action, AgenticScope scope) {
+        private PatternAdapter.Insight insight(Action action, AgenticScope scope, boolean first) {
             if (adapter == null) {
-                return Map.of();
+                return PatternAdapter.Insight.NONE;
             }
-            Map<String, Object> extras = new HashMap<>();
+            PatternAdapter.Insight insight = PatternAdapter.Insight.NONE;
             try {
-                extras.putAll(adapter.decisionExtras(delegate, action, scope));
+                insight = adapter.insight(new PatternAdapter.Decision(planner(), action, scope, plannerAgent, subagents, first));
             } catch (RuntimeException e) {
                 LOG.debugf(e, "Agentic viewer: the %s adapter failed on a decision", adapter.patternType());
             }
+            Map<String, Object> extras = new HashMap<>(insight == null ? Map.of() : insight.extras());
             extras.put("pattern", adapter.patternType().name());
-            return extras;
+            return new PatternAdapter.Insight(extras, insight == null ? null : insight.path());
         }
 
         @Override

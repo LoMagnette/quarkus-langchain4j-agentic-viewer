@@ -12,12 +12,15 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ExecutionEvent;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.PatternAdapters;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunManager;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunSummary;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunTrace;
 import io.smallrye.mutiny.Multi;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.spi.TopologyContribution;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgentNode;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.PatternType;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemInput;
 
 /**
@@ -29,11 +32,43 @@ public class AgenticViewerJsonRpcService {
 
     private final AgenticSystemRegistry registry;
     private final RunManager runManager;
+    private final PatternAdapters patternAdapters;
+
+    public AgenticViewerJsonRpcService(AgenticSystemRegistry registry, RunManager runManager) {
+        this(registry, runManager, PatternAdapters.none());
+    }
 
     @Inject
-    public AgenticViewerJsonRpcService(AgenticSystemRegistry registry, RunManager runManager) {
+    public AgenticViewerJsonRpcService(AgenticSystemRegistry registry, RunManager runManager,
+            PatternAdapters patternAdapters) {
         this.registry = registry;
         this.runManager = runManager;
+        this.patternAdapters = patternAdapters;
+    }
+
+    /**
+     * The path each goal-oriented (GOAP) planner of a system would take for the given keys, before running it: the
+     * same search as the planner's, on the topology.
+     *
+     * @param inputKeys keys known when the planner starts (the inputs filled in the run form)
+     * @return the child node ids in call order, by GOAP planner node id; empty without langchain4j-agentic-patterns or
+     *         GOAP planner, an empty list when no path reaches the goal
+     */
+    public Map<String, List<String>> previewGoalPath(String systemId, List<String> inputKeys) {
+        AgenticSystem system = system(systemId);
+        Map<String, List<String>> paths = new LinkedHashMap<>();
+        patternAdapters.adapterFor(PatternType.GOAP).ifPresent(adapter -> goalPlanners(system.root()).forEach(node -> paths
+                .put(node.id(), adapter.previewPath(node, inputKeys == null ? List.of() : inputKeys).orElse(List.of()))));
+        return paths;
+    }
+
+    private static List<AgentNode> goalPlanners(AgentNode node) {
+        List<AgentNode> planners = new ArrayList<>();
+        if (node.plannerInfo() != null && node.plannerInfo().patternType() == PatternType.GOAP) {
+            planners.add(node);
+        }
+        node.children().forEach(child -> planners.addAll(goalPlanners(child)));
+        return planners;
     }
 
     /**

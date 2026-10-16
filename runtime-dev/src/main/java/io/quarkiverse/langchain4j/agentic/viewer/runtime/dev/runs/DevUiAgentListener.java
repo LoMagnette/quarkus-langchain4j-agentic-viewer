@@ -362,7 +362,7 @@ public class DevUiAgentListener implements AgentListener {
      * planner's sub-agents (declaration order, as in the topology).
      */
     void plannerDecision(Run run, AgentInstance plannerAgent, List<AgentInstance> subagents, Action action,
-            Map<String, Object> patternExtras) {
+            Map<String, Object> patternExtras, List<AgentInstance> plannedPath) {
         if (action.getClass().getSimpleName().equals("NoOpAction")) {
             return; // nothing decided
         }
@@ -371,18 +371,13 @@ public class DevUiAgentListener implements AgentListener {
         AgentNode node = node(run, nodeId);
         List<String> selected = new ArrayList<>();
         if (action instanceof Action.AgentCallAction call) {
-            for (AgentInstance chosen : call.agentsToCall()) {
-                int index = -1;
-                for (int i = 0; i < subagents.size() && index < 0; i++) {
-                    if (subagents.get(i).agentId().equals(chosen.agentId())) {
-                        index = i;
-                    }
-                }
-                selected.add(node != null && index >= 0 && index < node.children().size() ? node.children().get(index).id()
-                        : nodeId + "/" + simpleName(chosen.type()));
-            }
+            call.agentsToCall().forEach(chosen -> selected.add(childNodeId(nodeId, node, subagents, chosen)));
         }
         Map<String, Object> extras = new HashMap<>(patternExtras == null ? Map.of() : patternExtras);
+        if (plannedPath != null) {
+            // the agents the planner intends to call, e.g. the path a GOAP planner computed
+            extras.put("path", plannedPath.stream().map(agent -> childNodeId(nodeId, node, subagents, agent)).toList());
+        }
         extras.put("action", action.isSuspended() ? "suspend"
                 : action instanceof Action.AgentCallAction ? "call"
                         : action.getClass().getSimpleName().equals("DoneWithResultAction") ? "doneWithResult" : "done");
@@ -391,6 +386,20 @@ public class DevUiAgentListener implements AgentListener {
         }
         runManager.emit(run, new PlannerDecision(run.id(), now(), nodeId, invocation == null ? null : invocation.id(),
                 selected, action.isDone(), extras));
+    }
+
+    /** The node of a planner's sub-agent: the child at its position among the planner's sub-agents. */
+    private static String childNodeId(String plannerNodeId, AgentNode plannerNode, List<AgentInstance> subagents,
+            AgentInstance agent) {
+        int index = -1;
+        for (int i = 0; i < subagents.size() && index < 0; i++) {
+            if (subagents.get(i).agentId().equals(agent.agentId())) {
+                index = i;
+            }
+        }
+        return plannerNode != null && index >= 0 && index < plannerNode.children().size()
+                ? plannerNode.children().get(index).id()
+                : plannerNodeId + "/" + simpleName(agent.type());
     }
 
     /**

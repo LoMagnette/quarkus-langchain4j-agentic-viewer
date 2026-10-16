@@ -53,6 +53,8 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
         beans.findValues("providerType").forEach(type -> classes.add(type.toString()));
         assertTrue(classes.stream().anyMatch(type -> type.contains("PatternAdapters")), () -> "registry bean in " + classes);
         assertTrue(classes.stream().noneMatch(type -> type.matches(".*(Goap|P2P|Blackboard)Adapter.*")), classes::toString);
+        assertEquals(0, executeJsonRPCMethod("previewGoalPath", Map.of("systemId", ROOT, "inputKeys", List.of("topic")))
+                .size(), "no goal path preview without the module");
         assertTrue(config.getLogRecords().stream().noneMatch(record -> record.getLoggerName().contains(".patterns")
                 || String.valueOf(record.getThrown()).contains("NoClassDefFoundError")), "no pattern class loading issue");
     }

@@ -30,6 +30,7 @@ export const KIND_LABELS = {
     MCP_CLIENT_AGENT: 'MCP client agent',
     INPUT_KEY: 'System input',
     CONTRIBUTED: 'Planner state',
+    GOAL: 'Goal key',
 };
 
 /**
@@ -52,6 +53,7 @@ export const KIND_STYLES = {
     PLANNER: { shape: 'round-rectangle', color: '#d946ef', border: 'solid', width: 3 },
     INPUT_KEY: { shape: 'round-tag', color: '#94a3b8', border: 'dashed' },
     CONTRIBUTED: { shape: 'round-rectangle', color: '#d946ef', border: 'dotted' },
+    GOAL: { shape: 'round-tag', color: '#d946ef', border: 'double' },
 };
 
 /** Separates a topology node id from the role of a helper node drawn for it (never used in topology ids). */
@@ -84,6 +86,39 @@ export function toGraph(system) {
         return id;
     };
 
+    /**
+     * A goal-oriented (GOAP) planner chains its sub-agents by keys towards its goal (its output key): an edge per key
+     * from the sub-agent writing it to each sub-agent reading it, keys no sub-agent writes as inputs, the goal as a node
+     * fed by its writer.
+     */
+    const goalGraph = node => {
+        const keyNode = key => {
+            const id = node.id + HELPER_SEPARATOR + 'key' + HELPER_SEPARATOR + key;
+            if (!nodes.some(n => n.id === id)) {
+                nodes.push({ id, label: key, kind: 'INPUT_KEY', parent: node.id, compound: false, helper: true, inputKey: true,
+                    width: Math.max(60, key.length * 7 + 24), height: 28 });
+            }
+            return id;
+        };
+        const writers = new Map();
+        node.children.forEach(child => child.outputKey && writers.set(child.outputKey,
+            [...(writers.get(child.outputKey) ?? []), child.id]));
+        // input keys first: the layout keeps the model order, so they sit above the agents reading them
+        node.children.forEach(child => (child.inputKeys ?? []).filter(key => !writers.has(key)).forEach(key => keyNode(key)));
+        node.children.forEach(child => visit(child, node.id));
+        node.children.forEach(child => (child.inputKeys ?? []).forEach(key => {
+            const sources = (writers.get(key) ?? []).filter(id => id !== child.id);
+            sources.length ? sources.forEach(source => edge(source, child.id, 'DEPENDS', key))
+                : edge(keyNode(key), child.id, 'DEPENDS');
+        }));
+        if (node.outputKey) {
+            const goal = node.id + HELPER_SEPARATOR + 'goal';
+            nodes.push({ id: goal, label: `goal: ${node.outputKey}`, kind: 'GOAL', parent: node.id, compound: false,
+                width: Math.max(80, node.outputKey.length * 7 + 60), height: 30 });
+            (writers.get(node.outputKey) ?? []).forEach(writer => edge(writer, goal, 'DEPENDS'));
+        }
+    };
+
     const visit = (node, parent) => {
         const compound = node.children?.length > 0;
         nodes.push({
@@ -94,7 +129,8 @@ export function toGraph(system) {
             compound,
             // extra layout room: a loop draws its back-edge and label on the right, conditional guards label the fan-out
             paddingRight: compound && node.kind === 'LOOP' ? BACK_EDGE_GAP + labelWidth(loopLabel(node.guard)) + 12 : undefined,
-            layerSpacing: compound && (node.kind === 'CONDITIONAL' || system.contributions?.[node.id]) ? 70 : undefined,
+            layerSpacing: compound && (node.kind === 'CONDITIONAL' || system.contributions?.[node.id]
+                || node.plannerInfo?.patternType === 'GOAP') ? 70 : undefined,
         });
         if (!compound) {
             return;
@@ -135,6 +171,10 @@ export function toGraph(system) {
                     contribution.nodes?.forEach(extra => nodes.push({ id: extra.id, label: extra.label, kind: 'CONTRIBUTED',
                         parent: node.id, compound: false, width: Math.max(70, extra.label.length * 7 + 24), height: 30 }));
                     contribution.edges?.forEach(extra => edge(extra.source, extra.target, 'CONTRIBUTED', extra.label ?? undefined));
+                    break;
+                }
+                if (node.plannerInfo?.patternType === 'GOAP') {
+                    goalGraph(node);
                     break;
                 }
                 // sub-agents are chosen at runtime: candidates of a hub, with no order between them
@@ -457,7 +497,7 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             this._cy.on('tap', event => {
                 // helpers and the nodes of a topology contributor are not agents: nothing to show
                 const node = event.target !== this._cy && event.target.isNode?.() && !event.target.data('helper')
-                    && !event.target.hasClass('contributed') ? event.target : null;
+                    && !event.target.hasClass('contributed') && !event.target.hasClass('goal') ? event.target : null;
                 if (event.target === this._cy || node) {
                     this.dispatchEvent(new CustomEvent('node-selected', {
                         detail: { nodeId: node?.id() ?? null }, bubbles: true, composed: true,
@@ -733,9 +773,9 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             ...graph.nodes.map(n => ({
                 group: 'nodes',
                 data: { id: n.id, label: n.label, kind: n.kind, parent: n.parent, helper: n.helper ?? false,
-                    // compound size from ELK; an input key node is sized from its label
-                    parentKind: n.parentKind, width: n.inputKey ? n.width : positions[n.id]?.width,
-                    height: n.inputKey ? n.height : positions[n.id]?.height },
+                    // a node sized from its label (input key, goal) keeps its size; compounds get theirs from ELK
+                    parentKind: n.parentKind, width: n.width ?? positions[n.id]?.width,
+                    height: n.height ?? positions[n.id]?.height },
                 position: n.compound ? undefined : positions[n.id],
                 classes: [n.kind.toLowerCase(), n.compound ? 'workflow' : 'leaf', n.helper ? 'helper' : '']
                         .filter(Boolean).join(' '),
@@ -838,11 +878,15 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             // fan-out edges leave the fork without an arrow; joins converge on the join point
             { selector: 'edge.fork', style: { 'target-arrow-shape': 'triangle' } },
             { selector: 'edge.join', style: { 'target-arrow-shape': 'none' } },
+            // the goal key of a goal-oriented planner
+            { selector: 'node.goal', style: {
+                'width': 'data(width)', 'height': 'data(height)', 'font-weight': 'bold', 'background-color': base,
+            } },
             { selector: 'node.input_key', style: {
                 'label': 'data(label)', 'events': 'no', 'width': 'data(width)', 'height': 'data(height)',
                 'shape': 'round-tag', 'border-width': 2, 'background-color': base, 'font-style': 'italic',
             } },
-            { selector: 'edge.data, edge.input, edge.argument', style: {
+            { selector: 'edge.data, edge.input, edge.argument, edge.depends', style: {
                 'text-rotation': 'none', 'font-family': 'monospace', 'text-wrap': 'wrap',
             } },
             { selector: 'edge.routed', style: { 'curve-style': 'segments', 'edge-distances': 'node-position' } },
