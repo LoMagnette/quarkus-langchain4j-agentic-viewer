@@ -2,14 +2,11 @@ package io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import org.jboss.logging.Logger;
 
@@ -36,14 +33,12 @@ import dev.langchain4j.agentic.workflow.HumanInTheLoop;
  * is replaced in its workflow by an executor whose invoker, in a Dev UI run, waits for the answer given in the Dev UI
  * instead of calling the method; anywhere else it calls the method as before.
  * <p>
- * Internal API (the sub-agent lists of {@code AbstractServiceBuilder} and {@code PlannerBasedInvocationHandler}),
- * isolated here: if it changes, steps are left as they are and Dev UI runs call the annotated methods.
+ * Internal API (the sub-agent lists of {@code AbstractServiceBuilder} and {@code PlannerBasedInvocationHandler},
+ * {@link AgentTrees}), isolated here: if it changes, steps are left as they are and Dev UI runs call the annotated methods.
  */
 final class HumanInTheLoopSteps {
 
     private static final Logger LOG = Logger.getLogger(HumanInTheLoopSteps.class);
-    private static final String HANDLER = "dev.langchain4j.agentic.internal.PlannerBasedInvocationHandler";
-    private static final String SERVICE_BUILDER = "dev.langchain4j.agentic.internal.AbstractServiceBuilder";
 
     private HumanInTheLoopSteps() {
     }
@@ -55,7 +50,11 @@ final class HumanInTheLoopSteps {
      */
     static int intercept(Object root, DevUiAgentListener listener) {
         try {
-            return visit(root, listener, Collections.newSetFromMap(new IdentityHashMap<>()));
+            int intercepted = 0;
+            for (Object handler : AgentTrees.handlers(root)) {
+                intercepted += interceptSteps(handler, listener);
+            }
+            return intercepted;
         } catch (ReflectiveOperationException | RuntimeException e) {
             LOG.warnf(e, "Agentic viewer: cannot intercept the human-in-the-loop steps of %s, Dev UI runs will call them",
                     root.getClass().getName());
@@ -64,77 +63,24 @@ final class HumanInTheLoopSteps {
     }
 
     @SuppressWarnings("unchecked")
-    private static int visit(Object agent, DevUiAgentListener listener, Set<Object> seen) throws ReflectiveOperationException {
-        Object handler = handlerOf(agent);
-        if (handler == null || !seen.add(handler)) {
-            return 0;
-        }
+    private static int interceptSteps(Object handler, DevUiAgentListener listener) throws ReflectiveOperationException {
         // per-scope copies of a workflow take its builder's list; root calls use the workflow's own copy
-        Object service = field(handler.getClass(), "service").get(handler);
-        List<Object> serviceAgents = (List<Object>) field(Class.forName(SERVICE_BUILDER, false, handler.getClass()
-                .getClassLoader()), "subagents").get(service);
+        List<Object> serviceAgents = AgentTrees.serviceSubagents(handler);
         Map<Object, Object> replaced = new IdentityHashMap<>();
-        int intercepted = 0;
         for (int i = 0; i < serviceAgents.size(); i++) {
-            Object subagent = serviceAgents.get(i);
-            if (subagent instanceof AgentExecutor executor && executor.agent() instanceof HumanInTheLoop step) {
+            if (serviceAgents.get(i) instanceof AgentExecutor executor && executor.agent() instanceof HumanInTheLoop step) {
                 AgentExecutor wrapped = new AgentExecutor(new DevUiStep(executor.agentInvoker(), step, listener), step);
                 serviceAgents.set(i, wrapped);
                 replaced.put(executor, wrapped);
-                intercepted++;
-            } else if (subagent instanceof AgentExecutor executor) {
-                intercepted += visit(executor.agent(), listener, seen);
             }
         }
         if (!replaced.isEmpty()) {
-            Field own = field(handler.getClass(), "subagents");
+            Field own = AgentTrees.field(handler.getClass(), "subagents");
             List<Object> agents = new ArrayList<>((List<Object>) own.get(handler));
             agents.replaceAll(subagent -> replaced.getOrDefault(subagent, subagent));
             own.set(handler, List.copyOf(agents));
         }
-        return intercepted;
-    }
-
-    /** The planner-based handler running a workflow agent: a JDK proxy's handler, or the delegate of a Quarkus agent. */
-    private static Object handlerOf(Object agent) throws ReflectiveOperationException {
-        if (agent == null) {
-            return null;
-        }
-        if (isHandler(agent)) {
-            return agent;
-        }
-        if (Proxy.isProxyClass(agent.getClass())) {
-            Object handler = Proxy.getInvocationHandler(agent);
-            return isHandler(handler) ? handler : null;
-        }
-        // AbstractQuarkusAgent keeps the agent built by langchain4j in its "agent" field
-        for (Class<?> type = agent.getClass(); type != null && type != Object.class; type = type.getSuperclass()) {
-            for (Field field : type.getDeclaredFields()) {
-                if (field.getName().equals("agent") && InternalAgent.class.isAssignableFrom(field.getType())) {
-                    field.setAccessible(true);
-                    Object delegate = field.get(agent);
-                    return delegate == agent ? null : handlerOf(delegate);
-                }
-            }
-        }
-        return null;
-    }
-
-    private static boolean isHandler(Object object) {
-        return object.getClass().getName().equals(HANDLER);
-    }
-
-    private static Field field(Class<?> type, String name) throws NoSuchFieldException {
-        for (Class<?> c = type; c != null; c = c.getSuperclass()) {
-            try {
-                Field field = c.getDeclaredField(name);
-                field.setAccessible(true);
-                return field;
-            } catch (NoSuchFieldException e) {
-                // look in the superclass
-            }
-        }
-        throw new NoSuchFieldException(type.getName() + "." + name);
+        return replaced.size();
     }
 
     /**

@@ -541,3 +541,13 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   numbers ("1", "2, 4"), live and on replay (`LiveRun.calls`, `graph.setPath`, `takenPath()` for checks).
 - The graph keeps the run overlay (node states, node info, path edges) and re-applies it after a redraw: switching
   views or themes no longer drops the live highlighting.
+
+### T3.2 planner decisions — done (Oct 16, 2026)
+
+- `PlannerDecisions` wraps every non-built-in planner (supervisor, `@PlannerSupplier`, GOAP / P2P / blackboard) of each
+  root's tree in a delegating planner: each Action (call, done, done with result, suspend; no-ops skipped) becomes a
+  `PlannerDecision` of the Dev UI run (planner node and invocation, chosen node ids by position among the planner's
+  sub-agents, done flag, extras `action` / `result`). Built-in workflows report none.
+- Verified: BankSupervisor exchange, withdraw, credit, done with result; DraftReviewer 2 rounds then done; GOAP, P2P
+  and blackboard exact sequences (patterns profile); sample outputs unchanged. `AgentTrees` now shared with the HITL steps.
+- Next: T3.3 generic planner live view from these events.

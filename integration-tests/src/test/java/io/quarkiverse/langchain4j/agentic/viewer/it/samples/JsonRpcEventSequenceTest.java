@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import jakarta.inject.Inject;
 
@@ -26,6 +27,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerJsonRp
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentFinished;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentStarted;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ExecutionEvent;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.PlannerDecision;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ScopeStateChanged;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ToolFinished;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ToolStarted;
@@ -90,6 +92,7 @@ class JsonRpcEventSequenceTest {
             case AgentStarted e -> e.nodeId();
             case AgentFinished e -> e.nodeId();
             case ScopeStateChanged e -> e.nodeId();
+            case PlannerDecision e -> e.nodeId();
             default -> null;
         };
         String where = node == null ? "" : " " + (node.equals(root) ? "/" : node.substring(root.length()));
@@ -98,6 +101,8 @@ class JsonRpcEventSequenceTest {
             case ScopeStateChanged e -> " " + e.key();
             case ToolStarted e -> " " + e.toolName();
             case ToolFinished e -> " " + e.toolName();
+            case PlannerDecision e -> " " + e.extras().get("action")
+                    + e.selectedNodeIds().stream().map(id -> " " + id.substring(id.lastIndexOf('/') + 1)).collect(Collectors.joining());
             default -> "";
         };
         return event.getType() + where + detail;
@@ -165,11 +170,13 @@ class JsonRpcEventSequenceTest {
         List<String> keys = List.of("amountInUSD", "withdrawn", "credited");
         List<String> expected = new ArrayList<>(List.of("RunStarted", "ScopeCreated", "AgentStarted /"));
         for (int i = 0; i < 3; i++) {
-            expected.addAll(List.of("AgentStarted /" + agents.get(i), "ToolStarted " + tools.get(i),
+            expected.addAll(List.of("PlannerDecision / call " + agents.get(i),
+                    "AgentStarted /" + agents.get(i), "ToolStarted " + tools.get(i),
                     "ToolFinished " + tools.get(i), "AgentFinished /" + agents.get(i),
                     "ScopeStateChanged /" + agents.get(i) + " " + keys.get(i)));
         }
-        expected.addAll(List.of("AgentFinished /", "ScopeStateChanged / result", "ScopeDestroyed", "RunFinished"));
+        expected.addAll(List.of("PlannerDecision / doneWithResult", "AgentFinished /", "ScopeStateChanged / result",
+                "ScopeDestroyed", "RunFinished"));
         assertEquals(expected, lines("BankSupervisor", run("BankSupervisor", Map.of("request", BankSupervisor.Script.request()))));
     }
 

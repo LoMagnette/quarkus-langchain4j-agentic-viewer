@@ -27,6 +27,7 @@ import dev.langchain4j.agentic.observability.AgentListener;
 import dev.langchain4j.agentic.observability.AgentRequest;
 import dev.langchain4j.agentic.observability.AgentResponse;
 import dev.langchain4j.agentic.observability.BeforeAgentToolExecution;
+import dev.langchain4j.agentic.planner.Action;
 import dev.langchain4j.agentic.planner.AgentInstance;
 import dev.langchain4j.agentic.scope.AgenticScope;
 import dev.langchain4j.model.chat.response.ChatResponse;
@@ -36,6 +37,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentStarted
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AwaitingHumanInput;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ErrorHandled;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ErrorInfo;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.PlannerDecision;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ScopeCreated;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ScopeDestroyed;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ScopeStateChanged;
@@ -337,6 +339,42 @@ public class DevUiAgentListener implements AgentListener {
      */
     Run run(AgenticScope scope) {
         return runOf(scope);
+    }
+
+    /**
+     * Reports what a planner of a run decided ({@link PlannerDecisions}): on the thread running the planner's workflow,
+     * whose invocation is open. The agents chosen map to the workflow node's children by their position among the
+     * planner's sub-agents (declaration order, as in the topology).
+     */
+    void plannerDecision(Run run, AgentInstance plannerAgent, List<AgentInstance> subagents, Action action) {
+        if (action.getClass().getSimpleName().equals("NoOpAction")) {
+            return; // nothing decided
+        }
+        Invocation invocation = openInvocation(plannerAgent).orElse(null);
+        String nodeId = invocation == null ? nodeId(run, plannerAgent) : invocation.nodeId;
+        AgentNode node = node(run, nodeId);
+        List<String> selected = new ArrayList<>();
+        if (action instanceof Action.AgentCallAction call) {
+            for (AgentInstance chosen : call.agentsToCall()) {
+                int index = -1;
+                for (int i = 0; i < subagents.size() && index < 0; i++) {
+                    if (subagents.get(i).agentId().equals(chosen.agentId())) {
+                        index = i;
+                    }
+                }
+                selected.add(node != null && index >= 0 && index < node.children().size() ? node.children().get(index).id()
+                        : nodeId + "/" + simpleName(chosen.type()));
+            }
+        }
+        Map<String, Object> extras = new HashMap<>();
+        extras.put("action", action.isSuspended() ? "suspend"
+                : action instanceof Action.AgentCallAction ? "call"
+                        : action.getClass().getSimpleName().equals("DoneWithResultAction") ? "doneWithResult" : "done");
+        if (action.getClass().getSimpleName().equals("DoneWithResultAction") && action.result() != null) {
+            extras.put("result", action.result());
+        }
+        runManager.emit(run, new PlannerDecision(run.id(), now(), nodeId, invocation == null ? null : invocation.id(),
+                selected, action.isDone(), extras));
     }
 
     /**

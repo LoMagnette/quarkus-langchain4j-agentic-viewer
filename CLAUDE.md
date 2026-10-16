@@ -90,6 +90,10 @@ see `integration-tests/.../samples/SampleRunsTest`).
 listener by `RootListeners.attach`) swaps each step's invoker, through internal langchain4j API, for one that emits
 `AwaitingHumanInput` and blocks until `provideHumanInput` (or cancel). Outside Dev UI runs the method runs as usual.
 Tests that attach a `DevUiAgentListener` and run TripPlanner must answer (`HumanInputAnswers.answerInTheDevUi`).
+Planner decisions: `runs/PlannerDecisions` (also installed by `RootListeners.attach`) replaces each workflow's
+`plannerSupplier` (reflection on a final field) so supervisors, `@PlannerSupplier` and pattern planners are wrapped in a
+delegating planner that emits `PlannerDecision` per Action; built-in workflow planners (sequence, loop, parallel,
+mapper, conditional) are left alone. `runs/AgentTrees` holds the shared walk of langchain4j's internal agent tree.
 
 ### Dev UI Integration
 
