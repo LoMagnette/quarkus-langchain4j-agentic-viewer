@@ -27,6 +27,9 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
  * @param branchGuards activation condition of each conditional branch, keyed by sub-agent class name; a sub-agent
  *        without one is absent (langchain4j then leaves it out of the conditional)
  * @param outputMethod {@code Class#method} of the {@code @Output} method of a workflow, null when none
+ * @param optional whether the agent is optional ({@code @Agent(optional)})
+ * @param async whether the agent runs asynchronously ({@code @Agent(async)}, {@code @HumanInTheLoop(async)})
+ * @param aiDetails prompts, model and tools of an AI_AGENT, null otherwise
  */
 public record AgentDescriptor(
         String id,
@@ -42,7 +45,10 @@ public record AgentDescriptor(
         String plannerSupplier,
         Guard loopGuard,
         Map<String, Guard> branchGuards,
-        String outputMethod) {
+        String outputMethod,
+        boolean optional,
+        boolean async,
+        AiAgentDetails aiDetails) {
 
     public AgentDescriptor {
         inputKeys = inputKeys == null ? List.of() : List.copyOf(inputKeys);

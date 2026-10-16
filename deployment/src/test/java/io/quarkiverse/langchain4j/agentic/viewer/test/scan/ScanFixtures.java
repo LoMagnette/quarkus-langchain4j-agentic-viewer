@@ -5,6 +5,7 @@ import java.util.List;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.agentic.Agent;
 import dev.langchain4j.agentic.declarative.ActivationCondition;
 import dev.langchain4j.agentic.declarative.ConditionalAgent;
@@ -26,10 +27,15 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.service.SystemMessage;
+import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.V;
+import io.quarkiverse.langchain4j.ModelName;
+import io.quarkiverse.langchain4j.ToolBox;
 
 /**
- * One agentic system per workflow, supervisor, planner and human-in-the-loop annotation, valid for quarkus-langchain4j-agentic so it also builds as an app.
+ * One agentic system per workflow, supervisor, planner and human-in-the-loop annotation, and an AI agent using every
+ * detail the scanner reads, valid for quarkus-langchain4j-agentic so it also builds as an app.
  */
 public interface ScanFixtures {
 
@@ -190,6 +196,39 @@ public interface ScanFixtures {
         String write(@V("topic") String topic);
     }
 
+    // ---- AI agent with prompts, model, tools and flags ----
+
+    @SystemMessage(fromResource = "prompts/cashier-system.txt")
+    interface Cashier {
+        @Agent(name = "cashier", description = "Pays out cash", outputKey = "cash", optional = true, async = true)
+        @UserMessage(value = { "Pay {{amount}} EUR", "to {{customer}}" }, delimiter = " ")
+        @ModelName("fast")
+        @ToolBox(Ledger.class)
+        String pay(@V("amount") double amount, @V("customer") String customer);
+    }
+
+    class AuditTools {
+        @Tool("Records an audit entry")
+        public void audit(String entry) {
+        }
+    }
+
+    @ApplicationScoped
+    class Ledger extends AuditTools {
+        @Tool(name = "balance_of", value = { "Reads the balance", "of a customer" })
+        public double balance(String customer) {
+            return 0;
+        }
+
+        @Tool
+        public String debit(String customer, double amount) {
+            return "ok";
+        }
+
+        public void notATool() {
+        }
+    }
+
     // ---- app plumbing ----
 
     /**
@@ -215,6 +254,13 @@ public interface ScanFixtures {
         DraftPlanner draftPlanner;
         @Inject
         ApprovedStory approvedStory;
+        @Inject
+        Cashier cashier;
+    }
+
+    @ApplicationScoped
+    @ModelName("fast")
+    class FastChatModel extends FixtureChatModel {
     }
 
     @ApplicationScoped

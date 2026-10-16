@@ -1,6 +1,7 @@
 package io.quarkiverse.langchain4j.agentic.viewer.test.scan;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -15,10 +16,18 @@ import org.junit.jupiter.api.Test;
 
 import dev.langchain4j.agentic.declarative.ActivationCondition;
 import dev.langchain4j.agentic.declarative.ConditionalAgent;
+import dev.langchain4j.agentic.declarative.HumanInTheLoop;
+import dev.langchain4j.agentic.declarative.ToolProviderSupplier;
+import dev.langchain4j.agentic.declarative.ToolsSupplier;
 import dev.langchain4j.service.MemoryId;
+import dev.langchain4j.service.SystemMessage;
+import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.V;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentDescriptor;
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AiAgentDetails;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotationScanner;
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.ToolDescriptor;
+import io.quarkiverse.langchain4j.mcp.runtime.McpToolBox;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.Guard;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
 
@@ -45,7 +54,42 @@ class AgenticAnnotationScannerTest {
         }
     }
 
+    /** Not part of the app fixtures: tools only known at runtime, method-level system message over the class one. */
+    @SystemMessage("Class-level, overridden")
+    interface Exchange {
+        @dev.langchain4j.agentic.Agent(outputKey = "usd")
+        @SystemMessage({ "You convert money.", "Be exact." })
+        @McpToolBox({ "rates", "fees" })
+        String convert(@V("amount") double amount);
+
+        @ToolsSupplier
+        static Object tools() {
+            return new Object();
+        }
+
+        @ToolProviderSupplier
+        static Object toolProvider() {
+            return null;
+        }
+    }
+
+    /** Not part of the app fixtures: bare AI agent, and MCP tools from every client. */
+    interface Bare {
+        @dev.langchain4j.agentic.Agent
+        @McpToolBox
+        String reply(@V("question") String question);
+    }
+
+    /** Not part of the app fixtures: asynchronous human in the loop. */
+    interface AsyncApproval {
+        @HumanInTheLoop(outputKey = "approval", async = true)
+        static String ask(@V("draft") String draft) {
+            return "yes";
+        }
+    }
+
     private static final String P = ScanFixtures.class.getName() + "$";
+    private static final String T = AgenticAnnotationScannerTest.class.getName() + "$";
     private static Map<String, AgentDescriptor> byId;
 
     @BeforeAll
@@ -56,7 +100,8 @@ class AgenticAnnotationScannerTest {
                 ScanFixtures.Scorer.class, ScanFixtures.Editor.class, ScanFixtures.Repeater.class, ScanFixtures.Router.class,
                 ScanFixtures.Expert.class, ScanFixtures.Generalist.class, ScanFixtures.Shouter.class, ScanFixtures.Bank.class, ScanFixtures.Teller.class,
                 ScanFixtures.DraftPlanner.class, ScanFixtures.Approval.class, ScanFixtures.ApprovedStory.class,
-                WithMemory.class, Triage.class);
+                ScanFixtures.Cashier.class, ScanFixtures.Ledger.class, ScanFixtures.AuditTools.class,
+                WithMemory.class, Triage.class, Exchange.class, Bare.class, AsyncApproval.class);
         List<AgentDescriptor> descriptors = new AgenticAnnotationScanner().scan(index);
         byId = descriptors.stream().collect(Collectors.toMap(AgentDescriptor::id, Function.identity()));
         assertEquals(descriptors.stream().map(AgentDescriptor::id).sorted().toList(),
@@ -211,7 +256,55 @@ class AgenticAnnotationScannerTest {
     }
 
     @Test
+    void aiAgentDetails() {
+        AgentDescriptor cashier = get("Cashier", "pay");
+        assertEquals(NodeKind.AI_AGENT, cashier.kind());
+        assertEquals("cashier", cashier.name());
+        assertEquals("Pays out cash", cashier.description());
+        assertTrue(cashier.optional());
+        assertTrue(cashier.async());
+        AiAgentDetails details = cashier.aiDetails();
+        assertEquals("You are a careful cashier.\nNever pay more than asked.\n", details.systemMessage(),
+                "class-level @SystemMessage read from its resource");
+        assertEquals("Pay {{amount}} EUR to {{customer}}", details.userMessage(), "lines joined with the delimiter");
+        assertEquals("fast", details.modelName());
+        assertEquals(List.of(
+                new ToolDescriptor("balance_of", P + "Ledger", "balance", "Reads the balance\nof a customer"),
+                new ToolDescriptor("debit", P + "Ledger", "debit", null),
+                new ToolDescriptor("audit", P + "AuditTools", "audit", "Records an audit entry")),
+                details.tools(), "by method name, inherited tools last; notATool skipped");
+        assertEquals(List.of(), details.runtimeToolSources());
+    }
+
+    @Test
+    void runtimeToolSourcesAndMethodSystemMessage() {
+        AiAgentDetails details = byId.get(T + "Exchange#convert").aiDetails();
+        assertEquals("You convert money.\nBe exact.", details.systemMessage(), "method wins, default delimiter");
+        assertNull(details.userMessage());
+        assertNull(details.modelName(), "default model");
+        assertEquals(List.of(), details.tools());
+        assertEquals(List.of(T + "Exchange#tools", T + "Exchange#toolProvider", "mcp:rates", "mcp:fees"),
+                details.runtimeToolSources());
+
+        AgentDescriptor bare = byId.get(T + "Bare#reply");
+        assertEquals(List.of("mcp:*"), bare.aiDetails().runtimeToolSources());
+        assertNull(bare.aiDetails().systemMessage());
+        assertFalse(bare.optional());
+        assertFalse(bare.async());
+    }
+
+    @Test
+    void flagsAndDetailsOutsideAiAgents() {
+        AgentDescriptor approval = byId.get(T + "AsyncApproval#ask");
+        assertTrue(approval.async(), "@HumanInTheLoop(async)");
+        assertNull(approval.aiDetails());
+        assertNull(get("Shouter", "shout").aiDetails(), "non-AI agent");
+        assertNull(get("StoryFlow", "write").aiDetails(), "workflow");
+        assertFalse(get("StoryFlow", "write").async());
+    }
+
+    @Test
     void onlyAgentMethods() {
-        assertEquals(23, byId.size(), byId.keySet()::toString);
+        assertEquals(27, byId.size(), byId.keySet()::toString);
     }
 }

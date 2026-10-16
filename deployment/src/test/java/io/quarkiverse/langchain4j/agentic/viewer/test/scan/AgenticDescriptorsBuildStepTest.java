@@ -9,12 +9,14 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentDescriptor;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticDescriptorsBuildItem;
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AiAgentDetails;
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.ToolDescriptor;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.test.QuarkusUnitTest;
 
 /**
  * In a real application build, the extension produces a descriptor for every agentic annotation of the fixtures,
- * including supervisor, planner and human-in-the-loop agents, loop and conditional guards and {@code @Output}.
+ * including supervisor, planner and human-in-the-loop agents, loop and conditional guards, {@code @Output} and the details of an AI agent.
  */
 public class AgenticDescriptorsBuildStepTest {
 
@@ -23,7 +25,8 @@ public class AgenticDescriptorsBuildStepTest {
 
     @RegisterExtension
     static final QuarkusUnitTest config = new QuarkusUnitTest()
-            .withApplicationRoot(jar -> jar.addClasses(ScanFixtures.class))
+            .withApplicationRoot(jar -> jar.addClasses(ScanFixtures.class)
+                    .addAsResource("prompts/cashier-system.txt"))
             .addBuildChainCustomizer(builder -> builder.addBuildStep(context -> {
                 String summary = String.join("\n", context.consume(AgenticDescriptorsBuildItem.class).getDescriptors().stream()
                         .map(d -> d.id().substring(d.id().lastIndexOf('$') + 1) + " " + d.kind() + " out=" + d.outputKey()
@@ -49,6 +52,14 @@ public class AgenticDescriptorsBuildStepTest {
         if (d.outputMethod() != null) {
             guards += " output=" + d.outputMethod().substring(d.outputMethod().lastIndexOf('#') + 1);
         }
+        if (d.optional() || d.async()) {
+            guards += " optional=" + d.optional() + " async=" + d.async();
+        }
+        if (d.aiDetails() != null && d.aiDetails().modelName() != null) {
+            AiAgentDetails ai = d.aiDetails();
+            guards += " model=" + ai.modelName() + " tools=" + ai.tools().stream().map(ToolDescriptor::name).toList()
+                    + " system=" + ai.systemMessage().lines().findFirst().orElse("") + " user=" + ai.userMessage();
+        }
         return guards;
     }
 
@@ -59,6 +70,8 @@ public class AgenticDescriptorsBuildStepTest {
                 "ApprovedStory#write SEQUENCE out=approval in=[topic] sub=[Writer, Approval]",
                 "Bank#transact SUPERVISOR out=result in=[request] sub=[Teller]",
                 "Batch#translateAll PARALLEL_MAPPER out=translations in=[items] sub=[Translator]",
+                "Cashier#pay AI_AGENT out=cash in=[amount, customer] sub=[] optional=true async=true model=fast"
+                        + " tools=[balance_of, debit, audit] system=You are a careful cashier. user=Pay {{amount}} EUR to {{customer}}",
                 "DbSearch#searchDb AI_AGENT out=db in=[topic] sub=[]",
                 "DraftPlanner#plan PLANNER out=draft in=[topic] sub=[Writer]",
                 "Editor#edit AI_AGENT out=draft in=[draft] sub=[]",

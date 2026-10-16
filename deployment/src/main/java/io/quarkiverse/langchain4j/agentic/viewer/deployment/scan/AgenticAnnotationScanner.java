@@ -1,6 +1,10 @@
 package io.quarkiverse.langchain4j.agentic.viewer.deployment.scan;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.lang.reflect.Modifier;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -24,7 +28,8 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
 /**
  * Finds the agent methods of the application in the Jandex index and describes them: {@code @Agent}, the workflow
  * annotations, {@code @SupervisorAgent}, {@code @PlannerAgent} and {@code @HumanInTheLoop}, with the guards
- * ({@code @ExitCondition}, {@code @ActivationCondition}) and {@code @Output} method of workflows.
+ * ({@code @ExitCondition}, {@code @ActivationCondition}) and {@code @Output} method of workflows, and the prompts,
+ * model and tools of AI agents.
  * Agents declared by the langchain4j libraries themselves are skipped.
  */
 public class AgenticAnnotationScanner {
@@ -44,6 +49,16 @@ public class AgenticAnnotationScanner {
     static final DotName ACTIVATION_CONDITION = DotName
             .createSimple("dev.langchain4j.agentic.declarative.ActivationCondition");
     static final DotName OUTPUT = DotName.createSimple("dev.langchain4j.agentic.declarative.Output");
+
+    static final DotName SYSTEM_MESSAGE = DotName.createSimple("dev.langchain4j.service.SystemMessage");
+    static final DotName USER_MESSAGE = DotName.createSimple("dev.langchain4j.service.UserMessage");
+    static final DotName TOOL = DotName.createSimple("dev.langchain4j.agent.tool.Tool");
+    static final DotName TOOLS_SUPPLIER = DotName.createSimple("dev.langchain4j.agentic.declarative.ToolsSupplier");
+    static final DotName TOOL_PROVIDER_SUPPLIER = DotName
+            .createSimple("dev.langchain4j.agentic.declarative.ToolProviderSupplier");
+    static final DotName MODEL_NAME = DotName.createSimple("io.quarkiverse.langchain4j.ModelName");
+    static final DotName TOOL_BOX = DotName.createSimple("io.quarkiverse.langchain4j.ToolBox");
+    static final DotName MCP_TOOL_BOX = DotName.createSimple("io.quarkiverse.langchain4j.mcp.runtime.McpToolBox");
 
     /** {@code @LoopAgent.maxIterations()} default. */
     private static final int DEFAULT_MAX_ITERATIONS = 10;
@@ -71,11 +86,12 @@ public class AgenticAnnotationScanner {
     public List<AgentDescriptor> scan(IndexView index) {
         List<AgentDescriptor> descriptors = new ArrayList<>();
         for (AnnotationInstance annotation : index.getAnnotations(AGENT)) {
-            agentMethod(annotation).ifPresent(method -> descriptors.add(describe(method, annotation, agentKind(method))));
+            agentMethod(annotation)
+                    .ifPresent(method -> descriptors.add(describe(index, method, annotation, agentKind(method))));
         }
         WORKFLOW_ANNOTATIONS.forEach((annotationName, kind) -> {
             for (AnnotationInstance annotation : index.getAnnotations(annotationName)) {
-                agentMethod(annotation).ifPresent(method -> descriptors.add(describe(method, annotation, kind)));
+                agentMethod(annotation).ifPresent(method -> descriptors.add(describe(index, method, annotation, kind)));
             }
         });
         descriptors.sort(Comparator.comparing(AgentDescriptor::id));
@@ -102,7 +118,8 @@ public class AgenticAnnotationScanner {
                 : NodeKind.NON_AI_AGENT;
     }
 
-    private static AgentDescriptor describe(MethodInfo method, AnnotationInstance annotation, NodeKind kind) {
+    private static AgentDescriptor describe(IndexView index, MethodInfo method, AnnotationInstance annotation,
+            NodeKind kind) {
         String declaringClass = method.declaringClass().name().toString();
         String name = nonBlank(stringValue(annotation, "name"));
         String description = nonBlank(stringValue(annotation, "description"));
@@ -123,7 +140,109 @@ public class AgenticAnnotationScanner {
                 kind == NodeKind.PLANNER ? methodRef(annotatedMethod(method.declaringClass(), PLANNER_SUPPLIER)) : null,
                 kind == NodeKind.LOOP ? loopGuard(method.declaringClass(), annotation) : null,
                 kind == NodeKind.CONDITIONAL ? branchGuards(method.declaringClass(), annotation) : null,
-                isWorkflow(kind) ? methodRef(annotatedMethod(method.declaringClass(), OUTPUT)) : null);
+                isWorkflow(kind) ? methodRef(annotatedMethod(method.declaringClass(), OUTPUT)) : null,
+                booleanValue(annotation, "optional"),
+                booleanValue(annotation, "async"),
+                kind == NodeKind.AI_AGENT ? aiDetails(index, method) : null);
+    }
+
+    /**
+     * Same sources as quarkus-langchain4j-agentic: {@code @ModelName} and {@code @ToolBox} on the agent method, tool
+     * suppliers declared next to it.
+     */
+    private static AiAgentDetails aiDetails(IndexView index, MethodInfo method) {
+        AnnotationInstance systemMessage = method.declaredAnnotation(SYSTEM_MESSAGE);
+        if (systemMessage == null) {
+            systemMessage = method.declaringClass().declaredAnnotation(SYSTEM_MESSAGE);
+        }
+        AnnotationInstance modelName = method.declaredAnnotation(MODEL_NAME);
+        return new AiAgentDetails(
+                template(systemMessage),
+                template(method.declaredAnnotation(USER_MESSAGE)),
+                modelName == null ? null : nonBlank(modelName.value().asString()),
+                tools(index, method),
+                runtimeToolSources(method));
+    }
+
+    private static List<ToolDescriptor> tools(IndexView index, MethodInfo method) {
+        List<ToolDescriptor> tools = new ArrayList<>();
+        AnnotationInstance toolBox = method.declaredAnnotation(TOOL_BOX);
+        if (toolBox == null || toolBox.value() == null) {
+            return tools;
+        }
+        for (Type toolClass : toolBox.value().asClassArray()) {
+            // a tool class is a bean: its @Tool methods may be inherited
+            for (ClassInfo type = index.getClassByName(toolClass.name()); type != null; type = superClass(index, type)) {
+                for (MethodInfo toolMethod : type.methods()) {
+                    AnnotationInstance tool = toolMethod.declaredAnnotation(TOOL);
+                    if (tool != null) {
+                        String name = nonBlank(stringValue(tool, "name"));
+                        AnnotationValue description = tool.value();
+                        tools.add(new ToolDescriptor(
+                                name != null ? name : toolMethod.name(),
+                                type.name().toString(),
+                                toolMethod.name(),
+                                description == null ? null : nonBlank(String.join("\n", description.asStringArray()))));
+                    }
+                }
+            }
+        }
+        return tools;
+    }
+
+    private static ClassInfo superClass(IndexView index, ClassInfo type) {
+        return type.superName() == null ? null : index.getClassByName(type.superName());
+    }
+
+    private static List<String> runtimeToolSources(MethodInfo method) {
+        List<String> sources = new ArrayList<>();
+        for (DotName supplier : List.of(TOOLS_SUPPLIER, TOOL_PROVIDER_SUPPLIER)) {
+            String ref = methodRef(annotatedMethod(method.declaringClass(), supplier));
+            if (ref != null) {
+                sources.add(ref);
+            }
+        }
+        AnnotationInstance mcpToolBox = method.declaredAnnotation(MCP_TOOL_BOX);
+        if (mcpToolBox != null) {
+            AnnotationValue clients = mcpToolBox.value();
+            if (clients == null || clients.asStringArray().length == 0) {
+                sources.add("mcp:*"); // every configured MCP client
+            } else {
+                for (String client : clients.asStringArray()) {
+                    sources.add("mcp:" + client);
+                }
+            }
+        }
+        return sources;
+    }
+
+    /**
+     * The prompt template of a {@code @SystemMessage} or {@code @UserMessage}: its value lines joined with its
+     * delimiter, or the content of its {@code fromResource} classpath resource.
+     */
+    private static String template(AnnotationInstance message) {
+        if (message == null) {
+            return null;
+        }
+        String resource = nonBlank(stringValue(message, "fromResource"));
+        if (resource != null) {
+            return readResource(resource);
+        }
+        AnnotationValue value = message.value();
+        if (value == null) {
+            return null;
+        }
+        String delimiter = stringValue(message, "delimiter");
+        return nonBlank(String.join(delimiter != null ? delimiter : "\n", value.asStringArray()));
+    }
+
+    private static String readResource(String resource) {
+        String path = resource.startsWith("/") ? resource.substring(1) : resource;
+        try (InputStream in = Thread.currentThread().getContextClassLoader().getResourceAsStream(path)) {
+            return in == null ? null : new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Cannot read prompt resource " + resource, e);
+        }
     }
 
     private static boolean isWorkflow(NodeKind kind) {
@@ -232,6 +351,11 @@ public class AgenticAnnotationScanner {
     private static String stringValue(AnnotationInstance annotation, String name) {
         AnnotationValue value = annotation.value(name);
         return value == null ? null : value.asString();
+    }
+
+    private static boolean booleanValue(AnnotationInstance annotation, String name) {
+        AnnotationValue value = annotation.value(name);
+        return value != null && value.asBoolean();
     }
 
     private static String nonBlank(String value) {
