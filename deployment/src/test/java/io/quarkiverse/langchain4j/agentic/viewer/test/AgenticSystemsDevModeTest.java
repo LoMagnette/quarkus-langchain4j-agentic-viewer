@@ -7,6 +7,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -14,11 +15,13 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Predicate;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.quarkus.devui.tests.DevUIBuildTimeDataTest;
 import io.quarkus.devui.tests.DevUIJsonRPCTest;
@@ -81,6 +84,25 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
         assertEquals(36, runId.asText().length(), runId::toString);
     }
 
+    /**
+     * The fixture run fails (the fixture app has no model provider, so the agent bean cannot be created): enough to see
+     * the replay of the events and the end of the run over the Dev UI websocket. Streamed items arrive as
+     * SubscriptionMessage results; the client learns the end from RunFinished / RunFailed.
+     */
+    @Test
+    void streamRunReplaysTheRun() throws Exception {
+        String runId = executeJsonRPCMethod("startRun", Map.of("systemId", ROOT, "inputs", Map.of("topic", "dragons")))
+                .asText();
+
+        List<JsonNode> events = rawJsonRpcStream("quarkus-langchain4j-agentic-viewer_streamRun",
+                "{\"runId\":\"" + runId + "\"}",
+                event -> List.of("RunFinished", "RunFailed").contains(event.path("type").asText()));
+
+        assertEquals(List.of("RunStarted", "RunFailed"), events.stream().map(e -> e.path("type").asText()).toList());
+        assertTrue(events.stream().allMatch(e -> runId.equals(e.path("runId").asText())));
+        assertEquals(Map.of("topic", "dragons").toString(), toMap(events.get(0).path("inputs")).toString());
+    }
+
     @Test
     void unknownSystemIdIsAnError() throws Exception {
         String startRun = rawJsonRpc("quarkus-langchain4j-agentic-viewer_startRun",
@@ -92,6 +114,63 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
                     "{\"systemId\":\"com.example.Nope#run\"}");
             assertTrue(response.contains("\"error\"") && response.contains("Unknown agentic system: com.example.Nope#run"),
                     method + ": " + response);
+        }
+    }
+
+    private static Map<String, Object> toMap(JsonNode node) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        node.fields().forEachRemaining(field -> map.put(field.getKey(), field.getValue().asText()));
+        return map;
+    }
+
+    /**
+     * Subscribes to a streaming JSON-RPC method over the Dev UI websocket and collects the streamed objects until one
+     * matches {@code last}.
+     */
+    private List<JsonNode> rawJsonRpcStream(String method, String params, Predicate<JsonNode> last)
+            throws Exception {
+        int id = (int) (Math.random() * Integer.MAX_VALUE);
+        ObjectMapper mapper = new ObjectMapper();
+        List<JsonNode> items = new CopyOnWriteArrayList<>();
+        CompletableFuture<Void> done = new CompletableFuture<>();
+        WebSocket socket = HttpClient.newHttpClient().newWebSocketBuilder()
+                .buildAsync(URI.create(uri.toString().replaceFirst("^http", "ws")), new WebSocket.Listener() {
+                    private final StringBuilder text = new StringBuilder();
+
+                    @Override
+                    public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean lastPart) {
+                        text.append(data);
+                        if (lastPart) {
+                            try {
+                                JsonNode message = mapper.readTree(text.toString());
+                                JsonNode result = message.path("result");
+                                if (message.path("id").asInt() == id
+                                        && "SubscriptionMessage".equals(result.path("messageType").asText())) {
+                                    items.add(result.path("object"));
+                                    if (last.test(result.path("object"))) {
+                                        done.complete(null);
+                                    }
+                                }
+                            } catch (Exception e) {
+                                done.completeExceptionally(e);
+                            }
+                            text.setLength(0);
+                        }
+                        webSocket.request(1);
+                        return null;
+                    }
+                }).get(10, TimeUnit.SECONDS);
+        try {
+            socket.sendText("{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"method\":\"" + method + "\",\"params\":" + params
+                    + "}", true).get(10, TimeUnit.SECONDS);
+            try {
+                done.get(10, TimeUnit.SECONDS);
+            } catch (TimeoutException e) {
+                throw new AssertionError("stream did not end, received: " + items, e);
+            }
+            return items;
+        } finally {
+            socket.abort();
         }
     }
 

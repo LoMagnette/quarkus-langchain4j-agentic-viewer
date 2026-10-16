@@ -26,6 +26,8 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.RunFailed;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.RunFinished;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.RunStarted;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
+import io.smallrye.mutiny.Multi;
+import io.smallrye.mutiny.infrastructure.Infrastructure;
 
 /**
  * Starts runs of agentic systems on its own worker threads and reports their lifecycle as events.
@@ -123,6 +125,25 @@ public class RunManager {
 
     public Optional<Run> run(String runId) {
         return Optional.ofNullable(runId).map(runs::get);
+    }
+
+    /**
+     * The events of a run: those emitted so far, then the live ones; completes when the run ends. A subscriber joining
+     * after the end gets the whole run. Set up on the event thread, like the delivery of events, so nothing is missed
+     * or repeated; each subscriber receives on a worker thread, so a slow one never holds the event thread.
+     *
+     * @throws IllegalArgumentException (as a failure of the stream) for an unknown run
+     */
+    public Multi<ExecutionEvent> stream(String runId) {
+        Optional<Run> found = run(runId);
+        if (found.isEmpty()) {
+            return Multi.createFrom().failure(new IllegalArgumentException("Unknown run: " + runId));
+        }
+        Run run = found.get();
+        return Multi.createFrom().<ExecutionEvent> emitter(emitter -> {
+            emitter.onTermination(() -> dispatcher.execute(() -> run.unsubscribe(emitter)));
+            dispatcher.execute(() -> run.subscribe(emitter));
+        }).emitOn(Infrastructure.getDefaultWorkerPool());
     }
 
     /**

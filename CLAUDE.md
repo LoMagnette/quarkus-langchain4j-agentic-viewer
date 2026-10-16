@@ -66,6 +66,9 @@ Builder (`AgenticServices.*Builder()`) systems are discovered at runtime in Phas
 `runs/RunManager` starts a run on its own daemon threads (`startRun` returns the run id at once) and emits the
 `events/ExecutionEvent` records; `runs/CdiRunInvoker` converts the form JSON to the root method parameters (Jackson) and
 calls the root CDI bean inside a fresh request context (request-scoped chat memory must not leak between runs).
+Events are delivered by one event thread (callbacks only queue them); `streamRun` replays a run then follows it
+(`RunManager.stream`). Over the Dev UI websocket a stream sends a `Void` ack, then one `SubscriptionMessage` per event and
+no completion message: the client stops at `RunFinished` / `RunFailed`.
 runtime-dev beans only exist in dev mode: tests build `RunManager` directly (`new RunManager(lookup, new CdiRunInvoker())`,
 see `integration-tests/.../samples/SampleRunsTest`).
 

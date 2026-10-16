@@ -11,7 +11,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ExecutionEvent;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunManager;
+import io.smallrye.mutiny.Multi;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemInput;
 
@@ -72,6 +74,13 @@ public class AgenticViewerJsonRpcService {
      */
     public String startRun(String systemId, Map<String, Object> inputs) {
         return runManager.startRun(systemId, inputs);
+    }
+
+    /**
+     * Streams the events of a run: those already emitted, then the live ones; completes when the run ends (T2.5).
+     */
+    public Multi<ExecutionEvent> streamRun(String runId) {
+        return runManager.stream(runId);
     }
 
     private AgenticSystem system(String systemId) {
