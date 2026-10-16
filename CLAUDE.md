@@ -85,6 +85,9 @@ map a topology to nodes/edges; each compound is laid out separately by ELK to ke
 `highlight(nodeId, state)` for the live view) and the details panel `qwc-agentic-node-details.js`. JSON-RPC method
 names are `quarkus-langchain4j-agentic-viewer_<method>`. `DevUIJsonRPCTest` only reads successful results: test error
 answers over a raw websocket (see `AgenticSystemsDevModeTest`).
+Runs are started from the system view (Run button): `qwc-agentic-run-panel.js` (form `qwc-agentic-run-form.js`, tools
+confirmation, live view driving the graph's `highlight` / `setNodeInfo`). Never pass the Dev UI `JsonRpc` proxy through a
+Lit binding (lit-html probes `_$litDirective$` and the proxy answers every property): pass a plain adapter object.
 Dev mode does not reload a rebuilt extension: restart it to see Dev UI changes.
 
 ### Progress
