@@ -110,7 +110,11 @@ their planner class is present (`AgenticViewerProcessor.patternAdapters`, names 
 `GoalOrientedSearchGraph`: `previewGoalPath`, `extras.path` on the first decision). A GOAP planner node is drawn as its
 key dependency graph (`goalGraph` in `toGraph`). A P2P planner node is a bipartite agent/key graph (`peerGraph`, laid out left to right
 with ELK graph wrapping); `P2PAdapter` reads the private maximum and exit condition by reflection to tell the
-termination reason (`extras.termination`).
+termination reason (`extras.termination`). A blackboard planner node is a central board read and written by its agents
+(`boardGraph`); `BlackboardAdapter` reads the private activators, strategy, goal predicate and maximum by reflection
+to tell each step's candidates (`extras.candidates`), the strategy, the goal status and the termination. These
+adapters stand in for upstream U3 (planner decision callbacks): langchain4j upgrades may break their reflection, in
+which case only those extras disappear.
 
 ### Dev UI Integration
 

@@ -599,3 +599,12 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   ran, as P2PPlanner), the planner shows "invocations n/max" then "stopped: <reason>" (exit condition met, maximum
   invocations reached, stable state); the timeline's Done row gives the reason.
 - `PatternAdapter.Insight` now carries named agent lists (GOAP `path`, P2P `ready`) mapped to node ids.
+
+### T4.5 blackboard adapter — done (Oct 16, 2026), without upstream U3
+
+- Static: a central blackboard node (with the goal key) read and written by the agents (key labels on the edges).
+- Per step: the candidates that could fire (activators via reflection, plus the picked one), the strategy
+  (declaration order / custom (class) / built-in), invocations against the maximum, whether the goal holds; on done
+  goal reached or quiescent. Live: the other candidates light up, the picked one runs, the planner shows
+  "invocations n/max · goal not reached" then "stopped: goal reached"; timeline steps
+  "→ analyzeMetrics of analyzeLogs, analyzeMetrics · custom (IncidentResponder)".

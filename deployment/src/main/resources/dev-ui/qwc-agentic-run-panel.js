@@ -75,6 +75,8 @@ export const TERMINATIONS = {
     EXIT_CONDITION: 'exit condition met',
     MAX_INVOCATIONS: 'maximum invocations reached',
     STABLE_STATE: 'stable state (no agent can activate)',
+    GOAL_REACHED: 'goal reached',
+    QUIESCENT: 'quiescent (no agent can fire)',
 };
 
 function simpleType(name) {
@@ -712,6 +714,23 @@ class LiveRun {
                 break;
             }
             case 'PlannerDecision': {
+                if (event.extras?.pattern === 'BLACKBOARD') {
+                    this.peers.set(event.nodeId, { invocations: event.extras.invocations, max: event.extras.maxInvocations,
+                        termination: event.extras.termination, goalReached: event.extras.goalReached });
+                    // the candidates of this step light up, the picked one is about to run; the others go back
+                    const candidates = new Set((event.extras.candidates ?? []).filter(id => !(event.selectedNodeIds ?? []).includes(id)));
+                    (this.nodes.get(event.nodeId)?.children ?? []).forEach(child => {
+                        if ((this.running.get(child.id) ?? 0) > 0) {
+                            return;
+                        }
+                        if (candidates.has(child.id)) {
+                            this.ready.add(child.id);
+                            this.graph?.highlight(child.id, 'ready');
+                        } else if (this.ready.delete(child.id)) {
+                            this.graph?.highlight(child.id, this.failed.has(child.id) ? 'failed' : this.stats.has(child.id) ? 'done' : null);
+                        }
+                    });
+                }
                 if (event.extras?.pattern === 'P2P') {
                     this.peers.set(event.nodeId, { invocations: event.extras.invocations, max: event.extras.maxInvocations,
                         termination: event.extras.termination });
@@ -792,7 +811,8 @@ class LiveRun {
         const peer = this.peers.get(nodeId);
         if (peer) {
             parts.push(peer.termination ? `stopped: ${TERMINATIONS[peer.termination] ?? peer.termination}`
-                : `invocations ${peer.invocations}${peer.max != null ? `/${peer.max}` : ''}`);
+                : `invocations ${peer.invocations}${peer.max != null ? `/${peer.max}` : ''}`
+                    + (peer.goalReached === false ? ' · goal not reached' : ''));
         }
         if (this.planned.has(nodeId) && (this.running.get(nodeId) ?? 0) === 0 && !this.stats.has(nodeId)) {
             parts.push(`planned ${this.planned.get(nodeId)}`);

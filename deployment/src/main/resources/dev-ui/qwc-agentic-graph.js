@@ -32,6 +32,7 @@ export const KIND_LABELS = {
     CONTRIBUTED: 'Planner state',
     GOAL: 'Goal key',
     STATE_KEY: 'State key',
+    BOARD: 'Blackboard',
 };
 
 /**
@@ -56,6 +57,7 @@ export const KIND_STYLES = {
     CONTRIBUTED: { shape: 'round-rectangle', color: '#d946ef', border: 'dotted' },
     GOAL: { shape: 'round-tag', color: '#d946ef', border: 'double' },
     STATE_KEY: { shape: 'round-tag', color: '#94a3b8', border: 'solid' },
+    BOARD: { shape: 'round-rectangle', color: '#d946ef', border: 'double' },
 };
 
 /** Separates a topology node id from the role of a helper node drawn for it (never used in topology ids). */
@@ -151,6 +153,26 @@ export function toGraph(system) {
         });
     };
 
+    /**
+     * A blackboard planner lets its agents (knowledge sources) fire on what is on the blackboard (the scope): a central
+     * board, read by each agent (its input keys) and written by it (its output key); the goal is the planner's key.
+     */
+    const boardGraph = node => {
+        const board = node.id + HELPER_SEPARATOR + 'board';
+        const label = node.outputKey ? `blackboard · goal: ${node.outputKey}` : 'blackboard';
+        nodes.push({ id: board, label, kind: 'BOARD', parent: node.id, compound: false,
+            width: Math.max(160, label.length * 7 + 30), height: 34 });
+        node.children.forEach(child => visit(child, node.id));
+        node.children.forEach(child => {
+            if (child.inputKeys?.length) {
+                edge(board, child.id, 'READS', child.inputKeys.join(', '));
+            }
+            if (child.outputKey) {
+                edge(child.id, board, 'WRITES', child.outputKey);
+            }
+        });
+    };
+
     const visit = (node, parent) => {
         const compound = node.children?.length > 0;
         nodes.push({
@@ -163,7 +185,9 @@ export function toGraph(system) {
             paddingRight: compound && node.kind === 'LOOP' ? BACK_EDGE_GAP + labelWidth(loopLabel(node.guard)) + 12 : undefined,
             layerSpacing: compound && (node.kind === 'CONDITIONAL' || system.contributions?.[node.id]
                 || node.plannerInfo?.patternType === 'GOAP') ? 70
-                : compound && node.plannerInfo?.patternType === 'P2P' ? 40 : undefined,
+                : compound && node.plannerInfo?.patternType === 'P2P' ? 40
+                // reads and writes between the board and each agent carry key labels both ways
+                : compound && node.plannerInfo?.patternType === 'BLACKBOARD' ? 110 : undefined,
             // a peer-to-peer graph is a long chain of agents and keys: it reads better left to right
             direction: compound && node.plannerInfo?.patternType === 'P2P' ? 'RIGHT' : undefined,
             wrap: compound && node.plannerInfo?.patternType === 'P2P',
@@ -215,6 +239,10 @@ export function toGraph(system) {
                 }
                 if (node.plannerInfo?.patternType === 'P2P') {
                     peerGraph(node);
+                    break;
+                }
+                if (node.plannerInfo?.patternType === 'BLACKBOARD') {
+                    boardGraph(node);
                     break;
                 }
                 // sub-agents are chosen at runtime: candidates of a hub, with no order between them
@@ -537,7 +565,8 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             this._cy.on('tap', event => {
                 // helpers and the nodes of a topology contributor are not agents: nothing to show
                 const node = event.target !== this._cy && event.target.isNode?.() && !event.target.data('helper')
-                    && !event.target.hasClass('contributed') && !event.target.hasClass('goal') ? event.target : null;
+                    && !event.target.hasClass('contributed') && !event.target.hasClass('goal') && !event.target.hasClass('board')
+                    ? event.target : null;
                 if (event.target === this._cy || node) {
                     this.dispatchEvent(new CustomEvent('node-selected', {
                         detail: { nodeId: node?.id() ?? null }, bubbles: true, composed: true,
@@ -924,6 +953,12 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             { selector: 'edge.fork', style: { 'target-arrow-shape': 'triangle' } },
             { selector: 'edge.join', style: { 'target-arrow-shape': 'none' } },
             // the goal key of a goal-oriented planner
+            { selector: 'node.board', style: {
+                'width': 'data(width)', 'height': 'data(height)', 'font-weight': 'bold', 'background-color': base,
+            } },
+            { selector: 'edge.reads, edge.writes', style: {
+                'text-rotation': 'none', 'font-family': 'monospace', 'text-wrap': 'wrap',
+            } },
             { selector: 'node.goal', style: {
                 'width': 'data(width)', 'height': 'data(height)', 'font-weight': 'bold', 'background-color': base,
             } },

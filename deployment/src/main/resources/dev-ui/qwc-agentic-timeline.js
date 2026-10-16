@@ -73,6 +73,9 @@ export function buildTimeline(events, now = Date.now()) {
                     name: chosen.length > 0 ? `Step ${step}` : event.extras?.action === 'doneWithResult' ? 'Done with result'
                         : event.extras?.action === 'suspend' ? 'Suspended' : 'Done',
                     nodeId: event.nodeId, decision: chosen.length > 0 ? `→ ${chosen.join(', ')}`
+                        // a blackboard step: the candidates it picked from, and how
+                        + (event.extras?.candidates ? ` of ${event.extras.candidates.map(agentName).join(', ')}` : '')
+                        + (event.extras?.strategy ? ` · ${event.extras.strategy}` : '')
                         : TERMINATIONS[event.extras?.termination],
                     start: event.timestamp, end: event.timestamp, duration: 0, status: 'done', children: [],
                 };
@@ -189,6 +192,8 @@ export class QwcAgenticTimeline extends LitElement {
         }
         .row.decision .label {
             color: var(--lumo-secondary-text-color);
+            /* a step names the agent picked and, for a blackboard, the candidates: shown in full */
+            white-space: normal;
         }
         .row.decision .label .detail {
             color: var(--lumo-body-text-color);
@@ -250,7 +255,7 @@ export class QwcAgenticTimeline extends LitElement {
         return html`${rows.map(row => html`
             <div class="row ${row.kind}" data-row=${row.id} data-depth=${row.depth}
                     @click=${row.kind === 'tool' ? () => this._toggle(row.id) : undefined}>
-                <span class="label" style="padding-left: ${row.depth * 14}px" title=${row.nodeId ?? row.name}>
+                <span class="label" style="padding-left: ${row.depth * 14}px" title=${row.kind === 'decision' ? `${row.name} ${row.decision ?? ''}` : row.nodeId ?? row.name}>
                     ${row.kind === 'tool' ? '🔧 ' : row.kind === 'error' ? '⚠ ' : row.kind === 'decision' ? '◆ ' : ''}${row.name}${this._detail(row)}
                 </span>
                 <span class="track">
