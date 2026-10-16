@@ -47,6 +47,21 @@ public class AgenticSystemsDevModeTest extends DevUIBuildTimeDataTest {
     }
 
     @Test
+    void cardShowsTheNumberOfSystems() throws Exception {
+        // card pages are build-time data of the Dev UI itself
+        JsonNode extensions = new DevUIBuildTimeDataTest("devui") {
+        }.getBuildTimeData("extensions");
+
+        List<String> labels = new ArrayList<>();
+        extensions.findParents("title").forEach(page -> {
+            if ("Agentic Systems".equals(page.path("title").asText()) && page.has("staticLabel")) {
+                labels.add(page.path("staticLabel").asText().trim()); // stored with a leading space
+            }
+        });
+        assertEquals(List.of("1"), labels, extensions::toString);
+    }
+
+    @Test
     void systemsAreRecordedForRuntimeDev() throws Exception {
         HttpResponse<String> response = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(uri.resolve("/recorded-systems")).build(), HttpResponse.BodyHandlers.ofString());

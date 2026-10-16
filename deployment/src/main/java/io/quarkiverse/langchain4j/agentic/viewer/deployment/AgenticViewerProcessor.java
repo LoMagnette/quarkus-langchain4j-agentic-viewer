@@ -184,10 +184,11 @@ public class AgenticViewerProcessor {
                 .icon("font-awesome-solid:diagram-project")
                 .componentLink("qwc-agentic-viewer.js"));
 
-        // Agentic systems page, backed by the JSON-RPC service from runtime-dev
+        // Agentic systems page (T1.5): the card shows the number of systems as the label of its link
         card.addPage(Page.webComponentPageBuilder()
                 .title("Agentic Systems")
                 .icon("font-awesome-solid:robot")
+                .staticLabel(String.valueOf(systems.getSystems().size()))
                 .componentLink("qwc-agentic-systems.js"));
 
         // T0.8 spike: Cytoscape.js + ELK rendering, to be replaced by the real graph component (T1.6)
