@@ -1,7 +1,11 @@
 package io.quarkiverse.langchain4j.agentic.viewer.deployment.scan;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.Guard;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
 
 /**
@@ -19,6 +23,10 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
  * @param subAgents fully qualified class names of the sub-agents, in declaration order
  * @param itemsProvider scope key of the collection a parallel mapper iterates on, null otherwise
  * @param plannerSupplier {@code Class#method} of the {@code @PlannerSupplier} method of a planner agent, null otherwise
+ * @param loopGuard exit condition of a loop (method name, null label when the loop has none), null otherwise
+ * @param branchGuards activation condition of each conditional branch, keyed by sub-agent class name; a sub-agent
+ *        without one is absent (langchain4j then leaves it out of the conditional)
+ * @param outputMethod {@code Class#method} of the {@code @Output} method of a workflow, null when none
  */
 public record AgentDescriptor(
         String id,
@@ -31,10 +39,15 @@ public record AgentDescriptor(
         List<String> inputKeys,
         List<String> subAgents,
         String itemsProvider,
-        String plannerSupplier) {
+        String plannerSupplier,
+        Guard loopGuard,
+        Map<String, Guard> branchGuards,
+        String outputMethod) {
 
     public AgentDescriptor {
         inputKeys = inputKeys == null ? List.of() : List.copyOf(inputKeys);
         subAgents = subAgents == null ? List.of() : List.copyOf(subAgents);
+        // keeps the sub-agent order of the scanner
+        branchGuards = branchGuards == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(branchGuards));
     }
 }

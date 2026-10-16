@@ -8,8 +8,10 @@ import jakarta.inject.Inject;
 import dev.langchain4j.agentic.Agent;
 import dev.langchain4j.agentic.declarative.ActivationCondition;
 import dev.langchain4j.agentic.declarative.ConditionalAgent;
+import dev.langchain4j.agentic.declarative.ExitCondition;
 import dev.langchain4j.agentic.declarative.HumanInTheLoop;
 import dev.langchain4j.agentic.declarative.LoopAgent;
+import dev.langchain4j.agentic.declarative.Output;
 import dev.langchain4j.agentic.declarative.ParallelAgent;
 import dev.langchain4j.agentic.declarative.ParallelMapperAgent;
 import dev.langchain4j.agentic.declarative.PlannerAgent;
@@ -78,11 +80,27 @@ public interface ScanFixtures {
         String translate(@V("item") String item);
     }
 
-    // ---- loop, with a typed output key ----
+    // ---- loop, with an exit condition, an @Output method and a typed output key ----
 
     interface Polisher {
         @LoopAgent(outputKey = "draft", maxIterations = 3, subAgents = { Scorer.class, Editor.class })
         String polish(@V("draft") String draft);
+
+        @ExitCondition(testExitAtLoopEnd = true)
+        static boolean goodEnough(@V("draft") String draft) {
+            return draft.length() > 10;
+        }
+
+        @Output
+        static String finalDraft(@V("draft") String draft) {
+            return draft.trim();
+        }
+    }
+
+    /** Defaults: maxIterations 10, no exit condition. */
+    interface Repeater {
+        @LoopAgent(outputKey = "draft", subAgents = { Editor.class })
+        String repeat(@V("draft") String draft);
     }
 
     class Score implements TypedKey<Double> {
@@ -101,16 +119,26 @@ public interface ScanFixtures {
     // ---- conditional ----
 
     interface Router {
-        @ConditionalAgent(outputKey = "answer", subAgents = { Expert.class })
+        @ConditionalAgent(outputKey = "answer", subAgents = { Expert.class, Generalist.class })
         String route(@V("topic") String topic);
 
         @ActivationCondition(Expert.class)
-        static boolean always(@V("topic") String topic) {
-            return true;
+        static boolean technical(@V("topic") String topic) {
+            return topic.contains("java");
+        }
+
+        @ActivationCondition(Generalist.class)
+        static boolean general(@V("topic") String topic) {
+            return !topic.contains("java");
         }
     }
 
     interface Expert {
+        @Agent(outputKey = "answer")
+        String answer(@V("topic") String topic);
+    }
+
+    interface Generalist {
         @Agent(outputKey = "answer")
         String answer(@V("topic") String topic);
     }
@@ -177,6 +205,8 @@ public interface ScanFixtures {
         Batch batch;
         @Inject
         Polisher polisher;
+        @Inject
+        Repeater repeater;
         @Inject
         Router router;
         @Inject

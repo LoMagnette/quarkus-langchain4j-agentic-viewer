@@ -7,13 +7,14 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentDescriptor;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticDescriptorsBuildItem;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.test.QuarkusUnitTest;
 
 /**
  * In a real application build, the extension produces a descriptor for every agentic annotation of the fixtures,
- * including supervisor, planner and human-in-the-loop agents.
+ * including supervisor, planner and human-in-the-loop agents, loop and conditional guards and {@code @Output}.
  */
 public class AgenticDescriptorsBuildStepTest {
 
@@ -27,11 +28,29 @@ public class AgenticDescriptorsBuildStepTest {
                 String summary = String.join("\n", context.consume(AgenticDescriptorsBuildItem.class).getDescriptors().stream()
                         .map(d -> d.id().substring(d.id().lastIndexOf('$') + 1) + " " + d.kind() + " out=" + d.outputKey()
                                 + " in=" + d.inputKeys() + " sub="
-                                + d.subAgents().stream().map(s -> s.substring(s.lastIndexOf('$') + 1)).toList())
+                                + d.subAgents().stream().map(s -> s.substring(s.lastIndexOf('$') + 1)).toList()
+                                + guards(d))
                         .toList());
                 System.setProperty(RESULT_PROPERTY, summary);
                 context.produce(new FeatureBuildItem("agentic-viewer-descriptors-check"));
             }).consumes(AgenticDescriptorsBuildItem.class).produces(FeatureBuildItem.class).build());
+
+    private static String guards(AgentDescriptor d) {
+        String guards = "";
+        if (d.loopGuard() != null) {
+            guards += " exit=" + d.loopGuard().label() + "/" + d.loopGuard().maxIterations() + "/"
+                    + d.loopGuard().testExitAtLoopEnd();
+        }
+        if (!d.branchGuards().isEmpty()) {
+            guards += " when=" + d.branchGuards().entrySet().stream()
+                    .map(e -> e.getKey().substring(e.getKey().lastIndexOf('$') + 1) + ":" + e.getValue().label())
+                    .toList();
+        }
+        if (d.outputMethod() != null) {
+            guards += " output=" + d.outputMethod().substring(d.outputMethod().lastIndexOf('#') + 1);
+        }
+        return guards;
+    }
 
     @Test
     void descriptorForEveryAnnotation() {
@@ -44,10 +63,12 @@ public class AgenticDescriptorsBuildStepTest {
                 "DraftPlanner#plan PLANNER out=draft in=[topic] sub=[Writer]",
                 "Editor#edit AI_AGENT out=draft in=[draft] sub=[]",
                 "Expert#answer AI_AGENT out=answer in=[topic] sub=[]",
-                "Polisher#polish LOOP out=draft in=[draft] sub=[Scorer, Editor]",
+                "Generalist#answer AI_AGENT out=answer in=[topic] sub=[]",
+                "Polisher#polish LOOP out=draft in=[draft] sub=[Scorer, Editor] exit=goodEnough/3/true output=finalDraft",
+                "Repeater#repeat LOOP out=draft in=[draft] sub=[Editor] exit=null/10/false",
                 "ResearchFan#research PARALLEL out=research in=[topic] sub=[WebSearch, DbSearch]",
                 "Reviewer#review AI_AGENT out=review in=[draft] sub=[]",
-                "Router#route CONDITIONAL out=answer in=[topic] sub=[Expert]",
+                "Router#route CONDITIONAL out=answer in=[topic] sub=[Expert, Generalist] when=[Expert:technical, Generalist:general]",
                 "Scorer#score AI_AGENT out=Score in=[draft] sub=[]",
                 "Shouter#shout NON_AI_AGENT out=shout in=[draft] sub=[]",
                 "StoryFlow#write SEQUENCE out=review in=[topic] sub=[Writer, Reviewer]",

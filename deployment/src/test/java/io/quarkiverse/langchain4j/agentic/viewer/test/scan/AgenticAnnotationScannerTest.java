@@ -13,10 +13,13 @@ import org.jboss.jandex.Index;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import dev.langchain4j.agentic.declarative.ActivationCondition;
+import dev.langchain4j.agentic.declarative.ConditionalAgent;
 import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.V;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentDescriptor;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotationScanner;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.Guard;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
 
 /**
@@ -30,6 +33,18 @@ class AgenticAnnotationScannerTest {
         String chat(@MemoryId String memoryId, @V("question") String question);
     }
 
+    /** Not part of the app fixtures: one condition shared by two branches, and a branch langchain4j drops. */
+    interface Triage {
+        @ConditionalAgent(outputKey = "answer", subAgents = { ScanFixtures.Expert.class, ScanFixtures.Generalist.class,
+                ScanFixtures.Writer.class })
+        String triage(@V("topic") String topic);
+
+        @ActivationCondition({ ScanFixtures.Expert.class, ScanFixtures.Generalist.class })
+        static boolean answerable(@V("topic") String topic) {
+            return true;
+        }
+    }
+
     private static final String P = ScanFixtures.class.getName() + "$";
     private static Map<String, AgentDescriptor> byId;
 
@@ -38,10 +53,10 @@ class AgenticAnnotationScannerTest {
         Index index = Index.of(ScanFixtures.StoryFlow.class, ScanFixtures.Writer.class, ScanFixtures.Reviewer.class,
                 ScanFixtures.ResearchFan.class, ScanFixtures.WebSearch.class, ScanFixtures.DbSearch.class,
                 ScanFixtures.Batch.class, ScanFixtures.Translator.class, ScanFixtures.Polisher.class,
-                ScanFixtures.Scorer.class, ScanFixtures.Editor.class, ScanFixtures.Router.class, ScanFixtures.Expert.class,
-                ScanFixtures.Shouter.class, ScanFixtures.Bank.class, ScanFixtures.Teller.class,
+                ScanFixtures.Scorer.class, ScanFixtures.Editor.class, ScanFixtures.Repeater.class, ScanFixtures.Router.class,
+                ScanFixtures.Expert.class, ScanFixtures.Generalist.class, ScanFixtures.Shouter.class, ScanFixtures.Bank.class, ScanFixtures.Teller.class,
                 ScanFixtures.DraftPlanner.class, ScanFixtures.Approval.class, ScanFixtures.ApprovedStory.class,
-                WithMemory.class);
+                WithMemory.class, Triage.class);
         List<AgentDescriptor> descriptors = new AgenticAnnotationScanner().scan(index);
         byId = descriptors.stream().collect(Collectors.toMap(AgentDescriptor::id, Function.identity()));
         assertEquals(descriptors.stream().map(AgentDescriptor::id).sorted().toList(),
@@ -111,11 +126,51 @@ class AgenticAnnotationScannerTest {
     }
 
     @Test
+    void loopGuardAndOutput() {
+        AgentDescriptor polisher = get("Polisher", "polish");
+        assertEquals(Guard.loopExit("goodEnough", 3, true), polisher.loopGuard());
+        assertEquals(P + "Polisher#finalDraft", polisher.outputMethod());
+        assertEquals(Map.of(), polisher.branchGuards());
+        assertTrue(byId.keySet().stream().noneMatch(id -> id.endsWith("#goodEnough") || id.endsWith("#finalDraft")),
+                "guards and @Output methods are not agents");
+    }
+
+    @Test
+    void loopDefaults() {
+        AgentDescriptor repeater = get("Repeater", "repeat");
+        assertEquals(Guard.loopExit(null, 10, false), repeater.loopGuard(), "no exit condition, default maxIterations");
+        assertNull(repeater.outputMethod());
+    }
+
+    @Test
     void conditional() {
         AgentDescriptor router = get("Router", "route");
         assertEquals(NodeKind.CONDITIONAL, router.kind());
-        assertEquals(List.of(P + "Expert"), router.subAgents());
+        assertEquals(List.of(P + "Expert", P + "Generalist"), router.subAgents());
         assertNull(router.itemsProvider());
+        assertNull(router.loopGuard());
+    }
+
+    @Test
+    void conditionalBranchGuards() {
+        assertEquals(List.of(P + "Expert", P + "Generalist"), List.copyOf(get("Router", "route").branchGuards().keySet()),
+                "sub-agent order");
+        assertEquals(Map.of(P + "Expert", Guard.activation("technical"), P + "Generalist", Guard.activation("general")),
+                get("Router", "route").branchGuards());
+
+        AgentDescriptor triage = byId.get(AgenticAnnotationScannerTest.class.getName() + "$Triage#triage");
+        assertEquals(Map.of(P + "Expert", Guard.activation("answerable"), P + "Generalist", Guard.activation("answerable")),
+                triage.branchGuards(), "a shared condition guards each listed branch; Writer has none");
+        assertEquals(3, triage.subAgents().size(), "an unguarded branch stays a sub-agent");
+    }
+
+    @Test
+    void guardsOnlyOnTheirKind() {
+        AgentDescriptor flow = get("StoryFlow", "write");
+        assertNull(flow.loopGuard());
+        assertEquals(Map.of(), flow.branchGuards());
+        assertNull(flow.outputMethod());
+        assertNull(get("Writer", "write").outputMethod());
     }
 
     @Test
@@ -157,6 +212,6 @@ class AgenticAnnotationScannerTest {
 
     @Test
     void onlyAgentMethods() {
-        assertEquals(20, byId.size(), byId.keySet()::toString);
+        assertEquals(23, byId.size(), byId.keySet()::toString);
     }
 }

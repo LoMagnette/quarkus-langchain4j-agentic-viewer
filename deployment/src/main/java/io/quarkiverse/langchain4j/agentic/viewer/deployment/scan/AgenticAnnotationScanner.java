@@ -3,6 +3,7 @@ package io.quarkiverse.langchain4j.agentic.viewer.deployment.scan;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -17,11 +18,13 @@ import org.jboss.jandex.MethodInfo;
 import org.jboss.jandex.MethodParameterInfo;
 import org.jboss.jandex.Type;
 
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.Guard;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
 
 /**
  * Finds the agent methods of the application in the Jandex index and describes them: {@code @Agent}, the workflow
- * annotations, {@code @SupervisorAgent}, {@code @PlannerAgent} and {@code @HumanInTheLoop}.
+ * annotations, {@code @SupervisorAgent}, {@code @PlannerAgent} and {@code @HumanInTheLoop}, with the guards
+ * ({@code @ExitCondition}, {@code @ActivationCondition}) and {@code @Output} method of workflows.
  * Agents declared by the langchain4j libraries themselves are skipped.
  */
 public class AgenticAnnotationScanner {
@@ -37,6 +40,13 @@ public class AgenticAnnotationScanner {
     static final DotName PLANNER_AGENT = DotName.createSimple("dev.langchain4j.agentic.declarative.PlannerAgent");
     static final DotName HUMAN_IN_THE_LOOP = DotName.createSimple("dev.langchain4j.agentic.declarative.HumanInTheLoop");
     static final DotName PLANNER_SUPPLIER = DotName.createSimple("dev.langchain4j.agentic.declarative.PlannerSupplier");
+    static final DotName EXIT_CONDITION = DotName.createSimple("dev.langchain4j.agentic.declarative.ExitCondition");
+    static final DotName ACTIVATION_CONDITION = DotName
+            .createSimple("dev.langchain4j.agentic.declarative.ActivationCondition");
+    static final DotName OUTPUT = DotName.createSimple("dev.langchain4j.agentic.declarative.Output");
+
+    /** {@code @LoopAgent.maxIterations()} default. */
+    private static final int DEFAULT_MAX_ITERATIONS = 10;
 
     private static final DotName V = DotName.createSimple("dev.langchain4j.service.V");
     private static final DotName MEMORY_ID = DotName.createSimple("dev.langchain4j.service.MemoryId");
@@ -110,18 +120,70 @@ public class AgenticAnnotationScanner {
                 inputKeys(method),
                 subAgents(annotation),
                 nonBlank(stringValue(annotation, "itemsProvider")),
-                kind == NodeKind.PLANNER ? plannerSupplier(method.declaringClass()) : null);
+                kind == NodeKind.PLANNER ? methodRef(annotatedMethod(method.declaringClass(), PLANNER_SUPPLIER)) : null,
+                kind == NodeKind.LOOP ? loopGuard(method.declaringClass(), annotation) : null,
+                kind == NodeKind.CONDITIONAL ? branchGuards(method.declaringClass(), annotation) : null,
+                isWorkflow(kind) ? methodRef(annotatedMethod(method.declaringClass(), OUTPUT)) : null);
+    }
+
+    private static boolean isWorkflow(NodeKind kind) {
+        return kind != NodeKind.AI_AGENT && kind != NodeKind.NON_AI_AGENT && kind != NodeKind.HUMAN_IN_THE_LOOP;
     }
 
     /**
-     * The concrete planner class is only known when the supplier runs; the supplier method is what the build sees.
+     * Like langchain4j, the exit condition is the {@code @ExitCondition} method of the loop's declaring class.
      */
-    private static String plannerSupplier(ClassInfo declaringClass) {
+    private static Guard loopGuard(ClassInfo declaringClass, AnnotationInstance loopAgent) {
+        AnnotationValue maxIterations = loopAgent.value("maxIterations");
+        MethodInfo exitCondition = annotatedMethod(declaringClass, EXIT_CONDITION);
+        AnnotationValue testExitAtLoopEnd = exitCondition == null ? null
+                : exitCondition.declaredAnnotation(EXIT_CONDITION).value("testExitAtLoopEnd");
+        return Guard.loopExit(
+                exitCondition == null ? null : exitCondition.name(),
+                maxIterations == null ? DEFAULT_MAX_ITERATIONS : maxIterations.asInt(),
+                testExitAtLoopEnd != null && testExitAtLoopEnd.asBoolean());
+    }
+
+    /**
+     * Like langchain4j, a branch is guarded by the first {@code @ActivationCondition} method of the conditional's
+     * declaring class that lists the sub-agent.
+     */
+    private static Map<String, Guard> branchGuards(ClassInfo declaringClass, AnnotationInstance conditionalAgent) {
+        Map<String, Guard> guards = new LinkedHashMap<>();
+        for (String subAgent : subAgents(conditionalAgent)) {
+            declaringClass.methods().stream()
+                    .filter(method -> activates(method, subAgent))
+                    .findFirst()
+                    .ifPresent(method -> guards.put(subAgent, Guard.activation(method.name())));
+        }
+        return guards;
+    }
+
+    private static boolean activates(MethodInfo method, String subAgent) {
+        AnnotationInstance condition = method.declaredAnnotation(ACTIVATION_CONDITION);
+        if (condition == null || condition.value() == null) {
+            return false;
+        }
+        for (Type type : condition.value().asClassArray()) {
+            if (type.name().toString().equals(subAgent)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static MethodInfo annotatedMethod(ClassInfo declaringClass, DotName annotation) {
         return declaringClass.methods().stream()
-                .filter(method -> method.hasDeclaredAnnotation(PLANNER_SUPPLIER))
-                .map(method -> declaringClass.name() + "#" + method.name())
+                .filter(method -> method.hasDeclaredAnnotation(annotation))
                 .findFirst()
                 .orElse(null);
+    }
+
+    /**
+     * For suppliers and {@code @Output}, the method is what the build sees; what it returns is only known at runtime.
+     */
+    private static String methodRef(MethodInfo method) {
+        return method == null ? null : method.declaringClass().name() + "#" + method.name();
     }
 
     private static String outputKey(AnnotationInstance annotation) {
