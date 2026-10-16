@@ -71,7 +71,8 @@ function formatDuration(millis) {
 
 /**
  * Run panel of a system: the run form, the confirmation of the reachable tools before the first run of the session,
- * then the live view of the run, which also highlights the graph as events arrive.
+ * then the live view of the run, which also highlights the graph as events arrive. Fires 'run-updated' (detail:
+ * { events, running }) as the run progresses.
  * Properties: system (topology), jsonRpc (the page's client), graph (the qwc-agentic-graph element).
  */
 export class QwcAgenticRunPanel extends LitElement {
@@ -255,6 +256,8 @@ export class QwcAgenticRunPanel extends LitElement {
         this.graph?.resetRun();
         const system = this.system;
         this._run = { status: 'running', inputs };
+        this._events = [];
+        this._publish(true);
         this._mode = 'live';
         this.jsonRpc.startRun({ systemId: system.id, inputs })
             .then(response => {
@@ -279,6 +282,8 @@ export class QwcAgenticRunPanel extends LitElement {
                 return;
             }
             live.apply(event);
+            this._events = [...this._events, event];
+            this._publish(event.type !== 'RunFinished' && event.type !== 'RunFailed');
             if (event.type === 'RunFinished') {
                 this._run = { ...this._run, status: 'succeeded', output: event.output, duration: event.durationMillis };
                 this._stopStream();
@@ -287,6 +292,13 @@ export class QwcAgenticRunPanel extends LitElement {
                 this._stopStream();
             }
         });
+    }
+
+    /** Tells the page about the events of the current run, for the timeline and the scope panel. */
+    _publish(running) {
+        this.dispatchEvent(new CustomEvent('run-updated', {
+            detail: { events: this._events, running }, bubbles: true, composed: true,
+        }));
     }
 
     _stopStream() {
