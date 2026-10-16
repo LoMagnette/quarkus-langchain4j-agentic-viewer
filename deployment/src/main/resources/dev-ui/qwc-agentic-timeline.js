@@ -39,6 +39,17 @@ export function buildTimeline(events, now = Date.now()) {
                 }
                 break;
             }
+            case 'ErrorHandled': {
+                const row = {
+                    kind: 'error', id: `error:${event.invocationId}:${event.timestamp}:${event.agentName}`,
+                    name: `${event.agentName}: ${(event.error?.exceptionClass ?? 'error').split('.').pop()}`,
+                    outcome: event.outcome, start: event.timestamp, end: event.timestamp, duration: 0,
+                    status: event.outcome === 'THROW_EXCEPTION' ? 'failed' : 'recovered', children: [],
+                };
+                const enclosing = invocations.get(event.invocationId);
+                (enclosing ? enclosing.children : roots).push(row);
+                break;
+            }
             case 'ToolStarted': {
                 const call = {
                     kind: 'tool', id: `tool:${event.invocationId}:${event.toolCallId ?? event.toolName}:${event.timestamp}`,
@@ -139,6 +150,12 @@ export class QwcAgenticTimeline extends LitElement {
         .bar.tool {
             background: var(--lumo-contrast-40pct);
         }
+        .bar.recovered {
+            background: #f59e0b;
+        }
+        .row.error .label {
+            color: var(--lumo-error-text-color);
+        }
         .duration {
             text-align: right;
             color: var(--lumo-secondary-text-color);
@@ -194,7 +211,7 @@ export class QwcAgenticTimeline extends LitElement {
             <div class="row ${row.kind}" data-row=${row.id} data-depth=${row.depth}
                     @click=${row.kind === 'tool' ? () => this._toggle(row.id) : undefined}>
                 <span class="label" style="padding-left: ${row.depth * 14}px" title=${row.nodeId ?? row.name}>
-                    ${row.kind === 'tool' ? '🔧 ' : ''}${row.name}${this._detail(row)}
+                    ${row.kind === 'tool' ? '🔧 ' : row.kind === 'error' ? '⚠ ' : ''}${row.name}${this._detail(row)}
                 </span>
                 <span class="track">
                     <span class="bar ${row.kind === 'tool' ? 'tool' : row.status}"
@@ -209,6 +226,9 @@ result: ${row.result ?? '(running)'}</div>` : nothing}`)}`;
 
     _detail(row) {
         const parts = [];
+        if (row.kind === 'error') {
+            parts.push({ RETRY: 'retried', RETURN_RESULT: 'recovered with a result', THROW_EXCEPTION: 'fatal' }[row.outcome] ?? row.outcome);
+        }
         if (row.iteration != null) {
             parts.push(`iteration ${row.iteration + 1}`);
         }

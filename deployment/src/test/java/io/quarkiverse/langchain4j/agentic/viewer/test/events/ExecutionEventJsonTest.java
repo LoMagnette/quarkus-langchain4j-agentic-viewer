@@ -18,6 +18,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentFailed;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentFinished;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentStarted;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AwaitingHumanInput;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ErrorHandled;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ErrorInfo;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ExecutionEvent;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.PlannerDecision;
@@ -55,7 +56,8 @@ class ExecutionEventJsonTest {
             new PlannerDecision(RUN, T, "com.example.Bank#run", "inv-1", List.of(NODE), false,
                     Map.of("path", List.of("a", "b"))),
             new ScopeStateChanged(RUN, T, "draft", "a draft", false, NODE),
-            new AwaitingHumanInput(RUN, T, "com.example.Trip#plan/Approval", "Approve?", "approval"));
+            new AwaitingHumanInput(RUN, T, "com.example.Trip#plan/Approval", "Approve?", "approval"),
+            new ErrorHandled(RUN, T, NODE, "inv-1", "write", ERROR, "RETRY", null));
 
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -63,7 +65,7 @@ class ExecutionEventJsonTest {
     void everySpecEventExists() {
         Set<String> spec = Set.of("RunStarted", "RunFinished", "RunFailed", "ScopeCreated", "ScopeDestroyed",
                 "AgentStarted", "AgentFinished", "AgentFailed", "ToolStarted", "ToolFinished", "PlannerDecision",
-                "ScopeStateChanged", "AwaitingHumanInput");
+                "ScopeStateChanged", "AwaitingHumanInput", "ErrorHandled"); // ErrorHandled extends the spec table (T2.10)
         assertEquals(spec, Arrays.stream(ExecutionEvent.class.getPermittedSubclasses()).map(Class::getSimpleName)
                 .collect(Collectors.toSet()), "the sealed hierarchy is the spec table");
         assertEquals(spec, ONE_OF_EACH.stream().map(ExecutionEvent::getType).collect(Collectors.toSet()));

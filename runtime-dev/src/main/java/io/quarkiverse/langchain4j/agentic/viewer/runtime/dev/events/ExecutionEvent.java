@@ -7,7 +7,7 @@ package io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events;
  */
 public sealed interface ExecutionEvent permits RunStarted, RunFinished, RunFailed, ScopeCreated, ScopeDestroyed,
         AgentStarted, AgentFinished, AgentFailed, ToolStarted, ToolFinished, PlannerDecision, ScopeStateChanged,
-        AwaitingHumanInput {
+        AwaitingHumanInput, ErrorHandled {
 
     /** @return the run the event belongs to */
     String runId();

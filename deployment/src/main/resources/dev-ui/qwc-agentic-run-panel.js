@@ -65,6 +65,10 @@ export function reachableTools(system) {
     return tools;
 }
 
+function simpleClass(name) {
+    return name ? name.substring(name.lastIndexOf('.') + 1) : 'error';
+}
+
 function formatDuration(millis) {
     return millis < 1000 ? `${millis} ms` : `${(millis / 1000).toFixed(1)} s`;
 }
@@ -258,7 +262,10 @@ export class QwcAgenticRunPanel extends LitElement {
                 <div class="actions"><vaadin-button theme="error tertiary" data-action="cancel" ?disabled=${!run.runId}
                         @click=${this._cancel}>Cancel</vaadin-button></div>` : nothing}
             ${run.status === 'succeeded' ? html`<h5>Output</h5><pre data-run-output>${this._format(run.output)}</pre>` : nothing}
-            ${run.status === 'failed' || run.status === 'cancelled' ? html`<h5>${run.status === 'cancelled' ? 'Cancelled' : 'Error'}</h5><pre class="error" data-run-error>${run.error?.message ?? run.error?.exceptionClass ?? 'unknown error'}</pre>` : nothing}
+            ${run.status === 'failed' || run.status === 'cancelled' ? html`<h5>${run.status === 'cancelled' ? 'Cancelled' : 'Error'}</h5>
+                ${run.status === 'failed' && (run.failingAgent || run.error?.exceptionClass) ? html`<div data-run-failure>
+                    ${run.failingAgent ? html`in <strong>${run.failingAgent}</strong>: ` : nothing}${simpleClass(run.error?.exceptionClass)}</div>` : nothing}
+                <pre class="error" data-run-error>${run.error?.message ?? run.error?.exceptionClass ?? 'unknown error'}</pre>` : nothing}
             <h5>Inputs</h5>
             <pre>${this._format(run.inputs)}</pre>
             <div class="actions">
@@ -340,7 +347,10 @@ export class QwcAgenticRunPanel extends LitElement {
             return { ...run, status: 'succeeded', output: event.output, duration: event.durationMillis };
         }
         const cancelled = event?.error?.exceptionClass === 'java.util.concurrent.CancellationException';
-        return { ...run, status: cancelled ? 'cancelled' : 'failed', error: event?.error, duration: event?.durationMillis };
+        const failingNode = this._live?.failingNode();
+        const failingAgent = failingNode ? this._live.nodes.get(failingNode)?.name ?? failingNode : undefined;
+        return { ...run, status: cancelled ? 'cancelled' : 'failed', error: event?.error, duration: event?.durationMillis,
+            failingAgent: cancelled ? undefined : failingAgent };
     }
 
     _cancel() {
@@ -448,6 +458,8 @@ class LiveRun {
         this.loops = new Map();
         this.items = new Map();
         this.failed = new Set();
+        /** errors handled by an error handler, by node: { exception, outcome } */
+        this.handled = new Map();
     }
 
     _stats(nodeId) {
@@ -493,7 +505,9 @@ class LiveRun {
                     this.failed.add(event.nodeId);
                 }
                 if (left === 0) {
-                    this.graph?.highlight(event.nodeId, this.failed.has(event.nodeId) ? 'failed' : 'done');
+                    const recovered = this.handled.get(event.nodeId)?.outcome !== undefined
+                        && this.handled.get(event.nodeId).outcome !== 'THROW_EXCEPTION';
+                    this.graph?.highlight(event.nodeId, this.failed.has(event.nodeId) ? 'failed' : recovered ? 'recovered' : 'done');
                 }
                 const parent = this._parent(event.nodeId);
                 if (this.items.has(parent)) {
@@ -503,9 +517,30 @@ class LiveRun {
                 this._showInfo(event.nodeId);
                 break;
             }
+            case 'ErrorHandled': {
+                if (!event.nodeId) {
+                    break;
+                }
+                const exception = simpleClass(event.error?.exceptionClass);
+                this.handled.set(event.nodeId, { exception, outcome: event.outcome });
+                if (event.outcome === 'THROW_EXCEPTION') {
+                    this.failed.add(event.nodeId);
+                    this.graph?.highlight(event.nodeId, 'failed');
+                } else if ((this.running.get(event.nodeId) ?? 0) === 0) {
+                    this.graph?.highlight(event.nodeId, 'recovered');
+                }
+                this._showInfo(event.nodeId);
+                break;
+            }
             default:
                 break;
         }
+    }
+
+    /** The node that made the run fail: the last fatal error handled, else the last failed agent. */
+    failingNode() {
+        const fatal = [...this.handled].filter(([, h]) => h.outcome === 'THROW_EXCEPTION').map(([id]) => id);
+        return fatal[fatal.length - 1] ?? [...this.failed].pop();
     }
 
     _showInfo(nodeId) {
@@ -516,6 +551,11 @@ class LiveRun {
         if (this.items.has(nodeId)) {
             const items = this.items.get(nodeId);
             parts.push(`${items.finished}/${items.started} items`);
+        }
+        const handled = this.handled.get(nodeId);
+        if (handled) {
+            // short: the node has room for one line; the timeline and the run panel name the exception
+            parts.push(handled.outcome === 'RETRY' ? 'retried' : handled.outcome === 'RETURN_RESULT' ? 'recovered' : 'failed');
         }
         const stats = this.stats.get(nodeId);
         if (stats && (this.running.get(nodeId) ?? 0) === 0) {

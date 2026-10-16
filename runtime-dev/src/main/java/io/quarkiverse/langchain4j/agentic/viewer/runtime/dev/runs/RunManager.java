@@ -31,6 +31,7 @@ import org.jboss.logging.Logger;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticSystemRegistry;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentFinished;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentStarted;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ErrorHandled;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ErrorInfo;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ExecutionEvent;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.PayloadTruncator;
@@ -301,6 +302,8 @@ public class RunManager {
                 yield new ScopeStateChanged(e.runId(), e.timestamp(), e.key(), value.value(),
                         e.truncated() || value.truncated(), e.nodeId());
             }
+            case ErrorHandled e -> new ErrorHandled(e.runId(), e.timestamp(), e.nodeId(), e.invocationId(),
+                    e.agentName(), e.error(), e.outcome(), t.truncate(e.result()).value());
             case PlannerDecision e -> new PlannerDecision(e.runId(), e.timestamp(), e.nodeId(), e.invocationId(),
                     e.selectedNodeIds(), e.done(), t.truncateValues(e.extras()));
             default -> event; // no free-form payload

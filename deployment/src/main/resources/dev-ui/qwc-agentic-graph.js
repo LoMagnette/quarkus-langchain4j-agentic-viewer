@@ -10,7 +10,7 @@ const LEAF_WIDTH = 150;
 const LEAF_HEIGHT = 44;
 const COMPOUND_PADDING = 20;
 const TITLE_SPACE = 24;
-const STATES = ['running', 'done', 'failed'];
+const STATES = ['running', 'done', 'failed', 'recovered'];
 
 /** Display labels of the node kinds. */
 export const KIND_LABELS = {
@@ -447,7 +447,7 @@ export class QwcAgenticGraph extends observeState(LitElement) {
     }
 
     /**
-     * Highlights a node: state is one of running, done, failed (null clears it).
+     * Highlights a node: state is one of running, done, failed, recovered (null clears it).
      * @return false when the node id is unknown
      */
     highlight(nodeId, state) {
@@ -775,6 +775,8 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             { selector: 'node.running', style: { 'border-width': 4, 'border-color': primary, 'border-style': 'solid' } },
             { selector: 'node.done', style: { 'border-width': 3, 'border-color': success } },
             { selector: 'node.failed', style: { 'border-width': 4, 'border-color': error } },
+            // an error handled by an @ErrorHandler (retry or replacement result)
+            { selector: 'node.recovered', style: { 'border-width': 4, 'border-color': '#f59e0b' } },
         ];
     }
 }

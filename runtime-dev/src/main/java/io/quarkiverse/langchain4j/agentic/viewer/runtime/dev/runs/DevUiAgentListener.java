@@ -33,6 +33,7 @@ import dev.langchain4j.model.chat.response.ChatResponse;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentFailed;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentFinished;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentStarted;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ErrorHandled;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ErrorInfo;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ScopeCreated;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ScopeDestroyed;
@@ -68,6 +69,9 @@ public class DevUiAgentListener implements AgentListener {
      */
     private final Map<String, Deque<Invocation>> openInvocations = new HashMap<>();
     private final Map<String, Long> toolStarts = new ConcurrentHashMap<>();
+
+    /** One error observer per run, so the scope's handler is wrapped once. */
+    private final Map<String, ErrorHandlers.Observer> errorObservers = new ConcurrentHashMap<>();
 
     /** Node kinds of each system's topology, by node id. */
     private final Map<String, Map<String, AgentNode>> nodesBySystem = new ConcurrentHashMap<>();
@@ -129,9 +133,44 @@ public class DevUiAgentListener implements AgentListener {
         });
     }
 
+    /**
+     * Reports what the error handler decided for a failing agent: called on the thread of the workflow running it.
+     */
+    private ErrorHandlers.Observer errorObserver(Run run) {
+        return (context, result, handlerFailure) -> {
+            Invocation enclosing = threadInvocations.get().peekLast();
+            String nodeId = failingNode(run, enclosing, context.agentName());
+            Throwable error = context.exception() != null ? context.exception() : handlerFailure;
+            runManager.emit(run, new ErrorHandled(run.id(), now(), nodeId, enclosing == null ? null : enclosing.id(),
+                    context.agentName(), error == null ? null : ErrorInfo.of(error),
+                    result == null ? null : result.type().name(), result == null ? null : result.result()));
+        };
+    }
+
+    /** The node of the failing agent: a child of the enclosing invocation's node with that name, else any such node. */
+    private String failingNode(Run run, Invocation enclosing, String agentName) {
+        AgentNode node = enclosing == null ? null : node(run, enclosing.nodeId);
+        if (node != null) {
+            if (agentName != null && agentName.equals(node.name())) {
+                return node.id();
+            }
+            for (AgentNode child : node.children()) {
+                if (child.name().equals(agentName)) {
+                    return child.id();
+                }
+            }
+        }
+        node(run, run.systemId()); // makes sure the topology is indexed
+        return nodesBySystem.getOrDefault(run.systemId(), Map.of()).values().stream()
+                .filter(n -> n.name().equals(agentName)).map(AgentNode::id).sorted().findFirst().orElse(null);
+    }
+
     @Override
     public void beforeAgenticScopeDestroyed(AgenticScope scope) {
         Run run = runsByScope.remove(scope);
+        if (run != null) {
+            errorObservers.remove(run.id());
+        }
         if (run != null) {
             runManager.emit(run, new ScopeDestroyed(run.id(), now(), String.valueOf(scope.memoryId())));
         }
@@ -143,6 +182,8 @@ public class DevUiAgentListener implements AgentListener {
         if (run == null) {
             return;
         }
+        // every workflow sets its error handler on the scope when it starts: keep it observed
+        ErrorHandlers.observe(request.agenticScope(), errorObservers.computeIfAbsent(run.id(), id -> errorObserver(run)));
         AgentInstance agent = request.agent();
         Invocation parent = openInvocation(agent.parent()).orElse(null);
         String nodeId = parent == null ? nodeId(run, agent) : childNodeId(run, parent, agent);
