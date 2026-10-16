@@ -1,23 +1,12 @@
-import { LitElement, html, css, nothing } from 'lit';
+import { LitElement, html, css } from 'lit';
 import { agenticSystems } from 'build-time-data';
 import '@vaadin/grid';
 import { columnBodyRenderer } from '@vaadin/grid/lit.js';
 import '@vaadin/button';
 import '@vaadin/icon';
+import { KIND_LABELS } from './qwc-agentic-graph.js';
 
-/** Display labels of the node kinds; agent kinds are not patterns. */
-const KIND_LABELS = {
-    AI_AGENT: 'AI agent',
-    NON_AI_AGENT: 'Non-AI agent',
-    SEQUENCE: 'Sequence',
-    PARALLEL: 'Parallel',
-    PARALLEL_MAPPER: 'Parallel mapper',
-    LOOP: 'Loop',
-    CONDITIONAL: 'Conditional',
-    SUPERVISOR: 'Supervisor',
-    PLANNER: 'Planner',
-    HUMAN_IN_THE_LOOP: 'Human in the loop',
-};
+/** Agent kinds are not patterns. */
 const AGENT_KINDS = new Set(['AI_AGENT', 'NON_AI_AGENT']);
 
 /** Workflow kinds used in a system, in tree order, without duplicates. */
@@ -33,14 +22,9 @@ export function patternKinds(system) {
     return kinds;
 }
 
-function simpleName(className) {
-    return className?.substring(Math.max(className.lastIndexOf('.'), className.lastIndexOf('$')) + 1);
-}
-
 /**
  * Agentic Systems - lists the root agentic systems of the application; selecting one opens its view.
- * Declarative systems come from the build-time data (T1.4). The system view shows an outline of the topology
- * until the graph component (T1.6) replaces it.
+ * Declarative systems come from the build-time data (T1.4); the system view shows the topology graph (T1.6).
  */
 export class QwcAgenticSystems extends LitElement {
 
@@ -97,18 +81,8 @@ export class QwcAgenticSystems extends LitElement {
         .header h3 {
             margin: 0;
         }
-        ul.outline {
-            list-style: none;
-            margin: 0;
-            padding-left: var(--lumo-space-l);
-        }
-        .outline > li {
-            margin: var(--lumo-space-xs) 0;
-        }
-        .node {
-            display: inline-flex;
-            align-items: center;
-            gap: var(--lumo-space-s);
+        qwc-agentic-graph {
+            flex: 1;
         }
     `;
 
@@ -174,26 +148,7 @@ export class QwcAgenticSystems extends LitElement {
             </div>
             <div class="muted">${system.origin.toLowerCase()} system defined in
                 ${system.sourceRef?.className}#${system.sourceRef?.methodName}</div>
-            <ul class="outline">${this._renderNode(system.root)}</ul>`;
-    }
-
-    _renderNode(node) {
-        const guard = node.guard;
-        return html`
-            <li data-node-id=${node.id}>
-                <span class="node">
-                    <span class="kind ${AGENT_KINDS.has(node.kind) ? 'agent' : ''}">${KIND_LABELS[node.kind] ?? node.kind}</span>
-                    <strong>${node.name}</strong>
-                    ${node.outputKey ? html`<span class="muted">→ ${node.outputKey}</span>` : nothing}
-                    ${guard?.maxIterations != null
-                        ? html`<span class="muted">exit: ${guard.label ?? 'none'}, max ${guard.maxIterations}</span>`
-                        : guard ? html`<span class="muted">when ${guard.label}</span>` : nothing}
-                    ${node.plannerInfo?.extras?.supplier
-                        ? html`<span class="muted">planner from ${simpleName(node.plannerInfo.extras.supplier.split('#')[0])}#${node.plannerInfo.extras.supplier.split('#')[1]}</span>`
-                        : nothing}
-                </span>
-                ${node.children?.length ? html`<ul class="outline">${node.children.map(child => this._renderNode(child))}</ul>` : nothing}
-            </li>`;
+            <qwc-agentic-graph .system=${system}></qwc-agentic-graph>`;
     }
 }
 

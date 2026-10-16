@@ -1,9 +1,11 @@
 ---
 id: TASK-22
 title: 'T1.6: Topology graph component'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-10-06 06:13'
+updated_date: '2026-10-16 12:49'
 labels:
   - dev-ui
   - graph
