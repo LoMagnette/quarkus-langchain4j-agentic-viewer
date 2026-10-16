@@ -7,7 +7,10 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -39,8 +42,10 @@ public class HotReloadDevModeTest extends DevUIJsonRPCTest {
                 HttpResponse.BodyHandlers.discarding());
     }
 
-    private static long viewerThreads() {
-        return Thread.getAllStackTraces().keySet().stream().filter(t -> t.getName().startsWith("agentic-viewer-")).count();
+    /** Viewer threads alive, except those of other tests in this JVM (alive before the reloads). */
+    private static List<String> viewerThreads(Set<String> before) {
+        return Thread.getAllStackTraces().keySet().stream().map(Thread::getName)
+                .filter(name -> name.startsWith("agentic-viewer-") && !before.contains(name)).toList();
     }
 
     private String stepDescription() throws Exception {
@@ -72,6 +77,7 @@ public class HotReloadDevModeTest extends DevUIJsonRPCTest {
         assertEquals("Approve this topic?", stepDescription(), "registry rebuilt from the changed agent interface");
         assertEquals(0, executeJsonRPCMethod("listRuns", Map.of("systemId", ROOT)).size(), "runs of the old application gone");
 
+        Set<String> before = Thread.getAllStackTraces().keySet().stream().map(Thread::getName).collect(Collectors.toSet());
         for (int i = 0; i < 10; i++) {
             openRun();
             int round = i;
@@ -80,10 +86,10 @@ public class HotReloadDevModeTest extends DevUIJsonRPCTest {
             reload();
         }
         assertEquals("Approve this topic? (round 9)", stepDescription());
-        for (int i = 0; i < 50 && viewerThreads() > 2; i++) {
+        for (int i = 0; i < 50 && viewerThreads(before).size() > 2; i++) {
             Thread.sleep(100);
         }
-        assertTrue(viewerThreads() <= 2, "after 10 reloads with open runs, only the current application's threads: "
-                + Thread.getAllStackTraces().keySet().stream().map(Thread::getName).filter(n -> n.startsWith("agentic-viewer-")).toList());
+        assertTrue(viewerThreads(before).size() <= 2,
+                "after 10 reloads with open runs, only the current application's threads: " + viewerThreads(before));
     }
 }

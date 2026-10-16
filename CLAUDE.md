@@ -30,9 +30,11 @@ mvn test -pl integration-tests -Dtest=SampleRunsTest
 # Sample app in dev mode (scripted fake model, no API key): http://localhost:8080/q/dev-ui -> Agentic Systems
 mvn quarkus:dev -pl integration-tests              # add -Ppatterns for the pattern samples
 
-# Native build of the sample app (NativeArtifactIT then checks it has no Dev UI code)
-mvn package -pl integration-tests -Dquarkus.native.enabled=true -Dquarkus.package.jar.enabled=false \
-    -Dquarkus.native.container-build=true -DskipTests
+# Native build of the sample app, then NativeArtifactIT checks it has no Dev UI code (local GraalVM/Mandrel, or add
+# -Dquarkus.native.container-build=true); ProdArtifactIT does the same on the JVM package in every build
+mvn install -DskipTests
+mvn verify -pl integration-tests -Dquarkus.native.enabled=true -Dquarkus.package.jar.enabled=false \
+    -Dtest=none -Dsurefire.failIfNoSpecifiedTests=false -Dit.test=NativeArtifactIT
 
 # Config reference of the docs (docs/modules/ROOT/pages/includes), generated from the config roots
 mvn install -pl docs
