@@ -25,21 +25,48 @@ export const KIND_LABELS = {
     HUMAN_IN_THE_LOOP: 'Human in the loop',
 };
 
+/**
+ * How each node kind is drawn; the graph style and the legend both use it. Agents are leaf shapes, workflows are
+ * boxes told apart by their border. Hues are mid-saturation so they read on light and dark themes.
+ */
+export const KIND_STYLES = {
+    AI_AGENT: { shape: 'round-rectangle', color: '#10b981', border: 'solid' },
+    NON_AI_AGENT: { shape: 'cut-rectangle', color: '#64748b', border: 'solid' },
+    HUMAN_IN_THE_LOOP: { shape: 'round-hexagon', color: '#f59e0b', border: 'solid' },
+    SEQUENCE: { shape: 'round-rectangle', color: '#64748b', border: 'solid' },
+    PARALLEL: { shape: 'round-rectangle', color: '#3b82f6', border: 'double' },
+    PARALLEL_MAPPER: { shape: 'round-rectangle', color: '#06b6d4', border: 'double' },
+    LOOP: { shape: 'round-rectangle', color: '#8b5cf6', border: 'dashed' },
+    CONDITIONAL: { shape: 'round-rectangle', color: '#f97316', border: 'dotted' },
+    SUPERVISOR: { shape: 'round-rectangle', color: '#ec4899', border: 'solid', width: 3 },
+    PLANNER: { shape: 'round-rectangle', color: '#d946ef', border: 'solid', width: 3 },
+};
+
 /** Separates a topology node id from the role of a helper node drawn for it (never used in topology ids). */
 const HELPER_SEPARATOR = '::';
+const HELPER_SIZE = 14;
 
 /**
  * Turns an AgenticSystem topology into graph nodes and edges.
- * A node with children is drawn as a compound node containing them; node ids are the topology node ids.
+ * A node with children is drawn as a compound node containing them; node ids are the topology node ids. Helper
+ * nodes (fork, join...) are added inside a compound where its kind needs them; their id is the compound id,
+ * {@code ::} and their role.
  * Edges have a kind: the layout ignores BACK edges, so cycles do not reorder the forward flow.
  *
- * @return {{nodes: Array<{id, label, kind, parent, helper?}>, edges: Array<{id, source, target, kind, label?}>}}
+ * @return {{nodes: Array<{id, label, kind, parent, compound, helper?}>,
+ *           edges: Array<{id, source, target, kind, label?}>}}
  */
 export function toGraph(system) {
     const nodes = [];
     const edges = [];
     const edge = (source, target, kind, label) =>
         edges.push({ id: `${source}->${target}:${kind}`, source, target, kind, label });
+    const helper = (parent, role) => {
+        const id = parent.id + HELPER_SEPARATOR + role;
+        nodes.push({ id, label: '', kind: role.toUpperCase(), parent: parent.id, compound: false, helper: true,
+            width: HELPER_SIZE, height: HELPER_SIZE });
+        return id;
+    };
 
     const visit = (node, parent) => {
         const compound = node.children?.length > 0;
@@ -50,29 +77,37 @@ export function toGraph(system) {
             parent,
             compound,
         });
-        node.children?.forEach(child => visit(child, node.id));
-        if (compound) {
-            linkChildren(node, edge);
+        if (!compound) {
+            return;
+        }
+        // nodes are listed in drawing order (the layout keeps it): helpers before, children, helpers after
+        const ids = node.children.map(child => child.id);
+        switch (node.kind) {
+            case 'PARALLEL':
+            case 'PARALLEL_MAPPER': {
+                const fork = helper(node, 'fork');
+                node.children.forEach(child => visit(child, node.id));
+                const join = helper(node, 'join');
+                const label = node.kind === 'PARALLEL_MAPPER' ? 'each item' : undefined;
+                ids.forEach(id => {
+                    edge(fork, id, 'FORK', label);
+                    edge(id, join, 'JOIN');
+                });
+                break;
+            }
+            case 'SEQUENCE':
+            case 'LOOP':
+                node.children.forEach(child => visit(child, node.id));
+                ids.slice(1).forEach((id, i) => edge(ids[i], id, 'SEQUENCE'));
+                break;
+            default:
+                // guards and candidates come with T1.6c-d
+                node.children.forEach(child => visit(child, node.id));
+                break;
         }
     };
     visit(system.root, undefined);
     return { nodes, edges };
-}
-
-/**
- * Edges between the children of a workflow node, by kind.
- */
-function linkChildren(node, edge) {
-    const ids = node.children.map(child => child.id);
-    switch (node.kind) {
-        case 'SEQUENCE':
-        case 'LOOP':
-            ids.slice(1).forEach((id, i) => edge(ids[i], id, 'SEQUENCE'));
-            break;
-        default:
-            // fan-out, guards and candidates come with the per-kind edges (T1.6b-d)
-            break;
-    }
 }
 
 /**
@@ -96,6 +131,37 @@ export class QwcAgenticGraph extends observeState(LitElement) {
         .error {
             color: var(--lumo-error-text-color);
         }
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--lumo-space-m);
+            padding: var(--lumo-space-xs) 0;
+            font-size: var(--lumo-font-size-s);
+            color: var(--lumo-secondary-text-color);
+        }
+        .legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--lumo-space-xs);
+        }
+        .swatch {
+            display: inline-block;
+            width: 22px;
+            height: 12px;
+            border: 2px solid;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .swatch.cut-rectangle {
+            border-radius: 0;
+            clip-path: polygon(4px 0, calc(100% - 4px) 0, 100% 4px, 100% calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 0 calc(100% - 4px), 0 4px);
+        }
+        .swatch.round-hexagon {
+            border-radius: 6px / 50%;
+        }
+        .swatch.double {
+            border-width: 4px;
+        }
     `;
 
     static properties = {
@@ -106,7 +172,31 @@ export class QwcAgenticGraph extends observeState(LitElement) {
     render() {
         return html`
             ${this._error ? html`<div class="error">Graph failed: ${this._error}</div>` : ''}
+            ${this._renderLegend()}
             <div id="graph"></div>`;
+    }
+
+    /** Lists the node kinds present in the system, drawn like in the graph. */
+    _renderLegend() {
+        const kinds = [];
+        const visit = node => {
+            if (!kinds.includes(node.kind)) {
+                kinds.push(node.kind);
+            }
+            node.children?.forEach(visit);
+        };
+        if (this.system) {
+            visit(this.system.root);
+        }
+        const order = Object.keys(KIND_STYLES);
+        kinds.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+        return html`<div class="legend">${kinds.map(kind => {
+            const style = KIND_STYLES[kind] ?? KIND_STYLES.NON_AI_AGENT;
+            return html`<span class="legend-item" data-kind=${kind}>
+                <span class="swatch ${style.shape} ${style.border}"
+                      style="border-color: ${style.color}; border-style: ${style.border}"></span>
+                ${KIND_LABELS[kind] ?? kind}</span>`;
+        })}</div>`;
     }
 
     updated(changed) {
@@ -219,6 +309,8 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             'elk.spacing.nodeNode': '30',
             'elk.layered.spacing.nodeNodeBetweenLayers': '40',
             'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
+            // centers a fork over the branches it fans out to (and a join under them)
+            'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
             'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
             'elk.layered.crossingMinimization.forceNodeModelOrder': 'true',
             // unconnected siblings would otherwise be packed as separate components, sorted by id
@@ -301,7 +393,7 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             { selector: 'node', style: {
                 'label': 'data(label)', 'color': text, 'font-size': 12, 'text-valign': 'center', 'text-halign': 'center',
                 'text-wrap': 'ellipsis', 'text-max-width': LEAF_WIDTH - 12,
-                'background-color': base, 'border-width': 1.5, 'border-color': contrast,
+                'background-color': base, 'border-width': 2, 'border-color': contrast,
                 'width': LEAF_WIDTH, 'height': LEAF_HEIGHT, 'shape': 'round-rectangle',
             } },
             { selector: ':parent', style: {
@@ -312,11 +404,22 @@ export class QwcAgenticGraph extends observeState(LitElement) {
                 'min-width': 'data(width)', 'min-height': 'data(height)', 'min-height-bias-top': '100%',
                 'min-height-bias-bottom': '0%', 'text-margin-y': 22,
             } },
+            ...Object.entries(KIND_STYLES).map(([kind, k]) => ({ selector: `node.${kind.toLowerCase()}`, style: {
+                'shape': k.shape, 'border-color': k.color, 'border-style': k.border, 'border-width': k.width ?? 2,
+                ...(k.border === 'double' ? { 'border-width': 5 } : {}),
+            } })),
+            { selector: 'node.helper', style: {
+                'shape': 'diamond', 'width': HELPER_SIZE, 'height': HELPER_SIZE, 'background-color': secondary,
+                'border-width': 0, 'label': '', 'events': 'no',
+            } },
             { selector: 'edge', style: {
                 'width': 1.5, 'line-color': secondary, 'target-arrow-color': secondary, 'target-arrow-shape': 'triangle',
                 'curve-style': 'bezier', 'label': 'data(label)', 'font-size': 10, 'color': secondary,
                 'text-background-color': base, 'text-background-opacity': 1, 'text-background-padding': 2,
             } },
+            // fan-out edges leave the fork without an arrow; joins converge on the join point
+            { selector: 'edge.fork', style: { 'target-arrow-shape': 'triangle' } },
+            { selector: 'edge.join', style: { 'target-arrow-shape': 'none' } },
             { selector: 'node.running', style: { 'border-width': 4, 'border-color': primary } },
             { selector: 'node.done', style: { 'border-width': 3, 'border-color': success } },
             { selector: 'node.failed', style: { 'border-width': 4, 'border-color': error } },
