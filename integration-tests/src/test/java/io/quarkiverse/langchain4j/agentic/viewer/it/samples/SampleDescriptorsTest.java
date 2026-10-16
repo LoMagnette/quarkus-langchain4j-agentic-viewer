@@ -14,11 +14,14 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentDescriptor;
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentTree;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotationScanner;
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.RootSystemDetector;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.ToolDescriptor;
 
 /**
- * The build-time scanner produces descriptors for every declarative sample system, down to its leaf agents.
+ * The build-time scanner produces descriptors for every declarative sample system, down to its leaf agents, and the
+ * root detection lists exactly the sample systems.
  */
 class SampleDescriptorsTest {
 
@@ -72,6 +75,30 @@ class SampleDescriptorsTest {
                 .toList();
         assertEquals(List.of(), orphans);
         assertTrue(descriptors.size() > 9, descriptors::toString);
+    }
+
+    private static String render(AgentTree tree) {
+        String self = tree.agentClass().substring(tree.agentClass().lastIndexOf('.') + 1);
+        return tree.children().isEmpty() ? self
+                : self + tree.children().stream().map(SampleDescriptorsTest::render).toList();
+    }
+
+    @Test
+    void rootSystemsOfTheSampleApp() {
+        assertEquals(List.of(
+                "BankSupervisor[BankSupervisor$ExchangeAgent, BankSupervisor$WithdrawAgent, BankSupervisor$CreditAgent]",
+                "DraftReviewer[DraftReviewer$Drafter, DraftReviewer$Reviewer]",
+                "ExpertRouter[ExpertRouter$CategoryRouter, ExpertRouter$Experts[ExpertRouter$MedicalExpert,"
+                        + " ExpertRouter$TechnicalExpert, ExpertRouter$LegalExpert]]",
+                "PhraseTranslator[PhraseTranslator$Translator]",
+                "ResearchGatherer[ResearchGatherer$WebSearcher, ResearchGatherer$DatabaseSearcher,"
+                        + " ResearchGatherer$ArchiveSearcher]",
+                "ResilientStoryWriter[ResilientStoryWriter$TopicWriter]",
+                "StoryCreator[StoryCreator$Drafter, StoryCreator$StyleReviewLoop[StoryCreator$StyleScorer,"
+                        + " StoryCreator$StyleEditor]]",
+                "StoryWriter[StoryWriter$IntroWriter, StoryWriter$AdventureWriter]",
+                "TripPlanner[TripPlanner$DestinationProposer, TripPlanner$TravelerApproval, TripPlanner$ItineraryWriter]"),
+                new RootSystemDetector().detect(descriptors).stream().map(SampleDescriptorsTest::render).toList());
     }
 
     @Test

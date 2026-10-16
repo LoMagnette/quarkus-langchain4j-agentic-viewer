@@ -8,7 +8,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentDescriptor;
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentTree;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticDescriptorsBuildItem;
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticRootsBuildItem;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AiAgentDetails;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.ToolDescriptor;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
@@ -22,6 +24,7 @@ public class AgenticDescriptorsBuildStepTest {
 
     // the build step and the test method run in different class loaders: report through a system property
     private static final String RESULT_PROPERTY = "agentic-viewer.test.descriptors";
+    private static final String ROOTS_PROPERTY = "agentic-viewer.test.roots";
 
     @RegisterExtension
     static final QuarkusUnitTest config = new QuarkusUnitTest()
@@ -35,8 +38,34 @@ public class AgenticDescriptorsBuildStepTest {
                                 + guards(d))
                         .toList());
                 System.setProperty(RESULT_PROPERTY, summary);
+                System.setProperty(ROOTS_PROPERTY, String.join("\n", context.consume(AgenticRootsBuildItem.class).getRoots()
+                        .stream().map(AgenticDescriptorsBuildStepTest::render).toList()));
                 context.produce(new FeatureBuildItem("agentic-viewer-descriptors-check"));
-            }).consumes(AgenticDescriptorsBuildItem.class).produces(FeatureBuildItem.class).build());
+            }).consumes(AgenticDescriptorsBuildItem.class).consumes(AgenticRootsBuildItem.class)
+                    .produces(FeatureBuildItem.class).build());
+
+    private static String render(AgentTree tree) {
+        String self = tree.agentClass().substring(tree.agentClass().lastIndexOf('$') + 1);
+        return tree.children().isEmpty() ? self
+                : self + tree.children().stream().map(AgenticDescriptorsBuildStepTest::render).toList();
+    }
+
+    @Test
+    void rootSystems() {
+        assertEquals(List.of(
+                "ApprovedStory[Writer, Approval]",
+                "Bank[Teller]",
+                "Batch[Translator]",
+                "Cashier",
+                "DraftPlanner[Writer]",
+                "Polisher[Scorer, Editor]",
+                "Repeater[Editor]",
+                "ResearchFan[WebSearch, DbSearch]",
+                "Router[Expert, Generalist]",
+                "Shouter",
+                "StoryFlow[Writer, Reviewer]"),
+                List.of(System.getProperty(ROOTS_PROPERTY).split("\n")));
+    }
 
     private static String guards(AgentDescriptor d) {
         String guards = "";

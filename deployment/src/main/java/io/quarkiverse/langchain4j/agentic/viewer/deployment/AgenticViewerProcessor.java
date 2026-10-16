@@ -23,6 +23,8 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.model.WorkflowCompositi
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.model.AgenticGraphBuildItem;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotationScanner;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticDescriptorsBuildItem;
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticRootsBuildItem;
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.RootSystemDetector;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scanner.DeclarativeAgentScanner;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scanner.ImperativeAgentScanner;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerJsonRpcService;
@@ -60,6 +62,14 @@ public class AgenticViewerProcessor {
     @BuildStep
     AgenticDescriptorsBuildItem scanAgenticAnnotations(CombinedIndexBuildItem combinedIndex) {
         return new AgenticDescriptorsBuildItem(new AgenticAnnotationScanner().scan(combinedIndex.getIndex()));
+    }
+
+    /**
+     * Keeps the agents no other agent uses as roots of agentic systems, with their sub-agents nested (T1.3).
+     */
+    @BuildStep
+    AgenticRootsBuildItem detectRootSystems(AgenticDescriptorsBuildItem descriptors) {
+        return new AgenticRootsBuildItem(new RootSystemDetector().detect(descriptors.getDescriptors()));
     }
 
     /**

@@ -4,7 +4,7 @@ title: 'T1.4: TopologyBuilder from declarative descriptors'
 status: To Do
 assignee: []
 created_date: '2026-10-06 06:13'
-updated_date: '2026-10-06 11:32'
+updated_date: '2026-10-16 12:29'
 labels:
   - runtime-dev
   - topology
@@ -29,6 +29,7 @@ Spec: T1.4. `TopologyBuilder` turns descriptors (and later live `AgentInstance` 
 - [ ] #1 TopologyBuilder produces an AgenticSystem for each declarative root with origin DECLARATIVE and a sourceRef
 - [ ] #2 Node ids are stable across builds of the same code
 - [ ] #3 Unit tests cover every node kind, including nesting (loop inside sequence)
+- [ ] #4 The AgenticSystem of each root is handed to the Dev UI as build-time data and to runtime-dev via a recorder (moved from TASK-19)
 <!-- AC:END -->
 
 ## Implementation Notes
