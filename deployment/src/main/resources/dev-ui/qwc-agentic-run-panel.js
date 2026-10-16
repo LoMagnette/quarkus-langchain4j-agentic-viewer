@@ -70,6 +70,13 @@ function simpleClass(name) {
     return name ? name.substring(name.lastIndexOf('.') + 1) : 'error';
 }
 
+/** Why a peer-to-peer planner stopped. */
+export const TERMINATIONS = {
+    EXIT_CONDITION: 'exit condition met',
+    MAX_INVOCATIONS: 'maximum invocations reached',
+    STABLE_STATE: 'stable state (no agent can activate)',
+};
+
 function simpleType(name) {
     return name ? name.substring(Math.max(name.lastIndexOf('.'), name.lastIndexOf('$')) + 1) : '';
 }
@@ -597,6 +604,14 @@ class LiveRun {
         this.handled = new Map();
         /** human-in-the-loop steps waiting for an answer: their AwaitingHumanInput events, oldest first */
         this.waiting = [];
+        /** peer-to-peer planners: node id -> { invocations, max, termination } */
+        this.peers = new Map();
+        /** peer-to-peer agents that can activate: inputs all in the scope, one written since they last ran */
+        this.ready = new Set();
+        /** event sequence of the last write of each scope key, and of the last start of each node */
+        this.sequence = 0;
+        this.written = new Map();
+        this.started = new Map();
         /** nodes on the path a goal-oriented planner computed, not run yet: node id -> position (1-based) */
         this.planned = new Map();
         /** sub-agents called by each supervisor or planner, in call order: node id -> [child node ids] */
@@ -627,6 +642,8 @@ class LiveRun {
             case 'AgentStarted': {
                 this.running.set(event.nodeId, (this.running.get(event.nodeId) ?? 0) + 1);
                 this.graph?.highlight(event.nodeId, 'running');
+                this.ready.delete(event.nodeId);
+                this.started.set(event.nodeId, ++this.sequence);
                 if (this.planned.has(event.nodeId)) {
                     this._showInfo(event.nodeId); // no longer "planned"
                 }
@@ -688,7 +705,34 @@ class LiveRun {
                 this._showInfo(event.nodeId);
                 break;
             }
+            case 'ScopeStateChanged': {
+                this.written.set(event.key, ++this.sequence);
+                // a peer-to-peer planner draws its state keys: written ones light up
+                this.peers.forEach((peer, plannerId) => this.graph?.highlight(`${plannerId}::key::${event.key}`, 'done'));
+                break;
+            }
             case 'PlannerDecision': {
+                if (event.extras?.pattern === 'P2P') {
+                    this.peers.set(event.nodeId, { invocations: event.extras.invocations, max: event.extras.maxInvocations,
+                        termination: event.extras.termination });
+                    // the agents that can activate light up (as P2PPlanner: inputs all in the scope, and new since the
+                    // agent last ran); the others go back to what they did
+                    const present = new Set(event.extras.ready ?? []);
+                    (this.nodes.get(event.nodeId)?.children ?? []).forEach(child => {
+                        if ((this.running.get(child.id) ?? 0) > 0) {
+                            return;
+                        }
+                        const lastRun = this.started.get(child.id);
+                        const fresh = lastRun === undefined
+                            || (child.inputKeys ?? []).some(key => (this.written.get(key) ?? 0) > lastRun);
+                        if (present.has(child.id) && fresh && !event.done) {
+                            this.ready.add(child.id);
+                            this.graph?.highlight(child.id, 'ready');
+                        } else if (this.ready.delete(child.id)) {
+                            this.graph?.highlight(child.id, this.failed.has(child.id) ? 'failed' : this.stats.has(child.id) ? 'done' : null);
+                        }
+                    });
+                }
                 if (Array.isArray(event.extras?.path)) {
                     // the path a goal-oriented planner computed: highlighted, then walked step by step
                     event.extras.path.forEach((id, i) => {
@@ -745,6 +789,11 @@ class LiveRun {
             const items = this.items.get(nodeId);
             parts.push(`${items.finished}/${items.started} items`);
         }
+        const peer = this.peers.get(nodeId);
+        if (peer) {
+            parts.push(peer.termination ? `stopped: ${TERMINATIONS[peer.termination] ?? peer.termination}`
+                : `invocations ${peer.invocations}${peer.max != null ? `/${peer.max}` : ''}`);
+        }
         if (this.planned.has(nodeId) && (this.running.get(nodeId) ?? 0) === 0 && !this.stats.has(nodeId)) {
             parts.push(`planned ${this.planned.get(nodeId)}`);
         }
@@ -781,6 +830,8 @@ class LiveRun {
             calls: Object.fromEntries(this.calls),
             decisions: Object.fromEntries(this.decisions),
             planned: Object.fromEntries(this.planned),
+            peers: Object.fromEntries(this.peers),
+            ready: [...this.ready],
         };
     }
 }

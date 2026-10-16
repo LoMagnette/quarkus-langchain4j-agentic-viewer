@@ -45,7 +45,8 @@ public class GoapAdapter implements PatternAdapter {
         }
         List<AgentInstance> path = search(decision.subagents(), decision.scope().state().keySet(),
                 decision.plannerAgent().outputKey());
-        return path == null ? Insight.NONE : new Insight(Map.of("goal", decision.plannerAgent().outputKey()), path);
+        return path == null ? Insight.NONE
+                : new Insight(Map.of("goal", decision.plannerAgent().outputKey()), Map.of("path", path));
     }
 
     @Override

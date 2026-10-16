@@ -1,4 +1,5 @@
 import { LitElement, html, css, nothing } from 'lit';
+import { TERMINATIONS } from './qwc-agentic-run-panel.js';
 
 /**
  * Rows of the waterfall timeline of a run, from its events: one row per agent invocation, nested by parent invocation
@@ -71,7 +72,8 @@ export function buildTimeline(events, now = Date.now()) {
                     kind: 'decision', id: `decision:${event.invocationId}:${event.timestamp}:${step}:${chosen.length}`,
                     name: chosen.length > 0 ? `Step ${step}` : event.extras?.action === 'doneWithResult' ? 'Done with result'
                         : event.extras?.action === 'suspend' ? 'Suspended' : 'Done',
-                    nodeId: event.nodeId, decision: chosen.length > 0 ? `→ ${chosen.join(', ')}` : undefined,
+                    nodeId: event.nodeId, decision: chosen.length > 0 ? `→ ${chosen.join(', ')}`
+                        : TERMINATIONS[event.extras?.termination],
                     start: event.timestamp, end: event.timestamp, duration: 0, status: 'done', children: [],
                 };
                 const planner = invocations.get(event.invocationId);

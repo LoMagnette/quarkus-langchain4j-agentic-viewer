@@ -12,7 +12,7 @@ const LEAF_HEIGHT = 44;
 const TITLE_CHAR_WIDTH = 7;
 const COMPOUND_PADDING = 20;
 const TITLE_SPACE = 24;
-const STATES = ['planned', 'running', 'waiting', 'done', 'failed', 'recovered'];
+const STATES = ['planned', 'ready', 'running', 'waiting', 'done', 'failed', 'recovered'];
 
 /** Display labels of the node kinds. */
 export const KIND_LABELS = {
@@ -31,6 +31,7 @@ export const KIND_LABELS = {
     INPUT_KEY: 'System input',
     CONTRIBUTED: 'Planner state',
     GOAL: 'Goal key',
+    STATE_KEY: 'State key',
 };
 
 /**
@@ -54,6 +55,7 @@ export const KIND_STYLES = {
     INPUT_KEY: { shape: 'round-tag', color: '#94a3b8', border: 'dashed' },
     CONTRIBUTED: { shape: 'round-rectangle', color: '#d946ef', border: 'dotted' },
     GOAL: { shape: 'round-tag', color: '#d946ef', border: 'double' },
+    STATE_KEY: { shape: 'round-tag', color: '#94a3b8', border: 'solid' },
 };
 
 /** Separates a topology node id from the role of a helper node drawn for it (never used in topology ids). */
@@ -119,6 +121,36 @@ export function toGraph(system) {
         }
     };
 
+    /**
+     * A peer-to-peer planner activates its sub-agents as their inputs appear in the scope: a bipartite graph of the
+     * sub-agents and the state keys they read (key -> agent) and write (agent -> key); cycles are legitimate. Keys no
+     * sub-agent writes come first, then each sub-agent followed by the key it writes, so the layout follows the flow.
+     */
+    const peerGraph = node => {
+        const written = new Set(node.children.map(child => child.outputKey).filter(Boolean));
+        const keyNode = key => {
+            const id = node.id + HELPER_SEPARATOR + 'key' + HELPER_SEPARATOR + key;
+            if (!nodes.some(n => n.id === id)) {
+                nodes.push({ id, label: key, kind: written.has(key) ? 'STATE_KEY' : 'INPUT_KEY', parent: node.id,
+                    compound: false, helper: true, inputKey: true, width: Math.max(60, key.length * 7 + 24), height: 28 });
+            }
+            return id;
+        };
+        node.children.forEach(child => (child.inputKeys ?? []).filter(key => !written.has(key)).forEach(keyNode));
+        node.children.forEach(child => {
+            visit(child, node.id);
+            if (child.outputKey) {
+                keyNode(child.outputKey);
+            }
+        });
+        node.children.forEach(child => {
+            (child.inputKeys ?? []).forEach(key => edge(keyNode(key), child.id, 'READS'));
+            if (child.outputKey) {
+                edge(child.id, keyNode(child.outputKey), 'WRITES');
+            }
+        });
+    };
+
     const visit = (node, parent) => {
         const compound = node.children?.length > 0;
         nodes.push({
@@ -130,7 +162,11 @@ export function toGraph(system) {
             // extra layout room: a loop draws its back-edge and label on the right, conditional guards label the fan-out
             paddingRight: compound && node.kind === 'LOOP' ? BACK_EDGE_GAP + labelWidth(loopLabel(node.guard)) + 12 : undefined,
             layerSpacing: compound && (node.kind === 'CONDITIONAL' || system.contributions?.[node.id]
-                || node.plannerInfo?.patternType === 'GOAP') ? 70 : undefined,
+                || node.plannerInfo?.patternType === 'GOAP') ? 70
+                : compound && node.plannerInfo?.patternType === 'P2P' ? 40 : undefined,
+            // a peer-to-peer graph is a long chain of agents and keys: it reads better left to right
+            direction: compound && node.plannerInfo?.patternType === 'P2P' ? 'RIGHT' : undefined,
+            wrap: compound && node.plannerInfo?.patternType === 'P2P',
         });
         if (!compound) {
             return;
@@ -175,6 +211,10 @@ export function toGraph(system) {
                 }
                 if (node.plannerInfo?.patternType === 'GOAP') {
                     goalGraph(node);
+                    break;
+                }
+                if (node.plannerInfo?.patternType === 'P2P') {
+                    peerGraph(node);
                     break;
                 }
                 // sub-agents are chosen at runtime: candidates of a hub, with no order between them
@@ -719,6 +759,10 @@ export class QwcAgenticGraph extends observeState(LitElement) {
                     'elk.padding': `[top=${COMPOUND_PADDING + TITLE_SPACE},left=${COMPOUND_PADDING},`
                             + `bottom=${COMPOUND_PADDING},right=${COMPOUND_PADDING + (node.paddingRight ?? 0)}]`,
                     ...(node.layerSpacing ? { 'elk.layered.spacing.nodeNodeBetweenLayers': String(node.layerSpacing) } : {}),
+                    ...(node.direction ? { 'elk.direction': node.direction } : {}),
+                    // a long chain is folded into rows (ELK graph wrapping) to keep a readable aspect ratio
+                    ...(node.wrap ? { 'elk.layered.wrapping.strategy': 'MULTI_EDGE', 'elk.aspectRatio': '2.0',
+                        'elk.layered.wrapping.additionalEdgeSpacing': '20' } : {}),
                 };
                 elkNode.children = [];
                 elkNode.edges = [];
@@ -883,7 +927,7 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             { selector: 'node.goal', style: {
                 'width': 'data(width)', 'height': 'data(height)', 'font-weight': 'bold', 'background-color': base,
             } },
-            { selector: 'node.input_key', style: {
+            { selector: 'node.input_key, node.state_key', style: {
                 'label': 'data(label)', 'events': 'no', 'width': 'data(width)', 'height': 'data(height)',
                 'shape': 'round-tag', 'border-width': 2, 'background-color': base, 'font-style': 'italic',
             } },
@@ -931,6 +975,8 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             { selector: 'node.running', style: { 'border-width': 4, 'border-color': primary, 'border-style': 'solid' } },
             // on the path a goal-oriented planner computed, not run yet
             { selector: 'node.planned', style: { 'border-width': 3, 'border-color': primary, 'border-style': 'dashed' } },
+            // a peer-to-peer agent whose inputs are all in the scope
+            { selector: 'node.ready', style: { 'border-width': 3, 'border-color': primary, 'border-style': 'dotted' } },
             // a human-in-the-loop step waiting for the answer given in the run panel
             { selector: 'node.waiting', style: { 'border-width': 4, 'border-color': primary, 'border-style': 'dashed' } },
             { selector: 'node.done', style: { 'border-width': 3, 'border-color': success } },

@@ -362,7 +362,7 @@ public class DevUiAgentListener implements AgentListener {
      * planner's sub-agents (declaration order, as in the topology).
      */
     void plannerDecision(Run run, AgentInstance plannerAgent, List<AgentInstance> subagents, Action action,
-            Map<String, Object> patternExtras, List<AgentInstance> plannedPath) {
+            Map<String, Object> patternExtras, Map<String, List<AgentInstance>> patternAgents) {
         if (action.getClass().getSimpleName().equals("NoOpAction")) {
             return; // nothing decided
         }
@@ -374,10 +374,9 @@ public class DevUiAgentListener implements AgentListener {
             call.agentsToCall().forEach(chosen -> selected.add(childNodeId(nodeId, node, subagents, chosen)));
         }
         Map<String, Object> extras = new HashMap<>(patternExtras == null ? Map.of() : patternExtras);
-        if (plannedPath != null) {
-            // the agents the planner intends to call, e.g. the path a GOAP planner computed
-            extras.put("path", plannedPath.stream().map(agent -> childNodeId(nodeId, node, subagents, agent)).toList());
-        }
+        // agents a pattern adapter tells about (e.g. the path a GOAP planner computed), as node ids
+        (patternAgents == null ? Map.<String, List<AgentInstance>> of() : patternAgents).forEach((name, agents) -> extras
+                .put(name, agents.stream().map(agent -> childNodeId(nodeId, node, subagents, agent)).toList()));
         extras.put("action", action.isSuspended() ? "suspend"
                 : action instanceof Action.AgentCallAction ? "call"
                         : action.getClass().getSimpleName().equals("DoneWithResultAction") ? "doneWithResult" : "done");

@@ -1,9 +1,11 @@
 ---
 id: TASK-49
 title: 'T4.4: P2P adapter'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-10-06 06:15'
+updated_date: '2026-10-16 20:28'
 labels:
   - patterns
   - p2p
@@ -25,5 +27,11 @@ Spec: T4.4 (F5 peer-to-peer row). Split into static and live view.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The research sample shows why it stopped
+- [x] #1 The research sample shows why it stopped
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+P2P adapter: bipartite agent/key view, live activations, invocation counter and termination reason; the research sample shows it stopped because its exit condition was met (TASK-49.1, TASK-49.2).
+<!-- SECTION:FINAL_SUMMARY:END -->

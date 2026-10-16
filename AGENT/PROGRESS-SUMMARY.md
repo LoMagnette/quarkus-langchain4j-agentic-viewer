@@ -590,3 +590,12 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   form shows "Planned path" as inputs are filled; a run marks the path "planned", then walks it.
 - TripGoalPlanner: preview = computed path = walked path (HotelFinder, WeatherForecaster, ActivityPlanner,
   ItineraryBuilder).
+
+### T4.4 P2P adapter — done (Oct 16, 2026)
+
+- Static: a P2P planner node is a bipartite graph of agents and state keys (reads key -> agent, writes agent -> key),
+  cycles included, laid out left to right and folded into rows (ELK graph wrapping).
+- Live: written keys light up, an agent lights up when it can activate (inputs all present, one written since it last
+  ran, as P2PPlanner), the planner shows "invocations n/max" then "stopped: <reason>" (exit condition met, maximum
+  invocations reached, stable state); the timeline's Done row gives the reason.
+- `PatternAdapter.Insight` now carries named agent lists (GOAP `path`, P2P `ready`) mapped to node ids.

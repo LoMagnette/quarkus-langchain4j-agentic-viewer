@@ -108,7 +108,9 @@ their planner class is present (`AgenticViewerProcessor.patternAdapters`, names 
 `extras.pattern`. Never reference an adapter class from code that runs without the module. Adapters give an
 `Insight` per decision (extras, planned path) and may preview paths (`GoapAdapter` runs the module's own
 `GoalOrientedSearchGraph`: `previewGoalPath`, `extras.path` on the first decision). A GOAP planner node is drawn as its
-key dependency graph (`goalGraph` in `toGraph`).
+key dependency graph (`goalGraph` in `toGraph`). A P2P planner node is a bipartite agent/key graph (`peerGraph`, laid out left to right
+with ELK graph wrapping); `P2PAdapter` reads the private maximum and exit condition by reflection to tell the
+termination reason (`extras.termination`).
 
 ### Dev UI Integration
 

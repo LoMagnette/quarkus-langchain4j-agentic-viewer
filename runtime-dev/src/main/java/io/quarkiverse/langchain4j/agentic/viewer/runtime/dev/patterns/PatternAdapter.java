@@ -34,11 +34,17 @@ public interface PatternAdapter {
      * What an adapter tells about a decision.
      *
      * @param extras pattern-specific information, added to the extras of the PlannerDecision event
-     * @param path agents the planner intends to call, in order (e.g. the path a GOAP planner computed), null if none
+     * @param agents named lists of sub-agents (e.g. {@code path}: the agents a GOAP planner intends to call, in order;
+     *        {@code ready}: the P2P agents whose inputs are all in the scope), added to the extras as node ids
      */
-    record Insight(Map<String, Object> extras, List<AgentInstance> path) {
+    record Insight(Map<String, Object> extras, Map<String, List<AgentInstance>> agents) {
 
-        public static final Insight NONE = new Insight(Map.of(), null);
+        public static final Insight NONE = new Insight(Map.of(), Map.of());
+
+        public Insight {
+            extras = extras == null ? Map.of() : extras;
+            agents = agents == null ? Map.of() : agents;
+        }
     }
 
     /**

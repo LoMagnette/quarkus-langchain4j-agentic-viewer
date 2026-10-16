@@ -119,7 +119,7 @@ final class PlannerDecisions {
                     boolean first = !decided;
                     decided = true;
                     PatternAdapter.Insight insight = insight(action, scope, first);
-                    listener.plannerDecision(run, plannerAgent, subagents, action, insight.extras(), insight.path());
+                    listener.plannerDecision(run, plannerAgent, subagents, action, insight.extras(), insight.agents());
                 } catch (RuntimeException e) {
                     LOG.debugf(e, "Agentic viewer: cannot report a decision of %s", plannerAgent.name());
                 }
@@ -140,7 +140,7 @@ final class PlannerDecisions {
             }
             Map<String, Object> extras = new HashMap<>(insight == null ? Map.of() : insight.extras());
             extras.put("pattern", adapter.patternType().name());
-            return new PatternAdapter.Insight(extras, insight == null ? null : insight.path());
+            return new PatternAdapter.Insight(extras, insight == null ? null : insight.agents());
         }
 
         @Override
