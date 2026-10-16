@@ -56,19 +56,21 @@ This is a standard **Quarkus extension** with four modules:
 3. `deployment/.../topology/TopologyBuilder` turns each root into an `AgenticSystem` (`AgenticSystemsBuildItem`). Node ids:
    `Class#method` for the root, then `/<SubAgentSimpleClassName>` per level (`~2` for a repeated sibling); runtime
    events will be correlated with them.
-4. Dev mode only: the systems are recorded into runtime-dev (`AgenticViewerRecorder.getSystems()`) and passed to the Dev
-   UI as the `agenticSystems` build-time data.
+4. Dev mode only: the systems are recorded into runtime-dev (`AgenticViewerRecorder.getSystems()`), where the
+   `AgenticSystemRegistry` bean (registered by a dev-only build step) holds them by id for the JSON-RPC service.
 
 Builder (`AgenticServices.*Builder()`) systems are discovered at runtime in Phase 5.
 
 ### Dev UI Integration
 
 `AgenticViewerProcessor.registerDevUI()` registers the card with one page, "Agentic Systems" (`qwc-agentic-systems.js`),
-whose link shows the number of systems. The page lists the `agenticSystems` build-time data and shows the selected
-system with the graph component `qwc-agentic-graph.js` (Cytoscape.js + elkjs from mvnpm; `toGraph()` / `toDataFlowGraph()`
+whose link shows the number of systems known at build time. The page gets everything over JSON-RPC
+(`AgenticViewerJsonRpcService`: `listSystems`, `getTopology`, `getInputSchema`; unknown ids are JSON-RPC errors) and shows
+the selected system with the graph component `qwc-agentic-graph.js` (Cytoscape.js + elkjs from mvnpm; `toGraph()` / `toDataFlowGraph()`
 map a topology to nodes/edges; each compound is laid out separately by ELK to keep declaration order;
-`highlight(nodeId, state)` for the live view) and the details panel `qwc-agentic-node-details.js`. The JSON-RPC service
-(`AgenticViewerJsonRpcService`, runtime-dev) uses method names `quarkus-langchain4j-agentic-viewer_<method>`.
+`highlight(nodeId, state)` for the live view) and the details panel `qwc-agentic-node-details.js`. JSON-RPC method
+names are `quarkus-langchain4j-agentic-viewer_<method>`. `DevUIJsonRPCTest` only reads successful results: test error
+answers over a raw websocket (see `AgenticSystemsDevModeTest`).
 Dev mode does not reload a rebuilt extension: restart it to see Dev UI changes.
 
 ### Progress

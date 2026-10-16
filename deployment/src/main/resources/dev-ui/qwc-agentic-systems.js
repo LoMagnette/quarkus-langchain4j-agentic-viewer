@@ -1,27 +1,11 @@
 import { LitElement, html, css } from 'lit';
-import { agenticSystems } from 'build-time-data';
+import { JsonRpc } from 'jsonrpc';
 import '@vaadin/grid';
 import { columnBodyRenderer } from '@vaadin/grid/lit.js';
 import '@vaadin/button';
 import '@vaadin/icon';
 import { KIND_LABELS } from './qwc-agentic-graph.js';
 import './qwc-agentic-node-details.js';
-
-/** Agent kinds are not patterns. */
-const AGENT_KINDS = new Set(['AI_AGENT', 'NON_AI_AGENT', 'A2A_CLIENT_AGENT', 'MCP_CLIENT_AGENT']);
-
-/** Workflow kinds used in a system, in tree order, without duplicates. */
-export function patternKinds(system) {
-    const kinds = [];
-    const visit = node => {
-        if (!AGENT_KINDS.has(node.kind) && !kinds.includes(node.kind)) {
-            kinds.push(node.kind);
-        }
-        node.children?.forEach(visit);
-    };
-    visit(system.root);
-    return kinds;
-}
 
 /** The node with this id in a topology tree, undefined when none. */
 function findNode(node, id) {
@@ -38,8 +22,8 @@ function findNode(node, id) {
 }
 
 /**
- * Agentic Systems - lists the root agentic systems of the application; selecting one opens its view.
- * Declarative systems come from the build-time data (T1.4); the system view shows the topology graph (T1.6).
+ * Agentic Systems - lists the root agentic systems of the application; selecting one opens its view with the topology
+ * graph (T1.6). Everything comes from the runtime-dev registry over JSON-RPC (T2.1): listSystems, then getTopology.
  */
 export class QwcAgenticSystems extends LitElement {
 
@@ -84,6 +68,9 @@ export class QwcAgenticSystems extends LitElement {
         .kind.agent {
             background: var(--lumo-primary-color-10pct);
         }
+        .error {
+            color: var(--lumo-error-text-color);
+        }
         .muted {
             color: var(--lumo-secondary-text-color);
             font-size: var(--lumo-font-size-s);
@@ -114,18 +101,32 @@ export class QwcAgenticSystems extends LitElement {
     `;
 
     static properties = {
+        _systems: { state: true },
+        _error: { state: true },
+        _summary: { state: true },
         _selected: { state: true },
+        _systemError: { state: true },
         _node: { state: true },
     };
 
-    constructor() {
-        super();
-        this._systems = agenticSystems ?? [];
+    jsonRpc = new JsonRpc(this);
+
+    connectedCallback() {
+        super.connectedCallback();
+        this.jsonRpc.listSystems()
+            .then(response => this._systems = response.result ?? [])
+            .catch(error => this._error = `Cannot list the agentic systems: ${error?.message ?? error}`);
     }
 
     render() {
-        if (this._selected) {
-            return this._renderSystem(this._selected);
+        if (this._error) {
+            return html`<div class="error">${this._error}</div>`;
+        }
+        if (this._summary) {
+            return this._renderSystem(this._summary, this._selected);
+        }
+        if (this._systems === undefined) {
+            return html`<div class="muted">Loading agentic systems...</div>`;
         }
         if (this._systems.length === 0) {
             return html`
@@ -145,16 +146,16 @@ export class QwcAgenticSystems extends LitElement {
                 <vaadin-grid-column header="Origin" auto-width flex-grow="0"
                     ${columnBodyRenderer(system => html`${system.origin.toLowerCase()}`)}></vaadin-grid-column>
                 <vaadin-grid-column header="Patterns" auto-width
-                    ${columnBodyRenderer(system => this._renderKinds(system))}></vaadin-grid-column>
+                    ${columnBodyRenderer(summary => this._renderKinds(summary))}></vaadin-grid-column>
                 <vaadin-grid-column header="Defined in" auto-width
                     ${columnBodyRenderer(system => html`<span class="muted">${system.sourceRef?.className}#${system.sourceRef?.methodName}</span>`)}></vaadin-grid-column>
             </vaadin-grid>`;
     }
 
-    _renderKinds(system) {
-        const kinds = patternKinds(system);
+    _renderKinds(summary) {
+        const kinds = summary.patternKinds ?? [];
         if (kinds.length === 0) {
-            return html`<span class="kind agent">single ${KIND_LABELS[system.root.kind] ?? system.root.kind}</span>`;
+            return html`<span class="kind agent">single ${KIND_LABELS[summary.rootKind] ?? summary.rootKind}</span>`;
         }
         return html`<span class="kinds">${kinds.map(kind => html`<span class="kind">${KIND_LABELS[kind] ?? kind}</span>`)}</span>`;
     }
@@ -164,24 +165,46 @@ export class QwcAgenticSystems extends LitElement {
         this.renderRoot.querySelector('qwc-agentic-graph')?.clearSelection();
     }
 
-    _open(system) {
-        if (system) {
-            this._selected = system;
-            this._node = undefined;
+    _open(summary) {
+        if (!summary) {
+            return;
         }
+        this._summary = summary;
+        this._selected = undefined;
+        this._node = undefined;
+        this._systemError = undefined;
+        this.jsonRpc.getTopology({ systemId: summary.id })
+            .then(response => {
+                if (this._summary === summary) {
+                    this._selected = response.result;
+                }
+            })
+            .catch(error => this._systemError = `Cannot load ${summary.name}: ${error?.error?.message ?? error?.message ?? error}`);
     }
 
-    _renderSystem(system) {
+    _back() {
+        this._summary = undefined;
+        this._selected = undefined;
+        this._node = undefined;
+    }
+
+    _renderSystem(summary, system) {
         return html`
             <div class="header">
-                <vaadin-button theme="tertiary" @click=${() => { this._selected = undefined; this._node = undefined; }}>
+                <vaadin-button theme="tertiary" @click=${this._back}>
                     <vaadin-icon icon="font-awesome-solid:arrow-left" slot="prefix"></vaadin-icon>Systems
                 </vaadin-button>
-                <h3>${system.name}</h3>
-                ${this._renderKinds(system)}
+                <h3>${summary.name}</h3>
+                ${this._renderKinds(summary)}
             </div>
-            <div class="muted">${system.origin.toLowerCase()} system defined in
-                ${system.sourceRef?.className}#${system.sourceRef?.methodName}</div>
+            <div class="muted">${summary.origin.toLowerCase()} system defined in
+                ${summary.sourceRef?.className}#${summary.sourceRef?.methodName}</div>
+            ${this._systemError ? html`<div class="error">${this._systemError}</div>`
+                : !system ? html`<div class="muted">Loading the topology...</div>` : this._renderGraph(system)}`;
+    }
+
+    _renderGraph(system) {
+        return html`
             <div class="system-body">
                 <qwc-agentic-graph .system=${system}
                                    @node-selected=${e => this._node = findNode(system.root, e.detail.nodeId)}></qwc-agentic-graph>

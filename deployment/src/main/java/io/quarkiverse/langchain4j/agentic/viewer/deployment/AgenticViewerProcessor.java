@@ -6,7 +6,9 @@ import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticRootsBui
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.RootSystemDetector;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.AgenticSystemsBuildItem;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.TopologyBuilder;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticSystemRegistry;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerJsonRpcService;
+import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerRecorder;
 import io.quarkus.deployment.IsDevelopment;
 import io.quarkus.deployment.annotations.BuildStep;
@@ -65,16 +67,22 @@ public class AgenticViewerProcessor {
     }
 
     /**
+     * The registry the JSON-RPC service reads; dev mode only, like runtime-dev.
+     */
+    @BuildStep(onlyIf = IsDevelopment.class)
+    AdditionalBeanBuildItem registerSystemRegistry() {
+        return AdditionalBeanBuildItem.unremovableOf(AgenticSystemRegistry.class);
+    }
+
+    /**
      * Registers the Dev UI card and its page (only in dev mode).
      */
     @BuildStep(onlyIf = IsDevelopment.class)
     CardPageBuildItem registerDevUI(AgenticSystemsBuildItem systems) {
         CardPageBuildItem card = new CardPageBuildItem();
 
-        // Topology of the declarative systems (T1.4), for the system list and graph
-        card.addBuildTimeData("agenticSystems", systems.getSystems());
-
-        // Agentic systems page (T1.5): the card shows the number of systems as the label of its link
+        // Agentic systems page (T1.5), fed over JSON-RPC (T2.1): the card shows the number of systems known at build
+        // time as the label of its link
         card.addPage(Page.webComponentPageBuilder()
                 .title("Agentic Systems")
                 .icon("font-awesome-solid:robot")
