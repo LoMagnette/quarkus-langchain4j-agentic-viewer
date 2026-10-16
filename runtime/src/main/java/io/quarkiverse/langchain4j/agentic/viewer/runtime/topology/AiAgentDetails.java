@@ -1,9 +1,9 @@
-package io.quarkiverse.langchain4j.agentic.viewer.deployment.scan;
+package io.quarkiverse.langchain4j.agentic.viewer.runtime.topology;
 
 import java.util.List;
 
 /**
- * What the build knows about the LLM side of an AI agent.
+ * What is known before running about the LLM side of an {@link NodeKind#AI_AGENT} node.
  *
  * @param systemMessage {@code @SystemMessage} template of the method, else of its class; null when none
  * @param userMessage {@code @UserMessage} template of the method, null when none
@@ -18,7 +18,7 @@ public record AiAgentDetails(
         String systemMessage,
         String userMessage,
         String modelName,
-        List<ToolDescriptor> tools,
+        List<ToolInfo> tools,
         List<String> runtimeToolSources) {
 
     public AiAgentDetails {

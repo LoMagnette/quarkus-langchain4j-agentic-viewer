@@ -26,6 +26,8 @@ import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticDescript
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticRootsBuildItem;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.RootSystemDetector;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scanner.DeclarativeAgentScanner;
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.AgenticSystemsBuildItem;
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.TopologyBuilder;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scanner.ImperativeAgentScanner;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerJsonRpcService;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerRecorder;
@@ -70,6 +72,23 @@ public class AgenticViewerProcessor {
     @BuildStep
     AgenticRootsBuildItem detectRootSystems(AgenticDescriptorsBuildItem descriptors) {
         return new AgenticRootsBuildItem(new RootSystemDetector().detect(descriptors.getDescriptors()));
+    }
+
+    /**
+     * Builds the topology of every declarative system (T1.4).
+     */
+    @BuildStep
+    AgenticSystemsBuildItem buildTopologies(AgenticRootsBuildItem roots) {
+        return new AgenticSystemsBuildItem(new TopologyBuilder().build(roots.getRoots()));
+    }
+
+    /**
+     * Hands the declarative systems to runtime-dev, where runs and their events will refer to the same node ids.
+     */
+    @BuildStep(onlyIf = IsDevelopment.class)
+    @Record(ExecutionTime.STATIC_INIT)
+    void recordSystems(AgenticSystemsBuildItem systems, AgenticViewerRecorder recorder) {
+        recorder.setSystems(systems.getSystems());
     }
 
     /**
@@ -141,7 +160,7 @@ public class AgenticViewerProcessor {
      * Registers the Dev UI card and pages (only in dev mode).
      */
     @BuildStep(onlyIf = IsDevelopment.class)
-    CardPageBuildItem registerDevUI(AgenticGraphBuildItem graphItem) {
+    CardPageBuildItem registerDevUI(AgenticGraphBuildItem graphItem, AgenticSystemsBuildItem systems) {
 
         AgenticGraph graph = graphItem.getGraph();
 
@@ -155,6 +174,9 @@ public class AgenticViewerProcessor {
 
         // Serialize the full graph for the diagram
         card.addBuildTimeData("agenticGraph", serializeGraph(graph));
+
+        // Topology of the declarative systems (T1.4), for the system list and graph pages
+        card.addBuildTimeData("agenticSystems", systems.getSystems());
 
         // Add the main diagram page
         card.addPage(Page.webComponentPageBuilder()

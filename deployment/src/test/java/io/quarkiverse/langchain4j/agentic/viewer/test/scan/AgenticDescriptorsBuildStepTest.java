@@ -11,8 +11,8 @@ import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentDescriptor
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentTree;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticDescriptorsBuildItem;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticRootsBuildItem;
-import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AiAgentDetails;
-import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.ToolDescriptor;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AiAgentDetails;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.ToolInfo;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.test.QuarkusUnitTest;
 
@@ -86,7 +86,7 @@ public class AgenticDescriptorsBuildStepTest {
         }
         if (d.aiDetails() != null && d.aiDetails().modelName() != null) {
             AiAgentDetails ai = d.aiDetails();
-            guards += " model=" + ai.modelName() + " tools=" + ai.tools().stream().map(ToolDescriptor::name).toList()
+            guards += " model=" + ai.modelName() + " tools=" + ai.tools().stream().map(ToolInfo::name).toList()
                     + " system=" + ai.systemMessage().lines().findFirst().orElse("") + " user=" + ai.userMessage();
         }
         return guards;

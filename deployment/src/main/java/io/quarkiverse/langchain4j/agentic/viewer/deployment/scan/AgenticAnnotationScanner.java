@@ -22,8 +22,10 @@ import org.jboss.jandex.MethodInfo;
 import org.jboss.jandex.MethodParameterInfo;
 import org.jboss.jandex.Type;
 
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AiAgentDetails;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.Guard;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.ToolInfo;
 
 /**
  * Finds the agent methods of the application in the Jandex index and describes them: {@code @Agent}, the workflow
@@ -164,8 +166,8 @@ public class AgenticAnnotationScanner {
                 runtimeToolSources(method));
     }
 
-    private static List<ToolDescriptor> tools(IndexView index, MethodInfo method) {
-        List<ToolDescriptor> tools = new ArrayList<>();
+    private static List<ToolInfo> tools(IndexView index, MethodInfo method) {
+        List<ToolInfo> tools = new ArrayList<>();
         AnnotationInstance toolBox = method.declaredAnnotation(TOOL_BOX);
         if (toolBox == null || toolBox.value() == null) {
             return tools;
@@ -178,7 +180,7 @@ public class AgenticAnnotationScanner {
                     if (tool != null) {
                         String name = nonBlank(stringValue(tool, "name"));
                         AnnotationValue description = tool.value();
-                        tools.add(new ToolDescriptor(
+                        tools.add(new ToolInfo(
                                 name != null ? name : toolMethod.name(),
                                 type.name().toString(),
                                 toolMethod.name(),

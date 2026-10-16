@@ -430,3 +430,17 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
 - Tests: deployment scanner unit tests and a QuarkusUnitTest build step on fixtures; `it/samples/SampleDescriptorsTest`
   runs the scanner on the compiled declarative samples (integration-tests has the deployment jar in test scope).
 - Not covered: @UserMessage on a parameter. `AgentNode` has no fields for prompts/model/tools yet (T1.4/T1.7).
+
+### TASK-19 / TASK-20 (T1.3, T1.4) root systems and declarative topology — done (Oct 16, 2026)
+
+- Decision (project owner): `AgentDescriptor` stays deployment-only; the topology is built at build time and only
+  `AgenticSystem` values are recorded (runtime-dev) and passed to the Dev UI (`agenticSystems` build-time data).
+- `RootSystemDetector` → `AgenticRootsBuildItem`: roots are agents no other agent lists as a sub-agent; `AgentTree`
+  expands a shared sub-agent under every parent, cuts cycles, keeps unresolved classes as leaves.
+- `TopologyBuilder` → `AgenticSystemsBuildItem`: ids `Class#method` + `/SubAgentSimpleClass` (`~n` for repeats), stable
+  across builds; guards, planner supplier (PlannerInfo extras `supplier`), flags and `AiAgentDetails` (moved to runtime
+  topology with `ToolInfo`, new `AgentNode.aiDetails`). `inputs` stay empty until T1.9.
+- Known limits: `AgentNode` has one guard, so a loop used as a conditional branch shows its exit guard only; an unguarded
+  conditional branch is shown although langchain4j drops it (matters for T2.6 position-based correlation).
+- Tests: `TopologyBuilderTest` (every node kind, loop in sequence, id stability), `AgenticSystemsDevModeTest`
+  (build-time data + recorded systems through a test route), sample root set in integration-tests.

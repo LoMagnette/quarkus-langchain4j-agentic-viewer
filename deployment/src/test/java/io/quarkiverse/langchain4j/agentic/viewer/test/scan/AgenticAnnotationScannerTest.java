@@ -24,9 +24,9 @@ import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.V;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentDescriptor;
-import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AiAgentDetails;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AiAgentDetails;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotationScanner;
-import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.ToolDescriptor;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.ToolInfo;
 import io.quarkiverse.langchain4j.mcp.runtime.McpToolBox;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.Guard;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
@@ -269,9 +269,9 @@ class AgenticAnnotationScannerTest {
         assertEquals("Pay {{amount}} EUR to {{customer}}", details.userMessage(), "lines joined with the delimiter");
         assertEquals("fast", details.modelName());
         assertEquals(List.of(
-                new ToolDescriptor("balance_of", P + "Ledger", "balance", "Reads the balance\nof a customer"),
-                new ToolDescriptor("debit", P + "Ledger", "debit", null),
-                new ToolDescriptor("audit", P + "AuditTools", "audit", "Records an audit entry")),
+                new ToolInfo("balance_of", P + "Ledger", "balance", "Reads the balance\nof a customer"),
+                new ToolInfo("debit", P + "Ledger", "debit", null),
+                new ToolInfo("audit", P + "AuditTools", "audit", "Records an audit entry")),
                 details.tools(), "by method name, inherited tools last; notATool skipped");
         assertEquals(List.of(), details.runtimeToolSources());
     }

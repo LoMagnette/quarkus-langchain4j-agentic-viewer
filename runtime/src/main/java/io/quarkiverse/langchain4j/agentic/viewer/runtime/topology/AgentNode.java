@@ -16,6 +16,7 @@ import java.util.List;
  * @param children sub-agents, in declaration order
  * @param guard exit condition of a loop, or activation condition of a conditional branch; null otherwise
  * @param plannerInfo planner of a {@link NodeKind#PLANNER} node, null otherwise
+ * @param aiDetails prompts, model and tools of an {@link NodeKind#AI_AGENT} node, null otherwise or when unknown
  */
 public record AgentNode(
         String id,
@@ -28,7 +29,8 @@ public record AgentNode(
         boolean async,
         List<AgentNode> children,
         Guard guard,
-        PlannerInfo plannerInfo) {
+        PlannerInfo plannerInfo,
+        AiAgentDetails aiDetails) {
 
     public AgentNode {
         inputKeys = inputKeys == null ? List.of() : List.copyOf(inputKeys);

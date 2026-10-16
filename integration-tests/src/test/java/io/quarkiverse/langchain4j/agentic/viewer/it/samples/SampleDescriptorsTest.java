@@ -17,7 +17,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentDescriptor
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentTree;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotationScanner;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.RootSystemDetector;
-import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.ToolDescriptor;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.ToolInfo;
 
 /**
  * The build-time scanner produces descriptors for every declarative sample system, down to its leaf agents, and the
@@ -109,6 +109,6 @@ class SampleDescriptorsTest {
         assertEquals("phrases", byClass.get(PhraseTranslator.class.getName()).itemsProvider());
         assertTrue(byClass.get(DraftReviewer.class.getName()).plannerSupplier() != null);
         assertEquals(List.of("credit", "withdraw"), byClass.get(BankSupervisor.CreditAgent.class.getName()).aiDetails()
-                .tools().stream().map(ToolDescriptor::name).sorted().toList());
+                .tools().stream().map(ToolInfo::name).sorted().toList());
     }
 }
