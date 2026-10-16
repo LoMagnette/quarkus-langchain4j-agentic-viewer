@@ -28,6 +28,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentFinishe
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentStarted;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ExecutionEvent;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.RunFinished;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ScopeStateChanged;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ToolStarted;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.CdiRunInvoker;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.DevUiAgentListener;
@@ -210,6 +211,19 @@ class SampleRunEventsTest {
                 assertEquals(rootInvocation, branch.parentInvocationId());
             }
         }
+    }
+
+    @Test
+    void writtenKeysAreReportedAsScopeChanges() throws Exception {
+        String root = system("StoryWriter").id();
+        List<ScopeStateChanged> changes = run(runManager, "StoryWriter").events().stream()
+                .filter(ScopeStateChanged.class::isInstance).map(ScopeStateChanged.class::cast).toList();
+
+        assertEquals(List.of("intro@" + root + "/IntroWriter", "adventure@" + root + "/AdventureWriter", "story@" + root),
+                changes.stream().map(c -> c.key() + "@" + c.nodeId()).toList());
+        assertEquals("One day, a dragon knocked at the door and asked for help.",
+                changes.get(1).value());
+        assertTrue(changes.stream().noneMatch(ScopeStateChanged::truncated));
     }
 
     @Test

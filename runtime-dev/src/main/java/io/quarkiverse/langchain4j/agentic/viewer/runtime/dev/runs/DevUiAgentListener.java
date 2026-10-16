@@ -36,6 +36,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentStarted
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ErrorInfo;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ScopeCreated;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ScopeDestroyed;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ScopeStateChanged;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.TokenUsage;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ToolFinished;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ToolStarted;
@@ -180,8 +181,15 @@ public class DevUiAgentListener implements AgentListener {
         Run run = runOf(response.agenticScope());
         Invocation invocation = close(response.agent());
         if (run != null && invocation != null) {
-            runManager.emit(run, new AgentFinished(run.id(), now(), nodeId(run, response.agent()), invocation.id(),
+            long now = now();
+            runManager.emit(run, new AgentFinished(run.id(), now, invocation.nodeId, invocation.id(),
                     response.output(), tokens(response.chatResponse()), elapsedMillis(invocation)));
+            String outputKey = response.agent().outputKey();
+            if (outputKey != null && !outputKey.isBlank()) {
+                // the output is what the agent writes under its key (bounded later, on the event thread)
+                runManager.emit(run, new ScopeStateChanged(run.id(), now, outputKey, response.output(), false,
+                        invocation.nodeId));
+            }
         }
     }
 
@@ -190,7 +198,7 @@ public class DevUiAgentListener implements AgentListener {
         Run run = runOf(error.agenticScope());
         Invocation invocation = close(error.agent());
         if (run != null && invocation != null) {
-            runManager.emit(run, new AgentFailed(run.id(), now(), nodeId(run, error.agent()), invocation.id(),
+            runManager.emit(run, new AgentFailed(run.id(), now(), invocation.nodeId, invocation.id(),
                     ErrorInfo.of(error.error()), elapsedMillis(invocation)));
         }
     }

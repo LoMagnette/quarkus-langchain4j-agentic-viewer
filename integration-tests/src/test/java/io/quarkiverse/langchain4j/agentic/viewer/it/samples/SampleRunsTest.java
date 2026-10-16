@@ -73,7 +73,7 @@ class SampleRunsTest {
         assertEquals(RunStatus.SUCCEEDED, run.status(), () -> system + ": " + run.events());
         List<ExecutionEvent> events = run.events();
         assertEquals(List.of("RunStarted", "RunFinished"), events.stream().map(ExecutionEvent::getType).toList());
-        return ((RunFinished) events.get(1)).output();
+        return run.output(); // the original value; events carry its JSON form
     }
 
     @Test

@@ -17,14 +17,22 @@ import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import org.eclipse.microprofile.config.ConfigProvider;
 import org.jboss.logging.Logger;
 
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticSystemRegistry;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentFinished;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentStarted;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ErrorInfo;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ExecutionEvent;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.PayloadTruncator;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.PlannerDecision;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.RunFailed;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.RunFinished;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.RunStarted;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ScopeStateChanged;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ToolFinished;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ToolStarted;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.infrastructure.Infrastructure;
@@ -47,16 +55,26 @@ public class RunManager {
     /** One thread delivers every event in order, so emitting never waits for the listeners. */
     private final ExecutorService dispatcher;
     private final Map<String, Run> runs = new ConcurrentHashMap<>();
+    private final PayloadTruncator truncator;
     private final List<Consumer<ExecutionEvent>> listeners = new CopyOnWriteArrayList<>();
+
+    /** Payload values longer than this many characters of JSON are truncated (T6.1 turns it into a config root). */
+    public static final String MAX_PAYLOAD_SIZE = "quarkus.langchain4j.agentic.dev-ui.max-payload-size";
 
     @Inject
     public RunManager(AgenticSystemRegistry registry) {
-        this(registry::find, new CdiRunInvoker());
+        this(registry::find, new CdiRunInvoker(), ConfigProvider.getConfig()
+                .getOptionalValue(MAX_PAYLOAD_SIZE, Integer.class).orElse(PayloadTruncator.DEFAULT_MAX_SIZE));
     }
 
     public RunManager(Function<String, Optional<AgenticSystem>> systems, RunInvoker invoker) {
+        this(systems, invoker, PayloadTruncator.DEFAULT_MAX_SIZE);
+    }
+
+    public RunManager(Function<String, Optional<AgenticSystem>> systems, RunInvoker invoker, int maxPayloadSize) {
         this.systems = systems;
         this.invoker = invoker;
+        this.truncator = new PayloadTruncator(maxPayloadSize);
         // run threads load the application classes: they keep the class loader of whoever created the manager
         ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
         this.executor = Executors.newCachedThreadPool(task -> {
@@ -162,7 +180,8 @@ public class RunManager {
         dispatcher.execute(() -> deliver(run, event));
     }
 
-    private void deliver(Run run, ExecutionEvent event) {
+    private void deliver(Run run, ExecutionEvent raw) {
+        ExecutionEvent event = bounded(raw);
         run.add(event);
         for (Consumer<ExecutionEvent> listener : listeners) {
             try {
@@ -171,6 +190,34 @@ public class RunManager {
                 LOG.warnf(e, "Agentic viewer event listener failed on %s", event.getType());
             }
         }
+    }
+
+    /**
+     * The event with JSON-safe, bounded payload values (on the event thread, never on agent threads).
+     */
+    private ExecutionEvent bounded(ExecutionEvent event) {
+        PayloadTruncator t = truncator;
+        return switch (event) {
+            case RunStarted e -> new RunStarted(e.runId(), e.timestamp(), e.systemId(), t.truncateValues(e.inputs()));
+            case RunFinished e -> new RunFinished(e.runId(), e.timestamp(), t.truncate(e.output()).value(), e.durationMillis());
+            case AgentStarted e -> new AgentStarted(e.runId(), e.timestamp(), e.nodeId(), e.invocationId(),
+                    e.parentInvocationId(), e.agentName(), e.iteration(), e.itemIndex(), t.truncateValues(e.inputs()),
+                    e.streaming());
+            case AgentFinished e -> new AgentFinished(e.runId(), e.timestamp(), e.nodeId(), e.invocationId(),
+                    t.truncate(e.output()).value(), e.tokens(), e.durationMillis());
+            case ToolStarted e -> new ToolStarted(e.runId(), e.timestamp(), e.invocationId(), e.toolCallId(), e.toolName(),
+                    t.truncateText(e.arguments()));
+            case ToolFinished e -> new ToolFinished(e.runId(), e.timestamp(), e.invocationId(), e.toolCallId(),
+                    e.toolName(), t.truncateText(e.result()), e.durationMillis());
+            case ScopeStateChanged e -> {
+                PayloadTruncator.Result value = t.truncate(e.value());
+                yield new ScopeStateChanged(e.runId(), e.timestamp(), e.key(), value.value(),
+                        e.truncated() || value.truncated(), e.nodeId());
+            }
+            case PlannerDecision e -> new PlannerDecision(e.runId(), e.timestamp(), e.nodeId(), e.invocationId(),
+                    e.selectedNodeIds(), e.done(), t.truncateValues(e.extras()));
+            default -> event; // no free-form payload
+        };
     }
 
     @PreDestroy
