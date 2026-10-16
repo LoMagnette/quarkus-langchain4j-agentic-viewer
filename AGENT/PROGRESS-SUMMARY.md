@@ -501,3 +501,18 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
 - Tests drive `RunManager` directly in `@QuarkusTest` (runtime-dev beans only exist in dev mode); test-only
   `TwiceExclaimed` system in integration-tests/src/test.
 - Next: the run UI (T2.7 run form, T2.8 live highlighting, T2.9 timeline/scope/tool panels).
+
+### Phase 2 run UI: T2.7 to T2.10, T2.12 and TASK-41 — done (Oct 16, 2026)
+
+- Run form generated from the input JSON schema (`qwc-agentic-run-form.js`: widgets by type, JSON editor for the rest,
+  client-side validation), confirmation listing the reachable tools, live node highlighting (running/done/failed/
+  recovered) with duration and tokens on the nodes, cancel.
+- Waterfall timeline (`qwc-agentic-timeline.js`: one row per invocation, loop iteration and mapper item, tool calls and
+  handled errors nested under their invocation), Scope tab (`qwc-agentic-scope-state.js`), tool arguments and results.
+- Bounded run history (`history-size`, default 20), `listRuns` / `getRun` / `cancelRun`, replay of a past run on the
+  graph after a page refresh.
+- Errors: `ErrorHandled` event (spec extension) from wrapping `DefaultAgenticScope.errorHandler`; retried / recovered
+  / fatal shown on the node and in the timeline.
+- `JsonRpcEventSequenceTest`: exact event sequence per pattern kind through `startRun` + `streamRun`; mapper items
+  interleave and each writes its own `translation_<index>` scope key.
+- Open: T2.11 (human in the loop) depends on upstream U4, which does not exist; design choice pending with the user.

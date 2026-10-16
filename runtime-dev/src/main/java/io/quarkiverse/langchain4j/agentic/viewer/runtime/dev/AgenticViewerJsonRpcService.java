@@ -26,11 +26,14 @@ public class AgenticViewerJsonRpcService {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    @Inject
-    AgenticSystemRegistry registry;
+    private final AgenticSystemRegistry registry;
+    private final RunManager runManager;
 
     @Inject
-    RunManager runManager;
+    public AgenticViewerJsonRpcService(AgenticSystemRegistry registry, RunManager runManager) {
+        this.registry = registry;
+        this.runManager = runManager;
+    }
 
     /**
      * @return a summary of every agentic system, in registration order
