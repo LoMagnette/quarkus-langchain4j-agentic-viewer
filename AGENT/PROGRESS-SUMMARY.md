@@ -417,3 +417,16 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   on the LOOP node, activation condition on each CONDITIONAL branch), `PlannerInfo`, `SourceRef`, `SystemInput`, enums.
   Prototype `runtime/model` records stay until TASK-26.
 - Tests: JSON round trip (default ObjectMapper) and build-time recording via `BytecodeRecorderImpl`.
+
+### TASK-18 (T1.2) Jandex scan of agentic annotations — done (Oct 16, 2026)
+
+- `deployment/.../scan/AgenticAnnotationScanner` → `AgenticDescriptorsBuildItem`: one `AgentDescriptor` per agent method
+  (@Agent, workflow annotations, supervisor, planner + @PlannerSupplier, human in the loop) with keys, ordered sub-agents,
+  loop guard (exit method, maxIterations, testExitAtLoopEnd), branch activation guards, @Output method, optional/async,
+  and for AI agents `AiAgentDetails` (prompts incl. fromResource, @ModelName, @ToolBox tools as `ToolDescriptor`,
+  runtime-only tool sources: suppliers and MCP clients).
+- Resolution rules mirror langchain4j-agentic / quarkus-langchain4j-agentic bytecode (first matching
+  @ActivationCondition per branch; an unguarded conditional branch is dropped upstream but kept as a sub-agent here).
+- Tests: deployment scanner unit tests and a QuarkusUnitTest build step on fixtures; `it/samples/SampleDescriptorsTest`
+  runs the scanner on the compiled declarative samples (integration-tests has the deployment jar in test scope).
+- Not covered: @UserMessage on a parameter. `AgentNode` has no fields for prompts/model/tools yet (T1.4/T1.7).
