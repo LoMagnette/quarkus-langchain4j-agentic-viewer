@@ -8,7 +8,7 @@ import { KIND_LABELS } from './qwc-agentic-graph.js';
 import './qwc-agentic-node-details.js';
 
 /** Agent kinds are not patterns. */
-const AGENT_KINDS = new Set(['AI_AGENT', 'NON_AI_AGENT']);
+const AGENT_KINDS = new Set(['AI_AGENT', 'NON_AI_AGENT', 'A2A_CLIENT_AGENT', 'MCP_CLIENT_AGENT']);
 
 /** Workflow kinds used in a system, in tree order, without duplicates. */
 export function patternKinds(system) {

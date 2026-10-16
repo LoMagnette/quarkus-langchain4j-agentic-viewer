@@ -48,7 +48,8 @@ This is a standard **Quarkus extension** with four modules:
 
 1. `deployment/.../scan/AgenticAnnotationScanner` reads the agentic annotations with Jandex and produces one
    `AgentDescriptor` per agent method (`AgenticDescriptorsBuildItem`): kind, keys, sub-agents, guards, `@Output`,
-   flags, AI agent details (prompts, `@ModelName`, `@ToolBox` tools) and input JSON schemas (`InputSchemaGenerator`).
+   flags, AI agent details (prompts, `@ModelName`, `@ToolBox` tools), remote agent details (`@A2AClientAgent` server,
+   `@McpClientAgent` tool) and input JSON schemas (`InputSchemaGenerator`).
    Resolution rules mirror langchain4j-agentic / quarkus-langchain4j-agentic. Descriptors stay deployment-only.
 2. `RootSystemDetector` nests them under root systems (`AgenticRootsBuildItem`): a root is an agent no other agent lists
    as a sub-agent.

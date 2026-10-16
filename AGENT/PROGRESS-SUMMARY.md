@@ -475,3 +475,13 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   `AgenticSystem.inputs`; `SystemInput.required` is false for Optional or any `@Nullable`. `@MemoryId` parameters are not
   inputs (to handle in the run form, T2.7).
 - Phase 1 (milestone m-1) tasks T1.1 to T1.9 are done; TASK-26 (retire the prototype view) remains.
+
+### TASK-26 / TASK-68 prototype retired, remote agents — done (Oct 16, 2026)
+
+- The Mermaid page, prototype scanners/model and the asm dependency are removed; the card has one page, Agentic Systems.
+  runtime-dev JSON-RPC exposes `getSystemCount()` until T2.1.
+- Remote agents: `@A2AClientAgent` (server URL or `@A2AServerUrlSupplier`, tenant) and `@McpClientAgent` (tool name,
+  `@McpClientSupplier`) are scanned as node kinds `A2A_CLIENT_AGENT` / `MCP_CLIENT_AGENT` with `RemoteAgentDetails`;
+  ellipse / rhomboid in the graph, "Remote" section in the details panel. Tested on a Jandex index only (the A2A/MCP
+  runtime modules are not dependencies) and in the browser through a synthetic system.
+- Phase 1 (milestone m-1) is complete.

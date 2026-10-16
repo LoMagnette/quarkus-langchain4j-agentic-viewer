@@ -8,6 +8,7 @@ import java.util.Map;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AiAgentDetails;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.Guard;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.RemoteAgentDetails;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemInput;
 
 /**
@@ -33,6 +34,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemInput;
  * @param async whether the agent runs asynchronously ({@code @Agent(async)}, {@code @HumanInTheLoop(async)})
  * @param aiDetails prompts, model and tools of an AI_AGENT, null otherwise
  * @param inputs the scope parameters (same names and order as {@code inputKeys}) with their JSON schemas
+ * @param remoteDetails server or MCP tool of an A2A or MCP client agent, null otherwise
  */
 public record AgentDescriptor(
         String id,
@@ -52,7 +54,8 @@ public record AgentDescriptor(
         boolean optional,
         boolean async,
         AiAgentDetails aiDetails,
-        List<SystemInput> inputs) {
+        List<SystemInput> inputs,
+        RemoteAgentDetails remoteDetails) {
 
     public AgentDescriptor {
         inputKeys = inputKeys == null ? List.of() : List.copyOf(inputKeys);

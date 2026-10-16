@@ -24,6 +24,8 @@ export const KIND_LABELS = {
     SUPERVISOR: 'Supervisor',
     PLANNER: 'Planner',
     HUMAN_IN_THE_LOOP: 'Human in the loop',
+    A2A_CLIENT_AGENT: 'A2A agent',
+    MCP_CLIENT_AGENT: 'MCP client agent',
     INPUT_KEY: 'System input',
 };
 
@@ -35,6 +37,9 @@ export const KIND_STYLES = {
     AI_AGENT: { shape: 'round-rectangle', color: '#10b981', border: 'solid' },
     NON_AI_AGENT: { shape: 'cut-rectangle', color: '#64748b', border: 'solid' },
     HUMAN_IN_THE_LOOP: { shape: 'round-hexagon', color: '#f59e0b', border: 'solid' },
+    // remote agents: the work happens on another server
+    A2A_CLIENT_AGENT: { shape: 'ellipse', color: '#0284c7', border: 'solid' },
+    MCP_CLIENT_AGENT: { shape: 'rhomboid', color: '#65a30d', border: 'solid' },
     SEQUENCE: { shape: 'round-rectangle', color: '#64748b', border: 'solid' },
     PARALLEL: { shape: 'round-rectangle', color: '#3b82f6', border: 'double' },
     PARALLEL_MAPPER: { shape: 'round-rectangle', color: '#06b6d4', border: 'double' },
@@ -302,6 +307,12 @@ export class QwcAgenticGraph extends observeState(LitElement) {
         }
         .swatch.round-hexagon {
             border-radius: 6px / 50%;
+        }
+        .swatch.ellipse {
+            border-radius: 50%;
+        }
+        .swatch.rhomboid {
+            transform: skewX(-20deg);
         }
         .swatch.double {
             border-width: 4px;

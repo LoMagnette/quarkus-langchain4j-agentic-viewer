@@ -25,12 +25,14 @@ import org.jboss.jandex.Type;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AiAgentDetails;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.Guard;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.RemoteAgentDetails;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemInput;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.ToolInfo;
 
 /**
  * Finds the agent methods of the application in the Jandex index and describes them: {@code @Agent}, the workflow
- * annotations, {@code @SupervisorAgent}, {@code @PlannerAgent} and {@code @HumanInTheLoop}, with the guards
+ * annotations, {@code @SupervisorAgent}, {@code @PlannerAgent}, {@code @HumanInTheLoop}, and the remote
+ * {@code @A2AClientAgent} and {@code @McpClientAgent}, with the guards
  * ({@code @ExitCondition}, {@code @ActivationCondition}) and {@code @Output} method of workflows, and the prompts,
  * model and tools of AI agents.
  * Agents declared by the langchain4j libraries themselves are skipped.
@@ -48,6 +50,11 @@ public class AgenticAnnotationScanner {
     static final DotName PLANNER_AGENT = DotName.createSimple("dev.langchain4j.agentic.declarative.PlannerAgent");
     static final DotName HUMAN_IN_THE_LOOP = DotName.createSimple("dev.langchain4j.agentic.declarative.HumanInTheLoop");
     static final DotName PLANNER_SUPPLIER = DotName.createSimple("dev.langchain4j.agentic.declarative.PlannerSupplier");
+    static final DotName A2A_CLIENT_AGENT = DotName.createSimple("dev.langchain4j.agentic.declarative.A2AClientAgent");
+    static final DotName A2A_SERVER_URL_SUPPLIER = DotName
+            .createSimple("dev.langchain4j.agentic.declarative.A2AServerUrlSupplier");
+    static final DotName MCP_CLIENT_AGENT = DotName.createSimple("dev.langchain4j.agentic.declarative.McpClientAgent");
+    static final DotName MCP_CLIENT_SUPPLIER = DotName.createSimple("dev.langchain4j.agentic.declarative.McpClientSupplier");
     static final DotName EXIT_CONDITION = DotName.createSimple("dev.langchain4j.agentic.declarative.ExitCondition");
     static final DotName ACTIVATION_CONDITION = DotName
             .createSimple("dev.langchain4j.agentic.declarative.ActivationCondition");
@@ -72,7 +79,7 @@ public class AgenticAnnotationScanner {
     private static final DotName NO_TYPED_KEY = DotName.createSimple("dev.langchain4j.agentic.Agent$NoTypedKey");
     private static final String LANGCHAIN4J_PACKAGE_PREFIX = "dev.langchain4j.";
 
-    /** Workflow annotations and the node kind they define. */
+    /** Annotations other than {@code @Agent} and the node kind they define: workflows and remote agents. */
     private static final Map<DotName, NodeKind> WORKFLOW_ANNOTATIONS = Map.of(
             SEQUENCE_AGENT, NodeKind.SEQUENCE,
             PARALLEL_AGENT, NodeKind.PARALLEL,
@@ -81,7 +88,9 @@ public class AgenticAnnotationScanner {
             CONDITIONAL_AGENT, NodeKind.CONDITIONAL,
             SUPERVISOR_AGENT, NodeKind.SUPERVISOR,
             PLANNER_AGENT, NodeKind.PLANNER,
-            HUMAN_IN_THE_LOOP, NodeKind.HUMAN_IN_THE_LOOP);
+            HUMAN_IN_THE_LOOP, NodeKind.HUMAN_IN_THE_LOOP,
+            A2A_CLIENT_AGENT, NodeKind.A2A_CLIENT_AGENT,
+            MCP_CLIENT_AGENT, NodeKind.MCP_CLIENT_AGENT);
 
     /**
      * @return one descriptor per agent method, sorted by id
@@ -147,7 +156,25 @@ public class AgenticAnnotationScanner {
                 booleanValue(annotation, "optional"),
                 booleanValue(annotation, "async"),
                 kind == NodeKind.AI_AGENT ? aiDetails(index, method) : null,
-                inputs(index, method));
+                inputs(index, method),
+                remoteDetails(method, annotation, kind));
+    }
+
+    /**
+     * Like langchain4j: an A2A agent has its server URL in the annotation or from an {@code @A2AServerUrlSupplier}
+     * method, an MCP agent gets its client from an {@code @McpClientSupplier} method; both declared next to it.
+     */
+    private static RemoteAgentDetails remoteDetails(MethodInfo method, AnnotationInstance annotation, NodeKind kind) {
+        return switch (kind) {
+            case A2A_CLIENT_AGENT -> new RemoteAgentDetails(
+                    nonBlank(stringValue(annotation, "a2aServerUrl")),
+                    methodRef(annotatedMethod(method.declaringClass(), A2A_SERVER_URL_SUPPLIER)),
+                    nonBlank(stringValue(annotation, "tenant")), null, null);
+            case MCP_CLIENT_AGENT -> new RemoteAgentDetails(null, null, null,
+                    nonBlank(stringValue(annotation, "toolName")),
+                    methodRef(annotatedMethod(method.declaringClass(), MCP_CLIENT_SUPPLIER)));
+            default -> null;
+        };
     }
 
     /**
@@ -250,7 +277,8 @@ public class AgenticAnnotationScanner {
     }
 
     private static boolean isWorkflow(NodeKind kind) {
-        return kind != NodeKind.AI_AGENT && kind != NodeKind.NON_AI_AGENT && kind != NodeKind.HUMAN_IN_THE_LOOP;
+        return kind != NodeKind.AI_AGENT && kind != NodeKind.NON_AI_AGENT && kind != NodeKind.HUMAN_IN_THE_LOOP
+                && kind != NodeKind.A2A_CLIENT_AGENT && kind != NodeKind.MCP_CLIENT_AGENT;
     }
 
     /**

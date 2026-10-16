@@ -146,7 +146,28 @@ export class QwcAgenticNodeDetails extends LitElement {
                     <dd data-field="planner">${node.plannerInfo.plannerClass
                         ?? (node.plannerInfo.extras?.supplier ? html`from ${shortRef(node.plannerInfo.extras.supplier)}` : this._none())}</dd>` : nothing}
             </dl>
-            ${node.kind === 'AI_AGENT' ? this._renderAiDetails(node.aiDetails) : nothing}`;
+            ${node.kind === 'AI_AGENT' ? this._renderAiDetails(node.aiDetails) : nothing}
+            ${node.remoteDetails ? this._renderRemoteDetails(node.kind, node.remoteDetails) : nothing}`;
+    }
+
+    _renderRemoteDetails(kind, remote) {
+        if (kind === 'A2A_CLIENT_AGENT') {
+            return html`
+                <h5>Remote A2A server</h5>
+                <dl>
+                    <dt>Server</dt>
+                    <dd data-field="a2aServer">${remote.a2aServerUrl
+                        ?? (remote.serverUrlSupplier ? html`from ${shortRef(remote.serverUrlSupplier)}` : this._none())}</dd>
+                    <dt>Tenant</dt><dd data-field="tenant">${remote.tenant ?? this._none()}</dd>
+                </dl>`;
+        }
+        return html`
+            <h5>MCP server</h5>
+            <dl>
+                <dt>Tool</dt><dd data-field="mcpTool">${remote.toolName ? this._chips([remote.toolName]) : this._none()}</dd>
+                <dt>Client</dt>
+                <dd data-field="mcpClient">${remote.clientSupplier ? html`from ${shortRef(remote.clientSupplier)}` : this._none()}</dd>
+            </dl>`;
     }
 
     _renderGuard(guard) {

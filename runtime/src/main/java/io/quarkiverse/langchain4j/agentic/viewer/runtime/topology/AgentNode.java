@@ -17,6 +17,7 @@ import java.util.List;
  * @param guard exit condition of a loop, or activation condition of a conditional branch; null otherwise
  * @param plannerInfo planner of a {@link NodeKind#PLANNER} node, null otherwise
  * @param aiDetails prompts, model and tools of an {@link NodeKind#AI_AGENT} node, null otherwise or when unknown
+ * @param remoteDetails server or MCP tool of an A2A or MCP client agent, null otherwise
  */
 public record AgentNode(
         String id,
@@ -30,7 +31,8 @@ public record AgentNode(
         List<AgentNode> children,
         Guard guard,
         PlannerInfo plannerInfo,
-        AiAgentDetails aiDetails) {
+        AiAgentDetails aiDetails,
+        RemoteAgentDetails remoteDetails) {
 
     public AgentNode {
         inputKeys = inputKeys == null ? List.of() : List.copyOf(inputKeys);

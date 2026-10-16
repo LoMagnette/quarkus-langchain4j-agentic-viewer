@@ -48,14 +48,14 @@ class TopologyJsonTest {
 
     @Test
     void rootNodeIdMustMatchRoot() {
-        AgentNode root = new AgentNode("a", "a", NodeKind.AI_AGENT, null, null, null, false, false, null, null, null, null);
+        AgentNode root = new AgentNode("a", "a", NodeKind.AI_AGENT, null, null, null, false, false, null, null, null, null, null);
         assertThrows(IllegalArgumentException.class,
                 () -> new AgenticSystem("s", "s", "other", SystemOrigin.DECLARATIVE, null, null, root));
     }
 
     @Test
     void nullListsBecomeEmpty() {
-        AgentNode node = new AgentNode("a", "a", NodeKind.AI_AGENT, null, null, null, false, false, null, null, null, null);
+        AgentNode node = new AgentNode("a", "a", NodeKind.AI_AGENT, null, null, null, false, false, null, null, null, null, null);
         assertEquals(List.of(), node.inputKeys());
         assertEquals(List.of(), node.children());
     }

@@ -59,7 +59,7 @@ public class TopologyBuilder {
             // langchain4j cannot build it either, unless it is an agent kind this scanner does not read yet
             return new AgentNode(id, simpleName(tree.agentClass()), NodeKind.NON_AI_AGENT,
                     "No agent method found in " + tree.agentClass(), List.of(), null, false, false, List.of(), guard,
-                    null, null);
+                    null, null, null);
         }
         List<AgentNode> children = new ArrayList<>();
         Map<String, Integer> occurrences = new HashMap<>();
@@ -81,7 +81,8 @@ public class TopologyBuilder {
                 children,
                 descriptor.kind() == NodeKind.LOOP ? descriptor.loopGuard() : guard,
                 plannerInfo(descriptor),
-                descriptor.aiDetails());
+                descriptor.aiDetails(),
+                descriptor.remoteDetails());
     }
 
     /**

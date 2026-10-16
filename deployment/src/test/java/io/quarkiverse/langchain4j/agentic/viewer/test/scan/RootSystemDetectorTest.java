@@ -17,7 +17,7 @@ class RootSystemDetectorTest {
     private static AgentDescriptor agent(String agentClass, String... subAgents) {
         return new AgentDescriptor(agentClass + "#run", agentClass, "run",
                 subAgents.length == 0 ? NodeKind.AI_AGENT : NodeKind.SEQUENCE, "run", null, null, null,
-                List.of(subAgents), null, null, null, null, null, false, false, null, null);
+                List.of(subAgents), null, null, null, null, null, false, false, null, null, null);
     }
 
     /** Root and nesting as "A(B, C(D))"; an unresolved class is suffixed with "?". */

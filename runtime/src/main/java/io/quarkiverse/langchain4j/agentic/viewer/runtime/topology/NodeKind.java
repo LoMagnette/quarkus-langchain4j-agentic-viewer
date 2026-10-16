@@ -13,5 +13,9 @@ public enum NodeKind {
     CONDITIONAL,
     SUPERVISOR,
     PLANNER,
-    HUMAN_IN_THE_LOOP
+    HUMAN_IN_THE_LOOP,
+    /** A remote agent called through the A2A protocol ({@code @A2AClientAgent}). */
+    A2A_CLIENT_AGENT,
+    /** An agent calling one tool of an MCP server ({@code @McpClientAgent}). */
+    MCP_CLIENT_AGENT
 }
