@@ -3,7 +3,7 @@ import { LitElement, html, css, nothing } from 'lit';
 /**
  * Rows of the waterfall timeline of a run, from its events: one row per agent invocation, nested by parent invocation
  * (the way AgentMonitor records them), so each loop iteration and parallel-mapper item has its own row; tool calls are
- * rows under the invocation that made them.
+ * rows under the invocation that made them, and planner decisions numbered steps under the planner's invocation.
  *
  * @param now time to use as the end of what is still running (ms since the epoch)
  * @return {{rows: Array, start: number, end: number}} rows depth-first, start and end of the run (ms since the epoch)
@@ -14,6 +14,10 @@ export function buildTimeline(events, now = Date.now()) {
     const invocations = new Map();
     const roots = [];
     const toolCalls = new Map();
+    const steps = new Map(); // decisions so far per planner invocation
+    // agent names by node, to name the agents a planner chose (they start after the decision)
+    const agentNames = new Map(events.filter(e => e.type === 'AgentStarted').map(e => [e.nodeId, e.agentName]));
+    const agentName = id => agentNames.get(id) ?? id.substring(id.lastIndexOf('/') + 1).replace(/~\d+$/, '');
     for (const event of events) {
         switch (event.type) {
             case 'AgentStarted': {
@@ -56,6 +60,22 @@ export function buildTimeline(events, now = Date.now()) {
                 };
                 const enclosing = invocations.get(event.invocationId);
                 (enclosing ? enclosing.children : roots).push(row);
+                break;
+            }
+            case 'PlannerDecision': {
+                // numbered steps are the agents chosen; ending the workflow is not a step
+                const chosen = (event.selectedNodeIds ?? []).map(agentName);
+                const step = (steps.get(event.invocationId) ?? 0) + (chosen.length > 0 ? 1 : 0);
+                steps.set(event.invocationId, step);
+                const row = {
+                    kind: 'decision', id: `decision:${event.invocationId}:${event.timestamp}:${step}:${chosen.length}`,
+                    name: chosen.length > 0 ? `Step ${step}` : event.extras?.action === 'doneWithResult' ? 'Done with result'
+                        : event.extras?.action === 'suspend' ? 'Suspended' : 'Done',
+                    nodeId: event.nodeId, decision: chosen.length > 0 ? `→ ${chosen.join(', ')}` : undefined,
+                    start: event.timestamp, end: event.timestamp, duration: 0, status: 'done', children: [],
+                };
+                const planner = invocations.get(event.invocationId);
+                (planner ? planner.children : roots).push(row);
                 break;
             }
             case 'ToolStarted': {
@@ -161,6 +181,16 @@ export class QwcAgenticTimeline extends LitElement {
         .bar.recovered {
             background: #f59e0b;
         }
+        .bar.decision {
+            background: #ec4899;
+            width: 3px !important;
+        }
+        .row.decision .label {
+            color: var(--lumo-secondary-text-color);
+        }
+        .row.decision .label .detail {
+            color: var(--lumo-body-text-color);
+        }
         .row.error .label {
             color: var(--lumo-error-text-color);
         }
@@ -219,13 +249,14 @@ export class QwcAgenticTimeline extends LitElement {
             <div class="row ${row.kind}" data-row=${row.id} data-depth=${row.depth}
                     @click=${row.kind === 'tool' ? () => this._toggle(row.id) : undefined}>
                 <span class="label" style="padding-left: ${row.depth * 14}px" title=${row.nodeId ?? row.name}>
-                    ${row.kind === 'tool' ? '🔧 ' : row.kind === 'error' ? '⚠ ' : ''}${row.name}${this._detail(row)}
+                    ${row.kind === 'tool' ? '🔧 ' : row.kind === 'error' ? '⚠ ' : row.kind === 'decision' ? '◆ ' : ''}${row.name}${this._detail(row)}
                 </span>
                 <span class="track">
-                    <span class="bar ${row.kind === 'tool' ? 'tool' : row.status}"
+                    <span class="bar ${row.kind === 'tool' || row.kind === 'decision' ? row.kind : row.status}"
                           style="left: ${(row.offset / span) * 100}%; width: ${(row.span / span) * 100}%"></span>
                 </span>
-                <span class="duration">${row.status === 'running' ? '…' : formatDuration(row.duration ?? row.span)}</span>
+                <span class="duration">${row.kind === 'decision' ? '' : row.status === 'running' ? '…'
+                        : formatDuration(row.duration ?? row.span)}</span>
             </div>
             ${row.kind === 'tool' && this._open.has(row.id) ? html`
                 <div class="tool-details" style="margin-left: ${row.depth * 14}px" data-tool-details=${row.id}>arguments: ${row.arguments ?? ''}
@@ -234,6 +265,9 @@ result: ${row.result ?? '(running)'}</div>` : nothing}`)}`;
 
     _detail(row) {
         const parts = [];
+        if (row.kind === 'decision' && row.decision) {
+            parts.push(row.decision);
+        }
         if (row.kind === 'error') {
             parts.push({ RETRY: 'retried', RETURN_RESULT: 'recovered with a result', THROW_EXCEPTION: 'fatal' }[row.outcome] ?? row.outcome);
         }

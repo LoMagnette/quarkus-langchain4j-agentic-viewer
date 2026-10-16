@@ -550,4 +550,10 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   sub-agents, done flag, extras `action` / `result`). Built-in workflows report none.
 - Verified: BankSupervisor exchange, withdraw, credit, done with result; DraftReviewer 2 rounds then done; GOAP, P2P
   and blackboard exact sequences (patterns profile); sample outputs unchanged. `AgentTrees` now shared with the HITL steps.
-- Next: T3.3 generic planner live view from these events.
+
+### T3.3 generic planner live view — done (Oct 16, 2026)
+
+- Planner and supervisor steps come from PlannerDecision events: each chosen agent's candidate edge carries its step
+  numbers (agents chosen in one decision share it), the planner node shows "step N" then "done after N steps"; the
+  timeline has a "Step N → agents" row per decision under the planner invocation and an unnumbered "Done" /
+  "Done with result" row. T3.1's numbering from AgentStarted remains the fallback when no decision arrives.

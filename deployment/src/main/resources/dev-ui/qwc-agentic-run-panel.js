@@ -542,6 +542,8 @@ class LiveRun {
         this.waiting = [];
         /** sub-agents called by each supervisor or planner, in call order: node id -> [child node ids] */
         this.calls = new Map();
+        /** decisions of each supervisor or planner, in order: node id -> [{ selected, done, action }] */
+        this.decisions = new Map();
     }
 
     /** @return the AwaitingHumanInput event of the oldest step waiting for an answer (the one provideHumanInput answers) */
@@ -572,8 +574,8 @@ class LiveRun {
                     this.loops.set(parent, Math.max(this.loops.get(parent) ?? 0, event.iteration + 1));
                     this._showInfo(parent);
                 }
-                if (parentKind === 'SUPERVISOR' || parentKind === 'PLANNER') {
-                    // the path taken: each called sub-agent gets the numbers of its calls
+                if ((parentKind === 'SUPERVISOR' || parentKind === 'PLANNER') && !this.decisions.has(parent)) {
+                    // the path taken, without decision events: each called sub-agent gets the numbers of its calls
                     const calls = this.calls.get(parent) ?? [];
                     calls.push(event.nodeId);
                     this.calls.set(parent, calls);
@@ -624,6 +626,18 @@ class LiveRun {
                 this._showInfo(event.nodeId);
                 break;
             }
+            case 'PlannerDecision': {
+                // the path taken, step by step: each chosen sub-agent gets the numbers of the steps that chose it
+                const steps = this.decisions.get(event.nodeId) ?? [];
+                steps.push({ selected: event.selectedNodeIds ?? [], done: event.done, action: event.extras?.action });
+                this.decisions.set(event.nodeId, steps);
+                // steps are the decisions choosing agents (as in the timeline)
+                const chosen = steps.filter(step => step.selected.length > 0);
+                (event.selectedNodeIds ?? []).forEach(id => this.graph?.setPath(id, chosen
+                    .map((step, i) => step.selected.includes(id) ? i + 1 : undefined).filter(Boolean).join(', ')));
+                this._showInfo(event.nodeId);
+                break;
+            }
             case 'ErrorHandled': {
                 if (!event.nodeId) {
                     break;
@@ -659,6 +673,11 @@ class LiveRun {
             const items = this.items.get(nodeId);
             parts.push(`${items.finished}/${items.started} items`);
         }
+        const steps = this.decisions.get(nodeId);
+        if (steps?.length) {
+            const calls = steps.filter(step => step.selected.length > 0).length;
+            parts.push(steps[steps.length - 1].done ? `done after ${calls} step${calls === 1 ? '' : 's'}` : `step ${calls}`);
+        }
         if (this.waiting.some(w => w.nodeId === nodeId)) {
             parts.push('waiting for input');
         }
@@ -685,6 +704,7 @@ class LiveRun {
             failed: [...this.failed],
             waiting: this.waiting.map(w => w.nodeId),
             calls: Object.fromEntries(this.calls),
+            decisions: Object.fromEntries(this.decisions),
         };
     }
 }
