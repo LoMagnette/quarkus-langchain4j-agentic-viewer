@@ -112,6 +112,19 @@ public class AgenticViewerJsonRpcService {
         return runManager.cancel(runId);
     }
 
+    /**
+     * Answers the human-in-the-loop step a run waits on (AwaitingHumanInput).
+     *
+     * @param value the answer as typed: as is for a String step, JSON otherwise
+     * @return true if a step was waiting and got the answer, false if none was waiting
+     */
+    public boolean provideHumanInput(String runId, String value) {
+        if (runManager.run(runId).isEmpty()) {
+            throw new IllegalArgumentException("Unknown run: " + runId);
+        }
+        return runManager.provideHumanInput(runId, value);
+    }
+
     private AgenticSystem system(String systemId) {
         return registry.find(systemId)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown agentic system: " + systemId));

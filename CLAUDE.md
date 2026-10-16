@@ -74,6 +74,10 @@ default 2048 chars of JSON) and must be plain Java values (maps, lists, strings,
 a Jackson `JsonNode` as a bean.
 runtime-dev beans only exist in dev mode: tests build `RunManager` directly (`new RunManager(lookup, new CdiRunInvoker())`,
 see `integration-tests/.../samples/SampleRunsTest`).
+`@HumanInTheLoop` steps of Dev UI runs never call the annotated method: `runs/HumanInTheLoopSteps` (installed with the
+listener by `RootListeners.attach`) swaps each step's invoker, through internal langchain4j API, for one that emits
+`AwaitingHumanInput` and blocks until `provideHumanInput` (or cancel). Outside Dev UI runs the method runs as usual.
+Tests that attach a `DevUiAgentListener` and run TripPlanner must answer (`HumanInputAnswers.answerInTheDevUi`).
 
 ### Dev UI Integration
 

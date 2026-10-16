@@ -1,6 +1,7 @@
 package io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs;
 
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Type;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -12,7 +13,10 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -28,9 +32,13 @@ import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.jboss.logging.Logger;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticSystemRegistry;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentFinished;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentStarted;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AwaitingHumanInput;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ErrorHandled;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ErrorInfo;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ExecutionEvent;
@@ -69,6 +77,13 @@ public class RunManager {
     private final int historySize;
     private final PayloadTruncator truncator;
     private final List<Consumer<ExecutionEvent>> listeners = new CopyOnWriteArrayList<>();
+    /** Human-in-the-loop steps waiting for an answer, per run id, oldest first. */
+    private final Map<String, Deque<PendingInput>> pendingInputs = new ConcurrentHashMap<>();
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /** A step waiting for an answer of a given type. */
+    private record PendingInput(Type valueType, CompletableFuture<Object> answer) {
+    }
 
     /** Payload values longer than this many characters of JSON are truncated (T6.1 turns it into a config root). */
     public static final String MAX_PAYLOAD_SIZE = "quarkus.langchain4j.agentic.dev-ui.max-payload-size";
@@ -179,6 +194,7 @@ public class RunManager {
         emit(run, new RunFailed(run.id(), System.currentTimeMillis(),
                 ErrorInfo.of(new CancellationException("Run cancelled")), run.durationMillis()));
         end(run, RunStatus.CANCELLED, null);
+        failPendingInputs(run.id(), "Run cancelled");
         Future<?> task = run.task();
         if (task != null) {
             task.cancel(true);
@@ -207,6 +223,77 @@ public class RunManager {
             }
         } finally {
             CURRENT.remove();
+            failPendingInputs(run.id(), "Run ended"); // e.g. a step of a branch still waiting after a failure
+        }
+    }
+
+    /**
+     * Reports that a human-in-the-loop step of a run waits, then blocks until {@link #provideHumanInput} answers it or
+     * the run ends.
+     *
+     * @param valueType type the answer is converted to
+     * @return the answer
+     * @throws CancellationException when the run ends (or the thread is interrupted) first
+     */
+    Object awaitHumanInput(Run run, AwaitingHumanInput waiting, Type valueType) {
+        PendingInput pending = new PendingInput(valueType, new CompletableFuture<>());
+        Deque<PendingInput> runInputs = pendingInputs.computeIfAbsent(run.id(), id -> new ConcurrentLinkedDeque<>());
+        runInputs.addLast(pending);
+        try {
+            if (run.ended()) {
+                throw new CancellationException("Run ended");
+            }
+            emit(run, waiting);
+            return pending.answer().get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new CancellationException("Interrupted while waiting for human input");
+        } catch (ExecutionException e) {
+            throw e.getCause() instanceof RuntimeException cause ? cause : new IllegalStateException(e.getCause());
+        } finally {
+            runInputs.remove(pending);
+            pendingInputs.computeIfPresent(run.id(), (id, inputs) -> inputs.isEmpty() ? null : inputs);
+        }
+    }
+
+    /**
+     * Answers the oldest human-in-the-loop step of a run waiting for one.
+     *
+     * @param value the answer as typed: taken as is for a String step, parsed as JSON otherwise
+     * @return true if a step was waiting and got the answer, false if none was waiting
+     * @throws IllegalArgumentException if the value does not fit the step's type (the step keeps waiting)
+     */
+    public boolean provideHumanInput(String runId, String value) {
+        Deque<PendingInput> runInputs = runId == null ? null : pendingInputs.get(runId);
+        if (runInputs == null) {
+            return false;
+        }
+        for (PendingInput pending : runInputs) {
+            if (!pending.answer().isDone()) {
+                Object answer = convert(value, pending.valueType());
+                if (pending.answer().complete(answer)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static Object convert(String value, Type type) {
+        if (type == null || type == String.class || type == Object.class || type == CharSequence.class) {
+            return value;
+        }
+        try {
+            return MAPPER.readValue(value == null ? "null" : value, MAPPER.constructType(type));
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Expected " + type.getTypeName() + " as JSON: " + e.getOriginalMessage());
+        }
+    }
+
+    private void failPendingInputs(String runId, String reason) {
+        Deque<PendingInput> runInputs = pendingInputs.get(runId);
+        if (runInputs != null) {
+            runInputs.forEach(pending -> pending.answer().completeExceptionally(new CancellationException(reason)));
         }
     }
 
@@ -304,6 +391,8 @@ public class RunManager {
             }
             case ErrorHandled e -> new ErrorHandled(e.runId(), e.timestamp(), e.nodeId(), e.invocationId(),
                     e.agentName(), e.error(), e.outcome(), t.truncate(e.result()).value());
+            case AwaitingHumanInput e -> new AwaitingHumanInput(e.runId(), e.timestamp(), e.nodeId(), e.invocationId(),
+                    e.prompt(), e.expectedKey(), e.valueType(), t.truncateValues(e.inputs()));
             case PlannerDecision e -> new PlannerDecision(e.runId(), e.timestamp(), e.nodeId(), e.invocationId(),
                     e.selectedNodeIds(), e.done(), t.truncateValues(e.extras()));
             default -> event; // no free-form payload
@@ -312,6 +401,7 @@ public class RunManager {
 
     @PreDestroy
     void shutdown() {
+        pendingInputs.keySet().forEach(runId -> failPendingInputs(runId, "Application stopped"));
         executor.shutdownNow();
         dispatcher.shutdown();
     }

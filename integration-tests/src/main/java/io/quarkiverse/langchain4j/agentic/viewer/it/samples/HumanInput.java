@@ -7,8 +7,8 @@ import java.util.function.UnaryOperator;
 /**
  * Where {@code @HumanInTheLoop} steps of the samples get their answer from.
  * <p>
- * Placeholder until the Dev UI can answer pending human steps (T2.11, upstream U4): by default the human
- * approves, so samples complete unattended; tests can plug in other answers.
+ * Used when the samples are called directly: runs started from the Dev UI never call the steps, the Dev UI answers them
+ * (T2.11). By default the human approves, so samples complete unattended; tests can plug in other answers.
  */
 public final class HumanInput {
 

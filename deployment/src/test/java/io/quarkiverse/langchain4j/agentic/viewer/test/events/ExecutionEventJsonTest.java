@@ -56,7 +56,8 @@ class ExecutionEventJsonTest {
             new PlannerDecision(RUN, T, "com.example.Bank#run", "inv-1", List.of(NODE), false,
                     Map.of("path", List.of("a", "b"))),
             new ScopeStateChanged(RUN, T, "draft", "a draft", false, NODE),
-            new AwaitingHumanInput(RUN, T, "com.example.Trip#plan/Approval", "Approve?", "approval"),
+            new AwaitingHumanInput(RUN, T, "com.example.Trip#plan/Approval", "inv-2", "Approve?", "approval",
+                    "java.lang.String", Map.of("destination", "Lisbon")),
             new ErrorHandled(RUN, T, NODE, "inv-1", "write", ERROR, "RETRY", null));
 
     private final ObjectMapper mapper = new ObjectMapper();

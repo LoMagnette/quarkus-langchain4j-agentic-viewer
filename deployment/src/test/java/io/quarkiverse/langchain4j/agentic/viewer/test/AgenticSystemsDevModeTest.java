@@ -127,8 +127,13 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
         assertEquals(List.of("RunStarted", "RunFailed"), types);
 
         assertEquals(false, executeJsonRPCMethod("cancelRun", Map.of("runId", runId)).asBoolean(), "already ended");
+        assertEquals(false, executeJsonRPCMethod("provideHumanInput", Map.of("runId", runId, "value", "yes")).asBoolean(),
+                "nothing waits for human input");
         String unknown = rawJsonRpc("quarkus-langchain4j-agentic-viewer_getRun", "{\"runId\":\"nope\"}");
         assertTrue(unknown.contains("\"error\"") && unknown.contains("Unknown run: nope"), unknown);
+        String unknownInput = rawJsonRpc("quarkus-langchain4j-agentic-viewer_provideHumanInput",
+                "{\"runId\":\"nope\",\"value\":\"yes\"}");
+        assertTrue(unknownInput.contains("\"error\"") && unknownInput.contains("Unknown run: nope"), unknownInput);
     }
 
     @Test

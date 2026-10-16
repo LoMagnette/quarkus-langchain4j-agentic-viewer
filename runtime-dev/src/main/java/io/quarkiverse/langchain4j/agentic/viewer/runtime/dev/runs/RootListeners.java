@@ -11,7 +11,8 @@ import io.quarkus.arc.Arc;
 import io.quarkus.arc.ClientProxy;
 
 /**
- * Attaches a listener to the root agent of each declarative system, inherited by all its sub-agents.
+ * Attaches a listener to the root agent of each declarative system, inherited by all its sub-agents. A Dev UI listener
+ * also gets the human-in-the-loop steps of its runs ({@link HumanInTheLoopSteps}).
  * <p>
  * Uses the internal {@link InternalAgent#registerInheritedParentListener} (T0.4 finding, Backlog doc-3): CDI
  * AgentListener beans only reach AI agents. A listener cannot be removed: attach it once per root instance (a hot
@@ -37,6 +38,9 @@ public final class RootListeners {
                 Object root = bean == null ? null : ClientProxy.unwrap(bean);
                 if (root instanceof InternalAgent agent) {
                     agent.registerInheritedParentListener(listener);
+                    if (listener instanceof DevUiAgentListener devUiListener) {
+                        HumanInTheLoopSteps.intercept(root, devUiListener);
+                    }
                     attached++;
                 } else {
                     LOG.debugf("Agentic viewer: no agent bean to observe for %s", system.id());

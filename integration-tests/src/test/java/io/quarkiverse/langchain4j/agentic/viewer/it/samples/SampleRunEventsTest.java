@@ -82,6 +82,7 @@ class SampleRunEventsTest {
     private static RunManager manager() {
         RunManager manager = new RunManager(id -> systems.stream().filter(s -> s.id().equals(id)).findFirst(),
                 new CdiRunInvoker());
+        HumanInputAnswers.answerInTheDevUi(manager);
         assertEquals(systems.size(), RootListeners.attach(systems, new DevUiAgentListener(manager)),
                 "listener attached to every root");
         return manager;

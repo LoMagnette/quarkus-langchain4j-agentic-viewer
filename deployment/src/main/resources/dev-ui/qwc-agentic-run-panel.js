@@ -2,6 +2,7 @@ import { LitElement, html, css, nothing } from 'lit';
 import '@vaadin/button';
 import '@vaadin/dialog';
 import '@vaadin/progress-bar';
+import '@vaadin/text-area';
 import { dialogFooterRenderer, dialogRenderer } from '@vaadin/dialog/lit.js';
 import './qwc-agentic-run-form.js';
 
@@ -67,6 +68,10 @@ export function reachableTools(system) {
 
 function simpleClass(name) {
     return name ? name.substring(name.lastIndexOf('.') + 1) : 'error';
+}
+
+function simpleType(name) {
+    return name ? name.substring(Math.max(name.lastIndexOf('.'), name.lastIndexOf('$')) + 1) : '';
 }
 
 function formatDuration(millis) {
@@ -166,6 +171,20 @@ export class QwcAgenticRunPanel extends LitElement {
         .error {
             color: var(--lumo-error-text-color);
         }
+        .human-input {
+            display: flex;
+            flex-direction: column;
+            gap: var(--lumo-space-xs);
+            padding: var(--lumo-space-s);
+            border: 2px dashed var(--lumo-primary-color);
+            border-radius: var(--lumo-border-radius-m);
+        }
+        .human-input .prompt {
+            font-weight: bold;
+        }
+        .human-input vaadin-text-area {
+            width: 100%;
+        }
     `;
 
     static properties = {
@@ -178,6 +197,11 @@ export class QwcAgenticRunPanel extends LitElement {
         _pending: { state: true },
         _run: { state: true },
         _history: { state: true },
+        /** the AwaitingHumanInput event of the step the run waits on, if any */
+        _waiting: { state: true },
+        _answer: { state: true },
+        _answerError: { state: true },
+        _answering: { state: true },
     };
 
     constructor() {
@@ -253,12 +277,16 @@ export class QwcAgenticRunPanel extends LitElement {
 
     _renderLive() {
         const run = this._run;
-        const label = { running: 'Running...', succeeded: 'Succeeded', failed: 'Failed', cancelled: 'Cancelled' }[run.status];
+        const waiting = run.status === 'running' ? this._waiting : undefined;
+        const label = waiting ? 'Waiting for your input'
+            : { running: 'Running...', succeeded: 'Succeeded', failed: 'Failed', cancelled: 'Cancelled' }[run.status];
         return html`
-            <div class="status ${run.status}" data-run-status=${run.status}>
+            <div class="status ${run.status}" data-run-status=${waiting ? 'waiting' : run.status}>
                 ${label}${run.duration != null ? html`<span class="muted">in ${formatDuration(run.duration)}</span>` : nothing}
             </div>
-            ${run.status === 'running' ? html`<vaadin-progress-bar indeterminate></vaadin-progress-bar>
+            ${run.status === 'running' && !waiting ? html`<vaadin-progress-bar indeterminate></vaadin-progress-bar>` : nothing}
+            ${waiting ? this._renderHumanInput(waiting) : nothing}
+            ${run.status === 'running' ? html`
                 <div class="actions"><vaadin-button theme="error tertiary" data-action="cancel" ?disabled=${!run.runId}
                         @click=${this._cancel}>Cancel</vaadin-button></div>` : nothing}
             ${run.status === 'succeeded' ? html`<h5>Output</h5><pre data-run-output>${this._format(run.output)}</pre>` : nothing}
@@ -274,6 +302,46 @@ export class QwcAgenticRunPanel extends LitElement {
                 <vaadin-button ?disabled=${run.status === 'running'} data-action="edit"
                         @click=${() => this._mode = 'form'}>Edit inputs</vaadin-button>
             </div>`;
+    }
+
+    /** The paused state of a human-in-the-loop step: what it asks, its inputs and the answer box. */
+    _renderHumanInput(waiting) {
+        const node = this._live?.nodes.get(waiting.nodeId);
+        const json = waiting.valueType && waiting.valueType !== 'java.lang.String';
+        const inputs = Object.entries(waiting.inputs ?? {});
+        return html`
+            <div class="human-input" data-human-input=${waiting.nodeId}>
+                <div class="prompt" data-human-prompt>${waiting.prompt ?? `${node?.name ?? 'A step'} needs your input`}</div>
+                <div class="muted">${node?.name ?? waiting.nodeId}${waiting.expectedKey ? html` writes <code>${waiting.expectedKey}</code>` : nothing}</div>
+                ${inputs.length > 0 ? html`<pre data-human-inputs>${inputs.map(([name, value]) => `${name}: ${this._format(value)}`).join('\n')}</pre>` : nothing}
+                <vaadin-text-area data-human-answer label=${json ? `Answer (JSON ${simpleType(waiting.valueType)})` : 'Answer'}
+                        .value=${this._answer ?? ''} ?disabled=${this._answering} .invalid=${!!this._answerError}
+                        .errorMessage=${this._answerError ?? ''} @value-changed=${e => this._answer = e.detail.value}
+                        @keydown=${e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { this._sendAnswer(); } }}></vaadin-text-area>
+                <div class="actions">
+                    <vaadin-button theme="primary" data-action="answer" ?disabled=${this._answering}
+                            @click=${this._sendAnswer}>Send</vaadin-button>
+                </div>
+            </div>`;
+    }
+
+    _sendAnswer() {
+        const runId = this._run?.runId;
+        if (!runId || !this._waiting || this._answering) {
+            return;
+        }
+        this._answering = true;
+        this._answerError = undefined;
+        this.jsonRpc.provideHumanInput({ runId, value: this._answer ?? '' })
+            .then(response => {
+                if (response.result) {
+                    this._answer = undefined;
+                } else {
+                    this._answerError = 'The step no longer waits for an answer';
+                }
+            })
+            .catch(error => this._answerError = error?.error?.message ?? error?.message ?? String(error))
+            .finally(() => this._answering = false);
     }
 
     _format(value) {
@@ -333,6 +401,7 @@ export class QwcAgenticRunPanel extends LitElement {
             }
             const live = new LiveRun(system, this.graph);
             this._live = live;
+            this._waiting = undefined;
             trace.events.forEach(event => live.apply(event));
             this._events = trace.events;
             this._publish(false);
@@ -380,6 +449,9 @@ export class QwcAgenticRunPanel extends LitElement {
 
     _start(inputs) {
         this._stopStream();
+        this._waiting = undefined;
+        this._answer = undefined;
+        this._answerError = undefined;
         this.graph?.resetRun();
         const system = this.system;
         this._run = { status: 'running', inputs };
@@ -404,6 +476,7 @@ export class QwcAgenticRunPanel extends LitElement {
     _follow(system, runId) {
         const live = new LiveRun(system, this.graph);
         this._live = live;
+        this._waiting = undefined;
         this._observer = this.jsonRpc.streamRun({ runId }).onNext(response => {
             const event = response.result;
             if (!event || this._live !== live) {
@@ -411,6 +484,11 @@ export class QwcAgenticRunPanel extends LitElement {
             }
             live.apply(event);
             this._events = [...this._events, event];
+            const waiting = live.pendingInput();
+            if (waiting?.invocationId !== this._waiting?.invocationId || waiting?.timestamp !== this._waiting?.timestamp) {
+                this._answerError = undefined;
+            }
+            this._waiting = waiting;
             this._publish(event.type !== 'RunFinished' && event.type !== 'RunFailed');
             if (event.type === 'RunFinished' || event.type === 'RunFailed') {
                 this._run = this._ended(this._run, event);
@@ -460,6 +538,13 @@ class LiveRun {
         this.failed = new Set();
         /** errors handled by an error handler, by node: { exception, outcome } */
         this.handled = new Map();
+        /** human-in-the-loop steps waiting for an answer: their AwaitingHumanInput events, oldest first */
+        this.waiting = [];
+    }
+
+    /** @return the AwaitingHumanInput event of the oldest step waiting for an answer (the one provideHumanInput answers) */
+    pendingInput() {
+        return this.waiting[0];
     }
 
     _stats(nodeId) {
@@ -493,8 +578,20 @@ class LiveRun {
                 }
                 break;
             }
+            case 'AwaitingHumanInput': {
+                this.waiting.push(event);
+                this.graph?.highlight(event.nodeId, 'waiting');
+                this._showInfo(event.nodeId);
+                break;
+            }
+            case 'RunFinished':
+            case 'RunFailed': {
+                this.waiting = [];
+                break;
+            }
             case 'AgentFinished':
             case 'AgentFailed': {
+                this.waiting = this.waiting.filter(w => w.invocationId !== event.invocationId);
                 const left = Math.max(0, (this.running.get(event.nodeId) ?? 1) - 1);
                 this.running.set(event.nodeId, left);
                 const stats = this._stats(event.nodeId);
@@ -552,6 +649,9 @@ class LiveRun {
             const items = this.items.get(nodeId);
             parts.push(`${items.finished}/${items.started} items`);
         }
+        if (this.waiting.some(w => w.nodeId === nodeId)) {
+            parts.push('waiting for input');
+        }
         const handled = this.handled.get(nodeId);
         if (handled) {
             // short: the node has room for one line; the timeline and the run panel name the exception
@@ -573,6 +673,7 @@ class LiveRun {
             loops: Object.fromEntries(this.loops),
             items: Object.fromEntries(this.items),
             failed: [...this.failed],
+            waiting: this.waiting.map(w => w.nodeId),
         };
     }
 }

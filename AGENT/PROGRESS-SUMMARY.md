@@ -515,4 +515,20 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   / fatal shown on the node and in the timeline.
 - `JsonRpcEventSequenceTest`: exact event sequence per pattern kind through `startRun` + `streamRun`; mapper items
   interleave and each writes its own `translation_<index>` scope key.
-- Open: T2.11 (human in the loop) depends on upstream U4, which does not exist; design choice pending with the user.
+
+### T2.11 human in the loop from the Dev UI — done (Oct 16, 2026)
+
+- Decision (user): intercept `@HumanInTheLoop` steps in Dev UI runs rather than wait for upstream U4.
+- Finding: a declarative step is `AgentExecutor(MethodAgentInvoker(annotated static method), HumanInTheLoop record)`;
+  the invoker calls the method directly (the record's `responseProvider` is unused) and both are records. Upstream now
+  has `PendingResponse` + `AgenticScope.completePendingResponse`, but only if user code returns one.
+- `HumanInTheLoopSteps` replaces each step's executor in `AbstractServiceBuilder.subagents` (copied by per-scope
+  handlers) and in the root `PlannerBasedInvocationHandler.subagents` (final field, set by reflection: fine on JDK 25,
+  JEP 500 may warn on later JDKs) with a delegating invoker: in a Dev UI run it notifies the listeners, emits
+  `AwaitingHumanInput` (prompt = step description, inputs, expected key, value type) and blocks in
+  `RunManager.awaitHumanInput`; `provideHumanInput(runId, value)` answers the oldest waiting step (String as typed,
+  other types as JSON; a wrong value is a JSON-RPC error and the step keeps waiting); cancel, run end and shutdown
+  release waiting steps. AgentMonitor still matches the timeline.
+- UI: dashed "waiting" node state, "waiting for input" on the node and the timeline row, paused run panel with the
+  prompt, the step's inputs and an answer box; a waiting run reopened from the history after a refresh can be answered.
+- Gotcha: the build rejects a step parameter only given to the root (it must be an agent's output key).

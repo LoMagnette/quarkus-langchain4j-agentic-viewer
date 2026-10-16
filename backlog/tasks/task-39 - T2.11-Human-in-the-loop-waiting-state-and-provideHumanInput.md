@@ -1,9 +1,11 @@
 ---
 id: TASK-39
 title: 'T2.11: Human-in-the-loop waiting state and provideHumanInput'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-10-06 06:14'
+updated_date: '2026-10-16 15:33'
 labels:
   - runtime-dev
   - dev-ui
@@ -27,5 +29,11 @@ Spec: T2.11 (F4.7). Depends on U4 (pending-response abstraction) so the Dev UI c
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The HITL sample run completes from the UI
+- [x] #1 The HITL sample run completes from the UI
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The HITL sample (TripPlanner) completes from the Dev UI: the step waits, the run panel answers it, the run resumes (TASK-39.1 backend, TASK-39.2 UI). Upstream U4 is not needed: steps are intercepted in Dev UI runs (user decision).
+<!-- SECTION:FINAL_SUMMARY:END -->

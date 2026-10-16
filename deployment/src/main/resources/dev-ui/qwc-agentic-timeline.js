@@ -27,10 +27,18 @@ export function buildTimeline(events, now = Date.now()) {
                 (parent ? parent.children : roots).push(invocation);
                 break;
             }
+            case 'AwaitingHumanInput': {
+                const invocation = invocations.get(event.invocationId);
+                if (invocation) {
+                    invocation.waiting = true;
+                }
+                break;
+            }
             case 'AgentFinished':
             case 'AgentFailed': {
                 const invocation = invocations.get(event.invocationId);
                 if (invocation) {
+                    invocation.waiting = false;
                     invocation.end = event.timestamp;
                     invocation.duration = event.durationMillis;
                     invocation.status = event.type === 'AgentFailed' ? 'failed' : 'done';
@@ -228,6 +236,9 @@ result: ${row.result ?? '(running)'}</div>` : nothing}`)}`;
         const parts = [];
         if (row.kind === 'error') {
             parts.push({ RETRY: 'retried', RETURN_RESULT: 'recovered with a result', THROW_EXCEPTION: 'fatal' }[row.outcome] ?? row.outcome);
+        }
+        if (row.waiting && row.status === 'running') {
+            parts.push('waiting for input');
         }
         if (row.iteration != null) {
             parts.push(`iteration ${row.iteration + 1}`);

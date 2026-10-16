@@ -33,6 +33,7 @@ import dev.langchain4j.model.chat.response.ChatResponse;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentFailed;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentFinished;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentStarted;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AwaitingHumanInput;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ErrorHandled;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ErrorInfo;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ScopeCreated;
@@ -329,6 +330,30 @@ public class DevUiAgentListener implements AgentListener {
 
     private Run runOf(AgenticScope scope) {
         return scope == null ? null : runsByScope.get(scope);
+    }
+
+    /**
+     * @return the Dev UI run of this listener's manager that a scope belongs to, null for any other invocation
+     */
+    Run run(AgenticScope scope) {
+        return runOf(scope);
+    }
+
+    /**
+     * Called by an intercepted human-in-the-loop step of a run ({@link HumanInTheLoopSteps}), on its thread, once its
+     * start is notified: reports that the step waits and blocks until the Dev UI answers or the run ends.
+     *
+     * @param valueType type the answer is converted to
+     * @return the answer
+     */
+    Object awaitHumanInput(Run run, AgentInstance step, String prompt, String expectedKey, Type valueType,
+            Map<String, Object> inputs) {
+        Invocation invocation = openInvocation(step).orElse(null);
+        AwaitingHumanInput waiting = new AwaitingHumanInput(run.id(), now(),
+                invocation == null ? nodeId(run, step) : invocation.nodeId, invocation == null ? null : invocation.id(),
+                prompt == null || prompt.isBlank() ? null : prompt, expectedKey,
+                valueType == null ? null : valueType.getTypeName(), copy(inputs));
+        return runManager.awaitHumanInput(run, waiting, valueType);
     }
 
     /** The innermost invocation of this agent in progress: on this thread first, else on any thread. */

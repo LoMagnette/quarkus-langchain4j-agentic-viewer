@@ -75,6 +75,7 @@ class TimelineMatchesAgentMonitorTest {
         runManager = new RunManager(id -> systems.stream().filter(s -> s.id().equals(id)).findFirst(),
                 new CdiRunInvoker());
         RootListeners.attach(systems, new DevUiAgentListener(runManager));
+        HumanInputAnswers.answerInTheDevUi(runManager);
         monitor = new AgentMonitor();
         monitor.setMaxRetainedSessions(1000);
         RootListeners.attach(systems, monitor);
