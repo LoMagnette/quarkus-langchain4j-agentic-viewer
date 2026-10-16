@@ -63,7 +63,11 @@ Mermaid view and are retired by TASK-26.
 
 ### Dev UI Integration
 
-The extension registers a Dev UI card via `CardPageBuildItem` in `AgenticViewerProcessor.registerDevUI()`. Build-time data is serialized and passed to the frontend component at `deployment/src/main/resources/dev-ui/qwc-agentic-viewer.js` (Lit + Mermaid.js). The "Agentic Systems" page (`qwc-agentic-systems.js`) reads from `AgenticViewerJsonRpcService` (runtime-dev) over JSON-RPC; method names are `quarkus-langchain4j-agentic-viewer_<method>`.
+The extension registers a Dev UI card via `CardPageBuildItem` in `AgenticViewerProcessor.registerDevUI()`. Build-time data is serialized and passed to the frontend component at `deployment/src/main/resources/dev-ui/qwc-agentic-viewer.js` (Lit + Mermaid.js). The "Agentic Systems" page (`qwc-agentic-systems.js`) lists the `agenticSystems` build-time data and shows the selected
+system with the graph component `qwc-agentic-graph.js` (Cytoscape.js + elkjs from mvnpm; `toGraph()` maps a topology to
+nodes/edges, each compound is laid out separately by ELK to keep declaration order; `highlight(nodeId, state)` for the live
+view). The JSON-RPC service (`AgenticViewerJsonRpcService`, runtime-dev) uses method names
+`quarkus-langchain4j-agentic-viewer_<method>`. Dev mode does not reload a rebuilt extension: restart it to see Dev UI changes.
 
 ### Key Data Flow
 

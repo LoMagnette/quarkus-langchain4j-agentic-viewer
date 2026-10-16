@@ -67,8 +67,8 @@ export function toGraph(system) {
         edges.push({ id: `${source}->${target}:${kind}`, source, target, kind, label });
     const helper = (parent, role) => {
         const id = parent.id + HELPER_SEPARATOR + role;
-        nodes.push({ id, label: '', kind: role.toUpperCase(), parent: parent.id, compound: false, helper: true,
-            width: HELPER_SIZE, height: HELPER_SIZE });
+        nodes.push({ id, label: '', kind: role.toUpperCase(), parent: parent.id, parentKind: parent.kind, compound: false,
+            helper: true, width: role === 'hub' ? 18 : HELPER_SIZE, height: role === 'hub' ? 18 : HELPER_SIZE });
         return id;
     };
 
@@ -114,8 +114,15 @@ export function toGraph(system) {
                 ids.slice(1).forEach((id, i) => edge(ids[i], id, 'SEQUENCE'));
                 edge(ids[ids.length - 1], ids[0], 'BACK', loopLabel(node.guard));
                 break;
+            case 'SUPERVISOR':
+            case 'PLANNER': {
+                // sub-agents are chosen at runtime: candidates of a hub, with no order between them
+                const hub = helper(node, 'hub');
+                node.children.forEach(child => visit(child, node.id));
+                ids.forEach(id => edge(hub, id, 'CANDIDATE'));
+                break;
+            }
             default:
-                // guards and candidates come with T1.6c-d
                 node.children.forEach(child => visit(child, node.id));
                 break;
         }
@@ -416,6 +423,7 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             ...graph.nodes.map(n => ({
                 group: 'nodes',
                 data: { id: n.id, label: n.label, kind: n.kind, parent: n.parent, helper: n.helper ?? false,
+                    parentKind: n.parentKind,
                     width: positions[n.id]?.width, height: positions[n.id]?.height },
                 position: n.compound ? undefined : positions[n.id],
                 classes: [n.kind.toLowerCase(), n.compound ? 'workflow' : 'leaf', n.helper ? 'helper' : '']
@@ -490,6 +498,10 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             // fan-out edges leave the fork without an arrow; joins converge on the join point
             { selector: 'edge.fork', style: { 'target-arrow-shape': 'triangle' } },
             { selector: 'edge.join', style: { 'target-arrow-shape': 'none' } },
+            { selector: 'node.hub', style: { 'shape': 'ellipse', 'width': 18, 'height': 18 } },
+            { selector: 'node.hub[parentKind = "SUPERVISOR"]', style: { 'background-color': KIND_STYLES.SUPERVISOR.color } },
+            { selector: 'node.hub[parentKind = "PLANNER"]', style: { 'background-color': KIND_STYLES.PLANNER.color } },
+            { selector: 'edge.candidate', style: { 'line-style': 'dashed', 'arrow-scale': 0.8 } },
             { selector: 'edge.guard', style: {
                 'line-color': KIND_STYLES.CONDITIONAL.color, 'target-arrow-color': KIND_STYLES.CONDITIONAL.color,
                 'color': text, 'font-style': 'italic',

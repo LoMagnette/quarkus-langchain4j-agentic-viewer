@@ -444,3 +444,20 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   conditional branch is shown although langchain4j drops it (matters for T2.6 position-based correlation).
 - Tests: `TopologyBuilderTest` (every node kind, loop in sequence, id stability), `AgenticSystemsDevModeTest`
   (build-time data + recorded systems through a test route), sample root set in integration-tests.
+
+### TASK-21 / TASK-22 (T1.5, T1.6) system list and topology graph — done (Oct 16, 2026)
+
+- Card: the "Agentic Systems" link shows the number of systems (static label). Page `qwc-agentic-systems.js`: grid of the
+  `agenticSystems` build-time data (name, origin, pattern kinds, source), empty state, system view with the graph. Dev UI
+  card pages cannot pass parameters, so list and system view share one page.
+- `qwc-agentic-graph.js`: compound nodes for workflows; `KIND_STYLES` drives shapes and the legend; sequence arrows;
+  parallel / mapper / conditional fan out from a fork and join (guard labels on conditional edges, none for an unguarded
+  branch); loops get a dashed back-edge bracket labelled max iterations and exit condition (self-loop for one agent);
+  supervisor / planner sub-agents are dashed candidates of a hub. API: `highlight`, `clearHighlights`, `stateOf`,
+  `renderedNodes`, `renderedEdges`, events `node-selected`, `graph-rendered`.
+- ELK findings: hierarchical layout (INCLUDE_CHILDREN) ignores model order, so each compound is laid out on its own with
+  its edges; a considerModelOrder option only on a compound crashes elkjs 0.12; bk.fixedAlignment BALANCED centers forks.
+  Compounds take their ELK size (min-width/height, top bias) so titles sit inside and edges stop at the border.
+- Verified with headless Chromium (Playwright, scripts in the session scratchpad) on all 9 samples, light and dark, plus a
+  synthetic system injected into the build-time data. The T0.8 spike page is removed; the prototype "Agentic Diagram"
+  page stays until TASK-26.

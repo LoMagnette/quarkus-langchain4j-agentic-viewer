@@ -191,12 +191,6 @@ public class AgenticViewerProcessor {
                 .staticLabel(String.valueOf(systems.getSystems().size()))
                 .componentLink("qwc-agentic-systems.js"));
 
-        // T0.8 spike: Cytoscape.js + ELK rendering, to be replaced by the real graph component (T1.6)
-        card.addPage(Page.webComponentPageBuilder()
-                .title("Graph (spike)")
-                .icon("font-awesome-solid:diagram-project")
-                .componentLink("qwc-agentic-graph-spike.js"));
-
         return card;
     }
 
