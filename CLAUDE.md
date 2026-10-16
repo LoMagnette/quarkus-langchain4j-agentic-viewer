@@ -30,6 +30,18 @@ mvn clean verify -pl integration-tests -Ppatterns
 Samples run on a scripted fake chat model (`integration-tests/.../it/fake/ScriptedChatModel`), no API key needed:
 declarative samples in `src/main/java/.../it/samples`, patterns samples in `src/patterns/java` (profile `patterns`).
 
+To try the Dev UI on a real model, start the sample app with the `ollama` profile: the fake is not produced and the
+OpenAI extension calls any OpenAI-compatible endpoint, by default a local Ollama (tool-capable model needed):
+
+```bash
+mvn quarkus:dev -pl integration-tests -Dquarkus.profile=dev,ollama
+# overrides: OLLAMA_BASE_URL (default http://localhost:11434/v1; http://host.docker.internal:11434/v1 from the sandbox),
+#            OLLAMA_MODEL (default qwen2.5:14b), OPENAI_API_KEY (for a real OpenAI endpoint)
+```
+
+The extension never picks a model: a Dev UI run calls the application's agent beans, which use the model the
+application configures for each agent.
+
 ## Architecture
 
 ### Module Structure
