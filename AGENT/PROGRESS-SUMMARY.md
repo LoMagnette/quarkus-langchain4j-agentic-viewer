@@ -615,3 +615,11 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   GitHub yet (no remote); both commands pass locally.
 - deployment has a `patterns` profile too (module as test dependency, `src/patterns-test`): pattern tagging at build
   time and a dev-mode test with the three adapters registered; the no-module dev-mode test is skipped there.
+
+### T6.1 config roots and T6.2 hot reload — done (Oct 16, 2026)
+
+- Config: `quarkus.langchain4j.agentic.dev-ui.enabled` (build time; false removes card, JSON-RPC, beans, listener and
+  decorators), `history-size`, `max-payload-size` (run time); generated config docs; dev-mode tests for each.
+- Hot reload: `RunManager.shutdown` ends open runs CANCELLED ("Application stopped or reloaded"), completes their
+  streams, releases waiting human steps, stops the threads; the registry is rebuilt by the restart. Dev-mode test:
+  an agent interface change shows in getTopology, 10 reloads with open runs leave no thread (mutation-checked).

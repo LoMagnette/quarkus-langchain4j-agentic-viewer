@@ -21,6 +21,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -392,11 +393,31 @@ public class RunManager {
         };
     }
 
+    /**
+     * The application stops or a hot reload restarts it: the runs still running end now, CANCELLED (their streams
+     * complete), waiting human-in-the-loop steps are released, the run threads are interrupted and the event thread
+     * stops once it delivered what was emitted. Nothing keeps a thread or the old class loader alive.
+     */
     @PreDestroy
-    void shutdown() {
-        pendingInputs.keySet().forEach(runId -> failPendingInputs(runId, "Application stopped"));
+    public void shutdown() {
+        for (Run run : runs.values()) {
+            if (run.claimEnd(elapsedSince(run))) {
+                emit(run, new RunFailed(run.id(), System.currentTimeMillis(),
+                        ErrorInfo.of(new CancellationException("Application stopped or reloaded")), run.durationMillis()));
+                end(run, RunStatus.CANCELLED, null);
+            }
+        }
+        pendingInputs.keySet().forEach(runId -> failPendingInputs(runId, "Application stopped or reloaded"));
         executor.shutdownNow();
         dispatcher.shutdown();
+        try {
+            if (!dispatcher.awaitTermination(2, TimeUnit.SECONDS)) {
+                dispatcher.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            dispatcher.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static long elapsedMillis(long startNanos) {
