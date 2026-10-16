@@ -8,6 +8,8 @@ import 'elkjs/elk.bundled.js';
 
 const LEAF_WIDTH = 150;
 const LEAF_HEIGHT = 44;
+/** Approximate width of a character of a box title (bold, font size 12). */
+const TITLE_CHAR_WIDTH = 7;
 const COMPOUND_PADDING = 20;
 const TITLE_SPACE = 24;
 const STATES = ['running', 'waiting', 'done', 'failed', 'recovered'];
@@ -27,6 +29,7 @@ export const KIND_LABELS = {
     A2A_CLIENT_AGENT: 'A2A agent',
     MCP_CLIENT_AGENT: 'MCP client agent',
     INPUT_KEY: 'System input',
+    CONTRIBUTED: 'Planner state',
 };
 
 /**
@@ -48,6 +51,7 @@ export const KIND_STYLES = {
     SUPERVISOR: { shape: 'round-rectangle', color: '#ec4899', border: 'solid', width: 3 },
     PLANNER: { shape: 'round-rectangle', color: '#d946ef', border: 'solid', width: 3 },
     INPUT_KEY: { shape: 'round-tag', color: '#94a3b8', border: 'dashed' },
+    CONTRIBUTED: { shape: 'round-rectangle', color: '#d946ef', border: 'dotted' },
 };
 
 /** Separates a topology node id from the role of a helper node drawn for it (never used in topology ids). */
@@ -90,7 +94,7 @@ export function toGraph(system) {
             compound,
             // extra layout room: a loop draws its back-edge and label on the right, conditional guards label the fan-out
             paddingRight: compound && node.kind === 'LOOP' ? BACK_EDGE_GAP + labelWidth(loopLabel(node.guard)) + 12 : undefined,
-            layerSpacing: compound && node.kind === 'CONDITIONAL' ? 70 : undefined,
+            layerSpacing: compound && (node.kind === 'CONDITIONAL' || system.contributions?.[node.id]) ? 70 : undefined,
         });
         if (!compound) {
             return;
@@ -124,6 +128,15 @@ export function toGraph(system) {
                 break;
             case 'SUPERVISOR':
             case 'PLANNER': {
+                // what an AgenticTopologyContributor of the application draws replaces the generic view
+                const contribution = system.contributions?.[node.id];
+                if (contribution) {
+                    node.children.forEach(child => visit(child, node.id));
+                    contribution.nodes?.forEach(extra => nodes.push({ id: extra.id, label: extra.label, kind: 'CONTRIBUTED',
+                        parent: node.id, compound: false, width: Math.max(70, extra.label.length * 7 + 24), height: 30 }));
+                    contribution.edges?.forEach(extra => edge(extra.source, extra.target, 'CONTRIBUTED', extra.label ?? undefined));
+                    break;
+                }
                 // sub-agents are chosen at runtime: candidates of a hub, with no order between them
                 const hub = helper(node, 'hub');
                 node.children.forEach(child => visit(child, node.id));
@@ -442,8 +455,9 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             this._applyOverlay();
             // a click on a node selects it, a click on the background clears the selection (nodeId null)
             this._cy.on('tap', event => {
+                // helpers and the nodes of a topology contributor are not agents: nothing to show
                 const node = event.target !== this._cy && event.target.isNode?.() && !event.target.data('helper')
-                    ? event.target : null;
+                    && !event.target.hasClass('contributed') ? event.target : null;
                 if (event.target === this._cy || node) {
                     this.dispatchEvent(new CustomEvent('node-selected', {
                         detail: { nodeId: node?.id() ?? null }, bubbles: true, composed: true,
@@ -491,18 +505,35 @@ export class QwcAgenticGraph extends observeState(LitElement) {
      */
     setNodeInfo(nodeId, text) {
         text ? this._overlay.infos.set(nodeId, text) : this._overlay.infos.delete(nodeId);
-        return this._setNodeInfo(nodeId, text);
+        return this._label(nodeId);
     }
 
-    _setNodeInfo(nodeId, text) {
+    /** Shows the run information of a node, and its step numbers when no candidate edge leads to it. */
+    _label(nodeId) {
         const node = this._cy?.getElementById(nodeId);
         if (!node || node.empty()) {
             return false;
         }
         const base = node.data('baseLabel') ?? node.data('label');
         node.data('baseLabel', base);
-        node.data('label', !text ? base : node.isParent() ? `${base}   ${text}` : `${base}\n${text}`);
+        const steps = this._stepsOnNode(node) ? this._overlay.paths.get(nodeId) : undefined;
+        const parts = [this._overlay.infos.get(nodeId), steps ? `step${steps.includes(',') ? 's' : ''} ${steps}` : undefined]
+            .filter(Boolean);
+        if (node.isParent()) {
+            const label = parts.length ? `${base}   ${parts.join(' · ')}` : base;
+            node.data('label', label);
+            // a narrow box widens to its title (it grows to the right, see min-width-bias)
+            node.style('min-width', Math.max(node.data('width') ?? 0, label.length * TITLE_CHAR_WIDTH + 24 - 2 * COMPOUND_PADDING));
+        } else {
+            node.data('label', [base, ...parts].join('\n'));
+            // one line more than the box holds makes it taller
+            parts.length > 1 ? node.style('height', LEAF_HEIGHT + 14 * (parts.length - 1)) : node.removeStyle('height');
+        }
         return true;
+    }
+
+    _stepsOnNode(node) {
+        return this._overlay.paths.has(node.id()) && node.incomers('edge.candidate').empty();
     }
 
     /** @return the run information shown on a node, or null */
@@ -529,7 +560,8 @@ export class QwcAgenticGraph extends observeState(LitElement) {
     _setPath(nodeId, label) {
         const edges = this._cy?.edges('.candidate').filter(edge => edge.target().id() === nodeId);
         if (!edges || edges.empty()) {
-            return false;
+            // no candidate edge (a contributed drawing, the data-flow view): the numbers go on the node
+            return this._label(nodeId);
         }
         edges.toggleClass('taken', !!label);
         edges.data('label', label ?? '');
@@ -538,14 +570,20 @@ export class QwcAgenticGraph extends observeState(LitElement) {
 
     /** @return the sub-agents marked as called, with their call numbers: [{ nodeId, label }] */
     takenPath() {
-        return this._cy ? this._cy.edges('.taken').map(edge => ({ nodeId: edge.target().id(), label: edge.data('label') }))
-            : [];
+        if (!this._cy) {
+            return [];
+        }
+        const onNodes = [...this._overlay.paths].filter(([id]) => {
+            const node = this._cy.getElementById(id);
+            return !node.empty() && this._stepsOnNode(node);
+        }).map(([nodeId, label]) => ({ nodeId, label }));
+        return [...this._cy.edges('.taken').map(edge => ({ nodeId: edge.target().id(), label: edge.data('label') })), ...onNodes];
     }
 
     _applyOverlay() {
         this._overlay.states.forEach((state, nodeId) => this._highlight(nodeId, state));
-        this._overlay.infos.forEach((text, nodeId) => this._setNodeInfo(nodeId, text));
         this._overlay.paths.forEach((label, nodeId) => this._setPath(nodeId, label));
+        this._overlay.infos.forEach((text, nodeId) => this._label(nodeId));
     }
 
     /** Clears the highlights and run information of a previous run. */
@@ -559,6 +597,7 @@ export class QwcAgenticGraph extends observeState(LitElement) {
         this._cy?.nodes().forEach(node => {
             if (node.data('baseLabel') !== undefined) {
                 node.data('label', node.data('baseLabel'));
+                node.removeStyle('height min-width');
             }
         });
     }
@@ -816,6 +855,11 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             { selector: 'node.hub[parentKind = "SUPERVISOR"]', style: { 'background-color': KIND_STYLES.SUPERVISOR.color } },
             { selector: 'node.hub[parentKind = "PLANNER"]', style: { 'background-color': KIND_STYLES.PLANNER.color } },
             { selector: 'edge.candidate', style: { 'line-style': 'dashed', 'arrow-scale': 0.8 } },
+            // drawn by an AgenticTopologyContributor of the application
+            { selector: 'edge.contributed', style: {
+                'line-color': KIND_STYLES.PLANNER.color, 'target-arrow-color': KIND_STYLES.PLANNER.color,
+                'color': text, 'font-style': 'italic',
+            } },
             // a sub-agent the supervisor or planner called in the current run, labelled with the call numbers
             { selector: 'edge.candidate.taken', style: {
                 'line-style': 'solid', 'width': 3, 'arrow-scale': 1, 'line-color': KIND_STYLES.SUPERVISOR.color,

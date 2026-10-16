@@ -95,6 +95,12 @@ Planner decisions: `runs/PlannerDecisions` (also installed by `RootListeners.att
 delegating planner that emits `PlannerDecision` per Action; built-in workflow planners (sequence, loop, parallel,
 mapper, conditional) are left alone. `runs/AgentTrees` holds the shared walk of langchain4j's internal agent tree.
 
+Topology contributor SPI (`runtime/.../spi/AgenticTopologyContributor`, inert interface + records): implementations
+are found with Jandex at build time (dev only), created in runtime-dev (`TopologyContributions`, no-arg constructor)
+and matched to PLANNER nodes by the class of their `@PlannerSupplier`; `getContributions(systemId)` serves them with
+resolved ids (`<planner node id>::<id>` for contributed nodes) and the graph draws them instead of the hub and
+candidates (step numbers then go on the nodes). Sample: `integration-tests/.../samples/DraftReviewTopology`.
+
 ### Dev UI Integration
 
 `AgenticViewerProcessor.registerDevUI()` registers the card with one page, "Agentic Systems" (`qwc-agentic-systems.js`),

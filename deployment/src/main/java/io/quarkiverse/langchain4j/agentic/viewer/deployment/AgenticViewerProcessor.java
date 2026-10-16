@@ -1,5 +1,9 @@
 package io.quarkiverse.langchain4j.agentic.viewer.deployment;
 
+import java.lang.reflect.Modifier;
+
+import org.jboss.jandex.DotName;
+
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotationScanner;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticDescriptorsBuildItem;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticRootsBuildItem;
@@ -12,6 +16,7 @@ import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerRecorder;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunManager;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunObservation;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.spi.AgenticTopologyContributor;
 import io.quarkus.deployment.IsDevelopment;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.annotations.ExecutionTime;
@@ -64,8 +69,13 @@ public class AgenticViewerProcessor {
      */
     @BuildStep(onlyIf = IsDevelopment.class)
     @Record(ExecutionTime.STATIC_INIT)
-    void recordSystems(AgenticSystemsBuildItem systems, AgenticViewerRecorder recorder) {
+    void recordSystems(AgenticSystemsBuildItem systems, CombinedIndexBuildItem index, AgenticViewerRecorder recorder) {
         recorder.setSystems(systems.getSystems());
+        // the application's topology contributors, created and applied in dev mode only (runtime-dev)
+        recorder.setTopologyContributors(index.getIndex()
+                .getAllKnownImplementors(DotName.createSimple(AgenticTopologyContributor.class.getName())).stream()
+                .filter(type -> !type.isInterface() && !Modifier.isAbstract(type.flags()))
+                .map(type -> type.name().toString()).sorted().toList());
     }
 
     /**

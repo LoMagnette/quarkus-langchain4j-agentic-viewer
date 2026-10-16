@@ -12,12 +12,27 @@ import io.quarkus.runtime.annotations.Recorder;
 public class AgenticViewerRecorder {
 
     private static volatile List<AgenticSystem> systems = List.of();
+    private static volatile List<String> topologyContributors = List.of();
 
     /**
      * Sets the agentic systems known at build time (declarative ones).
      */
     public void setSystems(List<AgenticSystem> buildTimeSystems) {
         systems = List.copyOf(buildTimeSystems);
+    }
+
+    /**
+     * Sets the class names of the application's AgenticTopologyContributor implementations.
+     */
+    public void setTopologyContributors(List<String> classNames) {
+        topologyContributors = List.copyOf(classNames);
+    }
+
+    /**
+     * @return the class names of the application's AgenticTopologyContributor implementations
+     */
+    public static List<String> getTopologyContributors() {
+        return topologyContributors;
     }
 
     /**

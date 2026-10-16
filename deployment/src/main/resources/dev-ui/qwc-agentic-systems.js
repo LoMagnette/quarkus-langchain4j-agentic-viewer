@@ -252,10 +252,14 @@ export class QwcAgenticSystems extends LitElement {
         this._runOpened = false;
         this._runEvents = undefined;
         this._systemError = undefined;
-        this.jsonRpc.getTopology({ systemId: summary.id })
-            .then(response => {
+        // the topology, with what the application's topology contributors draw in its planner nodes
+        Promise.all([
+            this.jsonRpc.getTopology({ systemId: summary.id }),
+            this.jsonRpc.getContributions({ systemId: summary.id }).then(response => response.result ?? {}).catch(() => ({})),
+        ])
+            .then(([response, contributions]) => {
                 if (this._summary === summary) {
-                    this._selected = response.result;
+                    this._selected = { ...response.result, contributions };
                 }
             })
             .catch(error => this._systemError = `Cannot load ${summary.name}: ${error?.error?.message ?? error?.message ?? error}`);

@@ -557,3 +557,12 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   numbers (agents chosen in one decision share it), the planner node shows "step N" then "done after N steps"; the
   timeline has a "Step N → agents" row per decision under the planner invocation and an unnumbered "Done" /
   "Done with result" row. T3.1's numbering from AgentStarted remains the fallback when no decision arrives.
+
+### T3.4 topology contributor SPI — done (Oct 16, 2026)
+
+- `AgenticTopologyContributor` (runtime, inert): `plannerAgent()` names the `@PlannerAgent` interface, `contribute(node)`
+  returns extra nodes and labelled edges (ends: sub-agent name or node id, or a contributed node). Found by Jandex,
+  applied in dev mode only; failing contributors and edges with unknown ends are logged and skipped.
+- The graph draws a contributed planner with the contribution instead of the generic hub + candidates; during a run
+  the step numbers go on the nodes ("steps 1, 3, 5"), leaves grow a line and boxes widen to their title when needed.
+- Phase 3 (T3.1 to T3.4) is complete.

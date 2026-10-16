@@ -16,6 +16,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunManager;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunSummary;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunTrace;
 import io.smallrye.mutiny.Multi;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.spi.TopologyContribution;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemInput;
 
@@ -48,6 +49,15 @@ public class AgenticViewerJsonRpcService {
      */
     public AgenticSystem getTopology(String systemId) {
         return system(systemId);
+    }
+
+    /**
+     * @return what the application's topology contributors draw in the planner nodes of a system, by node id (empty
+     *         when none applies)
+     * @throws IllegalArgumentException for an unknown id
+     */
+    public Map<String, TopologyContribution> getContributions(String systemId) {
+        return registry.contributions(system(systemId).id());
     }
 
     /**
