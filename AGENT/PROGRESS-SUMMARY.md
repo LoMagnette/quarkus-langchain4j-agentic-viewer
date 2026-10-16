@@ -623,3 +623,31 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
 - Hot reload: `RunManager.shutdown` ends open runs CANCELLED ("Application stopped or reloaded"), completes their
   streams, releases waiting human steps, stops the threads; the registry is rebuilt by the restart. Dev-mode test:
   an agent interface change shows in getTopology, 10 reloads with open runs leave no thread (mutation-checked).
+
+### TASK-70 internal langchain4j API catalog — done (Oct 16, 2026)
+
+- `runs/LangChain4jInternals` lists every internal class, field and method the live hooks use (the hooks take the
+  names from it); `LangChain4jInternalsTest` fails on an incompatible library, dev mode logs the missing parts at
+  startup (WARN) and keeps the application running.
+
+### TASK-63 prod and native artifact checks — JVM done (Oct 16, 2026), native run pending (local GraalVM)
+
+- `ProdArtifactIT` (every build): the packaged sample app only has the runtime jar (records, SPI, config), no
+  runtime-dev / deployment class or Dev UI resource. `NativeArtifactIT` checks the native executable the same way,
+  skipped without one (command in CLAUDE.md).
+
+### T6.4 documentation — done (Oct 16, 2026)
+
+- `docs` module: Antora page `docs/modules/ROOT/pages/index.adoc` with 11 screenshots and the config reference
+  generated from the config roots.
+
+### TASK-62 Playwright UI tests — done (Oct 17, 2026)
+
+- `deployment/src/ui-test` (profile `ui-tests`): Playwright Java in a `QuarkusDevModeTest` (the Dev UI only exists in
+  dev mode; quarkus-playwright targets `@QuarkusTest`), fixture app of two AI agents on a slow echo model. Covers the
+  system list, graph render and node details, run form validation, live highlighting (each agent running then done),
+  replay of an older run, also after a page refresh; fails on any page script error. CI: one step in the
+  without-patterns configuration (Chromium installed with its system dependencies).
+- Found and fixed a run form bug: after an error, a click on Run could be lost (the field validated itself on blur,
+  hid its error and moved the button under the pointer) and a second error on the same field was not flagged. Fields
+  now use manual validation and an edit clears the field's error.

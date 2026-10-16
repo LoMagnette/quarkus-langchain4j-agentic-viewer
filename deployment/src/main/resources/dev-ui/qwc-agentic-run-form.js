@@ -144,6 +144,7 @@ export class QwcAgenticRunForm extends LitElement {
         }
         .actions {
             display: flex;
+            margin-top: var(--lumo-space-m);
             gap: var(--lumo-space-s);
         }
     `;
@@ -210,21 +211,27 @@ export class QwcAgenticRunForm extends LitElement {
     _renderField(name, property) {
         const error = this._errors?.[name];
         const common = { label: name, required: this._required(name) };
+        // the fields only show the errors of the last submit (manualValidation), until edited: a field validating
+        // itself on blur would hide its error and move the Run button under the pointer, losing the click
         const set = value => {
             this._texts = { ...this._texts, [name]: value };
+            if (this._errors?.[name]) {
+                const { [name]: _, ...others } = this._errors;
+                this._errors = others;
+            }
         };
         switch (widgetOf(property)) {
             case 'text':
                 return html`<vaadin-text-field data-input=${name} label=${common.label} ?required=${common.required}
-                        .value=${this._texts[name] ?? ''} .invalid=${!!error} .errorMessage=${error ?? ''}
+                        .value=${this._texts[name] ?? ''} .manualValidation=${true} .invalid=${!!error} .errorMessage=${error ?? ''}
                         @value-changed=${e => set(e.detail.value)}></vaadin-text-field>`;
             case 'integer':
                 return html`<vaadin-integer-field data-input=${name} label=${common.label} ?required=${common.required}
-                        .value=${this._texts[name] != null ? String(this._texts[name]) : ''} .invalid=${!!error}
+                        .value=${this._texts[name] != null ? String(this._texts[name]) : ''} .manualValidation=${true} .invalid=${!!error}
                         .errorMessage=${error ?? ''} @value-changed=${e => set(e.detail.value)}></vaadin-integer-field>`;
             case 'number':
                 return html`<vaadin-number-field data-input=${name} label=${common.label} ?required=${common.required}
-                        .value=${this._texts[name] != null ? String(this._texts[name]) : ''} .invalid=${!!error}
+                        .value=${this._texts[name] != null ? String(this._texts[name]) : ''} .manualValidation=${true} .invalid=${!!error}
                         .errorMessage=${error ?? ''} @value-changed=${e => set(e.detail.value)}></vaadin-number-field>`;
             case 'boolean':
                 return html`<div class="checkbox">
@@ -234,11 +241,11 @@ export class QwcAgenticRunForm extends LitElement {
             case 'enum':
                 return html`<vaadin-select data-input=${name} label=${common.label} ?required=${common.required}
                         .items=${this._selectItems[name]}
-                        .value=${this._texts[name] ?? ''} .invalid=${!!error} .errorMessage=${error ?? ''}
+                        .value=${this._texts[name] ?? ''} .manualValidation=${true} .invalid=${!!error} .errorMessage=${error ?? ''}
                         @value-changed=${e => set(e.detail.value)}></vaadin-select>`;
             default:
                 return html`<vaadin-text-area class="json" data-input=${name} label="${name} (JSON)"
-                        ?required=${common.required} .value=${this._texts[name] ?? ''} .invalid=${!!error}
+                        ?required=${common.required} .value=${this._texts[name] ?? ''} .manualValidation=${true} .invalid=${!!error}
                         .errorMessage=${error ?? ''} @value-changed=${e => set(e.detail.value)}></vaadin-text-area>`;
         }
     }

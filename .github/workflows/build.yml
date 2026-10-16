@@ -33,3 +33,12 @@ jobs:
       # samples and tests run on a scripted fake chat model: no API key needed
       - name: Build and test
         run: mvn -B clean install ${{ matrix.profiles }}
+      # Dev UI pages in a browser (Playwright, deployment profile ui-tests): once, they do not depend on the patterns
+      - name: Install Chromium for the UI tests
+        if: matrix.configuration == 'without-patterns'
+        run: >-
+          mvn -B -q -pl deployment -Pui-tests exec:java -Dexec.classpathScope=test
+          -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install --with-deps chromium-headless-shell"
+      - name: UI tests
+        if: matrix.configuration == 'without-patterns'
+        run: mvn -B test -pl deployment -Pui-tests -Dtest=AgenticSystemsPageUiTest

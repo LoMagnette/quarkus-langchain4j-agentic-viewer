@@ -23,6 +23,9 @@ mvn clean install
 # Everything with the patterns module (CI configuration 2, .github/workflows/build.yml); always clean when switching
 mvn clean install -Ppatterns
 
+# Browser tests of the Dev UI page (Playwright, downloads Chromium on first use)
+mvn test -pl deployment -Pui-tests -Dtest=AgenticSystemsPageUiTest
+
 # Integration tests only, or a single test
 mvn verify -pl integration-tests
 mvn test -pl integration-tests -Dtest=SampleRunsTest
@@ -165,7 +168,11 @@ Dev mode does not reload a rebuilt extension: restart it to see Dev UI changes.
   need a `ChatModel` bean even without AI agents; without a model provider their AI agents fail at bean creation (logged).
 - The build validation of quarkus-langchain4j-agentic rejects a sub-agent parameter that only the root provides when the
   sub-agent is a `@HumanInTheLoop` step: make it the output of another agent.
-- The Dev UI pages have no automated browser tests yet (TASK-62); they were checked with headless Chromium scripts.
+- Browser tests of the Dev UI page: `deployment/src/ui-test` (profile `ui-tests`), Playwright Java driven from a
+  `QuarkusDevModeTest` (quarkus-playwright only targets `@QuarkusTest`, which has no Dev UI). Its fixture app has the
+  OpenAI extension (disabled) to wire its slow echo model into the AI agents. Playwright downloads Chromium on first
+  use. Reach the components through shadow-piercing CSS locators; the graph exposes `layoutDone`, `stateOf(id)`,
+  `nodeInfo(id)` and `renderedNodes()` for checks. A `vaadin-dialog` element is never visible: wait for it attached.
 
 ### Progress
 All progress made on this project is tracked in [this file](AGENT/PROGRESS-SUMMARY.md).
