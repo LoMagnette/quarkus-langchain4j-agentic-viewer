@@ -45,6 +45,10 @@ export const KIND_STYLES = {
 /** Separates a topology node id from the role of a helper node drawn for it (never used in topology ids). */
 const HELPER_SEPARATOR = '::';
 const HELPER_SIZE = 14;
+/** Gap between the right side of a loop body and its back-edge bracket. */
+const BACK_EDGE_GAP = 24;
+/** Approximate width of a character of an edge label (font size 10). */
+const EDGE_LABEL_CHAR_WIDTH = 5;
 
 /**
  * Turns an AgenticSystem topology into graph nodes and edges.
@@ -76,6 +80,9 @@ export function toGraph(system) {
             kind: node.kind,
             parent,
             compound,
+            // extra layout room: a loop draws its back-edge and label on the right, conditional guards label the fan-out
+            paddingRight: compound && node.kind === 'LOOP' ? BACK_EDGE_GAP + labelWidth(loopLabel(node.guard)) + 12 : undefined,
+            layerSpacing: compound && node.kind === 'CONDITIONAL' ? 70 : undefined,
         });
         if (!compound) {
             return;
@@ -84,21 +91,28 @@ export function toGraph(system) {
         const ids = node.children.map(child => child.id);
         switch (node.kind) {
             case 'PARALLEL':
-            case 'PARALLEL_MAPPER': {
+            case 'PARALLEL_MAPPER':
+            case 'CONDITIONAL': {
                 const fork = helper(node, 'fork');
                 node.children.forEach(child => visit(child, node.id));
                 const join = helper(node, 'join');
-                const label = node.kind === 'PARALLEL_MAPPER' ? 'each item' : undefined;
-                ids.forEach(id => {
-                    edge(fork, id, 'FORK', label);
-                    edge(id, join, 'JOIN');
+                node.children.forEach(child => {
+                    // a conditional branch shows its activation condition; a mapper runs its agent per item
+                    const label = node.kind === 'CONDITIONAL' ? child.guard?.label
+                            : node.kind === 'PARALLEL_MAPPER' ? 'each item' : undefined;
+                    edge(fork, child.id, node.kind === 'CONDITIONAL' ? 'GUARD' : 'FORK', label);
+                    edge(child.id, join, 'JOIN');
                 });
                 break;
             }
             case 'SEQUENCE':
+                node.children.forEach(child => visit(child, node.id));
+                ids.slice(1).forEach((id, i) => edge(ids[i], id, 'SEQUENCE'));
+                break;
             case 'LOOP':
                 node.children.forEach(child => visit(child, node.id));
                 ids.slice(1).forEach((id, i) => edge(ids[i], id, 'SEQUENCE'));
+                edge(ids[ids.length - 1], ids[0], 'BACK', loopLabel(node.guard));
                 break;
             default:
                 // guards and candidates come with T1.6c-d
@@ -108,6 +122,25 @@ export function toGraph(system) {
     };
     visit(system.root, undefined);
     return { nodes, edges };
+}
+
+function labelWidth(label) {
+    return Math.max(0, ...(label ?? '').split('\n').map(line => line.length)) * EDGE_LABEL_CHAR_WIDTH;
+}
+
+/** "max 5", then the exit condition and when it is tested, one per line. */
+function loopLabel(guard) {
+    if (!guard) {
+        return undefined;
+    }
+    const lines = [`max ${guard.maxIterations}`];
+    if (guard.label) {
+        lines.push(`until ${guard.label}`);
+        if (guard.testExitAtLoopEnd) {
+            lines.push('(tested at the end)');
+        }
+    }
+    return lines.join('\n');
 }
 
 /**
@@ -299,6 +332,19 @@ export class QwcAgenticGraph extends observeState(LitElement) {
         return result;
     }
 
+    /**
+     * @return edge id -> source, target, kind class, label and rendered bounding box (label included), for checks
+     */
+    renderedEdges() {
+        const result = {};
+        this._cy?.edges().forEach(e => {
+            const bb = e.boundingBox({ includeLabels: true });
+            result[e.id()] = { source: e.source().id(), target: e.target().id(), kind: e.classes()[0],
+                label: e.data('label'), x1: bb.x1, y1: bb.y1, x2: bb.x2, y2: bb.y2 };
+        });
+        return result;
+    }
+
     async _elkLayout(graph) {
         const elk = new window.ELK();
         // each compound is laid out on its own (ELK's default hierarchy handling) with its edges, so siblings keep
@@ -323,7 +369,9 @@ export class QwcAgenticGraph extends observeState(LitElement) {
                 // Cytoscape draws the box with a uniform padding; the extra top space holds the title
                 elkNode.layoutOptions = {
                     ...options,
-                    'elk.padding': `[top=${COMPOUND_PADDING + TITLE_SPACE},left=${COMPOUND_PADDING},bottom=${COMPOUND_PADDING},right=${COMPOUND_PADDING}]`,
+                    'elk.padding': `[top=${COMPOUND_PADDING + TITLE_SPACE},left=${COMPOUND_PADDING},`
+                            + `bottom=${COMPOUND_PADDING},right=${COMPOUND_PADDING + (node.paddingRight ?? 0)}]`,
+                    ...(node.layerSpacing ? { 'elk.layered.spacing.nodeNodeBetweenLayers': String(node.layerSpacing) } : {}),
                 };
                 elkNode.children = [];
                 elkNode.edges = [];
@@ -356,6 +404,7 @@ export class QwcAgenticGraph extends observeState(LitElement) {
                 // Cytoscape adds its padding around min-width/min-height
                 positions[node.id] = { width: node.width - 2 * COMPOUND_PADDING, height: node.height - 2 * COMPOUND_PADDING };
             }
+            positions[node.id].box = { x1: x, y1: y, x2: x + node.width, y2: y + node.height };
             (node.children ?? []).forEach(child => walk(child, x, y));
         };
         layout.children.forEach(child => walk(child, 0, 0));
@@ -376,8 +425,27 @@ export class QwcAgenticGraph extends observeState(LitElement) {
                 group: 'edges',
                 data: { id: e.id, source: e.source, target: e.target, label: e.label ?? '' },
                 classes: e.kind.toLowerCase(),
+                style: e.kind !== 'BACK' ? undefined
+                        : e.source !== e.target ? this._backEdgeStyle(graph, positions, e)
+                        // a one-agent loop body: the label goes right of the self-loop curl
+                        : { 'text-margin-x': labelWidth(e.label) / 2 + 30 },
             })),
         ];
+    }
+
+    /**
+     * Places the back-edge bracket right of every agent of the loop body, the label right of the bracket.
+     * Segment distances are measured from the line between the source and target centers.
+     */
+    _backEdgeStyle(graph, positions, edge) {
+        const loop = graph.nodes.find(n => n.id === edge.source).parent;
+        const right = Math.max(...graph.nodes.filter(n => n.parent === loop).map(n => positions[n.id].box.x2));
+        const centre = id => (positions[id].box.x1 + positions[id].box.x2) / 2;
+        const distance = right + BACK_EDGE_GAP - (centre(edge.source) + centre(edge.target)) / 2;
+        return {
+            'segment-distances': `${distance} ${distance}`,
+            'text-margin-x': labelWidth(edge.label) / 2 + 6,
+        };
     }
 
     _style() {
@@ -403,6 +471,8 @@ export class QwcAgenticGraph extends observeState(LitElement) {
                 // box then stops at its border instead of crossing the title
                 'min-width': 'data(width)', 'min-height': 'data(height)', 'min-height-bias-top': '100%',
                 'min-height-bias-bottom': '0%', 'text-margin-y': 22,
+                // extra width (room for a loop back-edge) goes to the right, where ELK reserved it
+                'min-width-bias-left': '0%', 'min-width-bias-right': '100%',
             } },
             ...Object.entries(KIND_STYLES).map(([kind, k]) => ({ selector: `node.${kind.toLowerCase()}`, style: {
                 'shape': k.shape, 'border-color': k.color, 'border-style': k.border, 'border-width': k.width ?? 2,
@@ -420,6 +490,20 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             // fan-out edges leave the fork without an arrow; joins converge on the join point
             { selector: 'edge.fork', style: { 'target-arrow-shape': 'triangle' } },
             { selector: 'edge.join', style: { 'target-arrow-shape': 'none' } },
+            { selector: 'edge.guard', style: {
+                'line-color': KIND_STYLES.CONDITIONAL.color, 'target-arrow-color': KIND_STYLES.CONDITIONAL.color,
+                'color': text, 'font-style': 'italic',
+            } },
+            // the back-edge is a bracket on the right of the loop body, in the room the layout left for it: out of the
+            // last agent, up, into the first one (a self-loop when the body is one agent); distances set per edge
+            { selector: 'edge.back', style: {
+                'curve-style': 'segments', 'segment-weights': '0 1', 'edge-distances': 'node-position',
+                'line-style': 'dashed', 'line-color': KIND_STYLES.LOOP.color, 'target-arrow-color': KIND_STYLES.LOOP.color,
+                'text-wrap': 'wrap', 'color': text, 'text-background-opacity': 0,
+            } },
+            { selector: 'edge.back:loop', style: {
+                'curve-style': 'bezier', 'loop-direction': '90deg', 'loop-sweep': '-40deg', 'control-point-step-size': 60,
+            } },
             { selector: 'node.running', style: { 'border-width': 4, 'border-color': primary } },
             { selector: 'node.done', style: { 'border-width': 3, 'border-color': success } },
             { selector: 'node.failed', style: { 'border-width': 4, 'border-color': error } },
