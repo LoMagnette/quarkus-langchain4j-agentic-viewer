@@ -78,7 +78,7 @@ public class AgenticViewerProcessor {
      * Hands the declarative systems to runtime-dev, where runs and their events will refer to the same node ids.
      * Dev mode only: the recorder lives in the runtime-dev artifact, which is absent from prod builds.
      */
-    @BuildStep(onlyIf = IsDevelopment.class)
+    @BuildStep(onlyIf = { IsDevelopment.class, AgenticViewerEnabled.class })
     @Record(ExecutionTime.STATIC_INIT)
     void recordSystems(AgenticSystemsBuildItem systems, CombinedIndexBuildItem index, AgenticViewerRecorder recorder) {
         recorder.setSystems(systems.getSystems());
@@ -93,7 +93,7 @@ public class AgenticViewerProcessor {
      * The registry and run manager the JSON-RPC service uses, and the observation of the root agents; dev mode only,
      * like runtime-dev.
      */
-    @BuildStep(onlyIf = IsDevelopment.class)
+    @BuildStep(onlyIf = { IsDevelopment.class, AgenticViewerEnabled.class })
     AdditionalBeanBuildItem registerRuntimeDevBeans() {
         return AdditionalBeanBuildItem.builder().addBeanClasses(AgenticSystemRegistry.class, RunManager.class, RunObservation.class)
                 .setUnremovable().build();
@@ -121,14 +121,14 @@ public class AgenticViewerProcessor {
                 .map(Map.Entry::getValue).sorted().toList();
     }
 
-    @BuildStep(onlyIf = IsDevelopment.class)
+    @BuildStep(onlyIf = { IsDevelopment.class, AgenticViewerEnabled.class })
     AdditionalBeanBuildItem registerPatternAdapters() {
         return AdditionalBeanBuildItem.builder().addBeanClass(PatternAdapters.class)
                 .addBeanClasses(patternAdapters(QuarkusClassLoader::isClassPresentAtRuntime))
                 .setUnremovable().build();
     }
 
-    @BuildStep(onlyIf = IsDevelopment.class)
+    @BuildStep(onlyIf = { IsDevelopment.class, AgenticViewerEnabled.class })
     CardPageBuildItem registerDevUI(AgenticSystemsBuildItem systems) {
         CardPageBuildItem card = new CardPageBuildItem();
 
@@ -146,7 +146,7 @@ public class AgenticViewerProcessor {
     /**
      * Registers the JSON-RPC service used by the Dev UI pages (only in dev mode, like the service itself).
      */
-    @BuildStep(onlyIf = IsDevelopment.class)
+    @BuildStep(onlyIf = { IsDevelopment.class, AgenticViewerEnabled.class })
     JsonRPCProvidersBuildItem registerJsonRpc() {
         return new JsonRPCProvidersBuildItem(AgenticViewerJsonRpcService.class);
     }

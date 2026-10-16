@@ -85,7 +85,9 @@ Events are delivered by one event thread (callbacks only queue them); `streamRun
 (`RunManager.stream`). Over the Dev UI websocket a stream sends a `Void` ack, then one `SubscriptionMessage` per event and
 no completion message: the client stops at `RunFinished` / `RunFailed`.
 Event payloads are bounded on the event thread (`events/PayloadTruncator`, `quarkus.langchain4j.agentic.dev-ui.max-payload-size`,
-default 2048 chars of JSON) and must be plain Java values (maps, lists, strings, numbers): the Dev UI serializer writes
+default 2048 chars of JSON; config roots: `runtime/.../config/AgenticViewerRuntimeConfig` for `history-size` and
+`max-payload-size`, `deployment/.../AgenticViewerBuildConfig` for `enabled`, which every dev-only build step checks
+through `AgenticViewerEnabled`) and must be plain Java values (maps, lists, strings, numbers): the Dev UI serializer writes
 a Jackson `JsonNode` as a bean.
 runtime-dev beans only exist in dev mode: tests build `RunManager` directly (`new RunManager(lookup, new CdiRunInvoker())`,
 see `integration-tests/.../samples/SampleRunsTest`).

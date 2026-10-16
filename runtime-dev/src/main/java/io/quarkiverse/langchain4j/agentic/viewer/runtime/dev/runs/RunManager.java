@@ -29,12 +29,12 @@ import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
-import org.eclipse.microprofile.config.ConfigProvider;
 import org.jboss.logging.Logger;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.config.AgenticViewerRuntimeConfig;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticSystemRegistry;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentFinished;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentStarted;
@@ -85,18 +85,11 @@ public class RunManager {
     private record PendingInput(Type valueType, CompletableFuture<Object> answer) {
     }
 
-    /** Payload values longer than this many characters of JSON are truncated (T6.1 turns it into a config root). */
-    public static final String MAX_PAYLOAD_SIZE = "quarkus.langchain4j.agentic.dev-ui.max-payload-size";
-    /** Runs kept per system in the history (T6.1 turns it into a config root). */
-    public static final String HISTORY_SIZE = "quarkus.langchain4j.agentic.dev-ui.history-size";
     public static final int DEFAULT_HISTORY_SIZE = 20;
 
     @Inject
-    public RunManager(AgenticSystemRegistry registry) {
-        this(registry::find, new CdiRunInvoker(),
-                ConfigProvider.getConfig().getOptionalValue(MAX_PAYLOAD_SIZE, Integer.class)
-                        .orElse(PayloadTruncator.DEFAULT_MAX_SIZE),
-                ConfigProvider.getConfig().getOptionalValue(HISTORY_SIZE, Integer.class).orElse(DEFAULT_HISTORY_SIZE));
+    public RunManager(AgenticSystemRegistry registry, AgenticViewerRuntimeConfig config) {
+        this(registry::find, new CdiRunInvoker(), config.maxPayloadSize(), config.historySize());
     }
 
     public RunManager(Function<String, Optional<AgenticSystem>> systems, RunInvoker invoker) {
