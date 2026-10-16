@@ -12,14 +12,12 @@ import dev.langchain4j.agentic.internal.AgentExecutor;
 import dev.langchain4j.agentic.internal.InternalAgent;
 
 /**
- * Walks the agents langchain4j built for a root, through internal API (isolated here, used by
+ * Walks the agents langchain4j built for a root, through internal API (listed in {@link LangChain4jInternals}, used by
  * {@link HumanInTheLoopSteps} and {@link PlannerDecisions}): every workflow is a {@code PlannerBasedInvocationHandler}
  * whose builder ({@code AbstractServiceBuilder}) lists its sub-agent executors.
  */
 final class AgentTrees {
 
-    static final String HANDLER = "dev.langchain4j.agentic.internal.PlannerBasedInvocationHandler";
-    private static final String SERVICE_BUILDER = "dev.langchain4j.agentic.internal.AbstractServiceBuilder";
 
     private AgentTrees() {
     }
@@ -51,9 +49,9 @@ final class AgentTrees {
      */
     @SuppressWarnings("unchecked")
     static List<Object> serviceSubagents(Object handler) throws ReflectiveOperationException {
-        Object service = field(handler.getClass(), "service").get(handler);
-        Class<?> builder = Class.forName(SERVICE_BUILDER, false, handler.getClass().getClassLoader());
-        return (List<Object>) field(builder, "subagents").get(service);
+        Object service = field(handler.getClass(), LangChain4jInternals.PLANNER_HANDLER_SERVICE).get(handler);
+        Class<?> builder = Class.forName(LangChain4jInternals.SERVICE_BUILDER, false, handler.getClass().getClassLoader());
+        return (List<Object>) field(builder, LangChain4jInternals.SERVICE_BUILDER_SUBAGENTS).get(service);
     }
 
     /** The planner-based handler running a workflow agent: a JDK proxy's handler, or the delegate of a Quarkus agent. */
@@ -71,7 +69,7 @@ final class AgentTrees {
         // AbstractQuarkusAgent keeps the agent built by langchain4j in its "agent" field
         for (Class<?> type = agent.getClass(); type != null && type != Object.class; type = type.getSuperclass()) {
             for (Field field : type.getDeclaredFields()) {
-                if (field.getName().equals("agent") && InternalAgent.class.isAssignableFrom(field.getType())) {
+                if (field.getName().equals(LangChain4jInternals.QUARKUS_AGENT_AGENT) && InternalAgent.class.isAssignableFrom(field.getType())) {
                     field.setAccessible(true);
                     Object delegate = field.get(agent);
                     return delegate == agent ? null : handlerOf(delegate);
@@ -82,7 +80,7 @@ final class AgentTrees {
     }
 
     private static boolean isHandler(Object object) {
-        return object.getClass().getName().equals(HANDLER);
+        return object.getClass().getName().equals(LangChain4jInternals.PLANNER_HANDLER);
     }
 
     static Field field(Class<?> type, String name) throws NoSuchFieldException {

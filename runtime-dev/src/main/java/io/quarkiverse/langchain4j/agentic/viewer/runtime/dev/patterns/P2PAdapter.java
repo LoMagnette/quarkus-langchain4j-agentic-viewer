@@ -15,6 +15,7 @@ import dev.langchain4j.agentic.planner.AgentInstance;
 import dev.langchain4j.agentic.planner.Planner;
 import dev.langchain4j.agentic.scope.AgenticScope;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.PatternType;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.LangChain4jInternals;
 
 /**
  * Peer-to-peer planners of langchain4j-agentic-patterns. Registered only when the module is present.
@@ -32,8 +33,8 @@ public class P2PAdapter implements PatternAdapter {
     public static final String EXIT_CONDITION = "EXIT_CONDITION";
     public static final String STABLE_STATE = "STABLE_STATE";
 
-    private static final Field MAX = field("maxAgentsInvocations");
-    private static final Field EXIT = field("exitCondition");
+    private static final Field MAX = field(LangChain4jInternals.P2P_MAX_INVOCATIONS);
+    private static final Field EXIT = field(LangChain4jInternals.P2P_EXIT_CONDITION);
 
     private static Field field(String name) {
         try {
@@ -58,7 +59,7 @@ public class P2PAdapter implements PatternAdapter {
     @Override
     public Insight insight(Decision decision) {
         Map<String, Object> extras = new HashMap<>();
-        Object counter = decision.planner().executionState().get("invocationCounter");
+        Object counter = decision.planner().executionState().get(LangChain4jInternals.INVOCATION_COUNTER);
         Integer max = intField(MAX, decision.planner());
         extras.put("invocations", counter);
         if (max != null) {

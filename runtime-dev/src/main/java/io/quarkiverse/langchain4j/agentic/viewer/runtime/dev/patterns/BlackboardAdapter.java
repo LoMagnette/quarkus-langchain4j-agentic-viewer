@@ -17,6 +17,7 @@ import dev.langchain4j.agentic.planner.AgentInstance;
 import dev.langchain4j.agentic.planner.Planner;
 import dev.langchain4j.agentic.scope.AgenticScope;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.PatternType;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.LangChain4jInternals;
 
 /**
  * Blackboard planners of langchain4j-agentic-patterns. Registered only when the module is present.
@@ -34,17 +35,17 @@ public class BlackboardAdapter implements PatternAdapter {
     public static final String GOAL_REACHED = "GOAL_REACHED";
     public static final String QUIESCENT = "QUIESCENT";
 
-    private static final Field ACTIVATORS = field(BlackboardPlanner.class, "agentActivators");
-    private static final Field STRATEGY = field(BlackboardPlanner.class, "conflictResolutionStrategy");
-    private static final Field GOAL = field(BlackboardPlanner.class, "goalPredicate");
-    private static final Field MAX = field(BlackboardPlanner.class, "maxInvocations");
+    private static final Field ACTIVATORS = field(BlackboardPlanner.class, LangChain4jInternals.BLACKBOARD_ACTIVATORS);
+    private static final Field STRATEGY = field(BlackboardPlanner.class, LangChain4jInternals.BLACKBOARD_STRATEGY);
+    private static final Field GOAL = field(BlackboardPlanner.class, LangChain4jInternals.BLACKBOARD_GOAL);
+    private static final Field MAX = field(BlackboardPlanner.class, LangChain4jInternals.BLACKBOARD_MAX_INVOCATIONS);
     private static final Class<?> ACTIVATOR = activatorClass();
-    private static final Field ACTIVATOR_AGENT = ACTIVATOR == null ? null : field(ACTIVATOR, "agent");
+    private static final Field ACTIVATOR_AGENT = ACTIVATOR == null ? null : field(ACTIVATOR, LangChain4jInternals.BLACKBOARD_ACTIVATOR_AGENT);
     private static final Method CAN_ACTIVATE = ACTIVATOR == null ? null : canActivate();
 
     private static Class<?> activatorClass() {
         try {
-            return Class.forName(BlackboardPlanner.class.getName() + "$AgentActivator", false,
+            return Class.forName(LangChain4jInternals.BLACKBOARD_ACTIVATOR, false,
                     BlackboardPlanner.class.getClassLoader());
         } catch (ClassNotFoundException | RuntimeException | LinkageError e) {
             return null;
@@ -53,7 +54,7 @@ public class BlackboardAdapter implements PatternAdapter {
 
     private static Method canActivate() {
         try {
-            Method method = ACTIVATOR.getDeclaredMethod("canActivate", AgenticScope.class);
+            Method method = ACTIVATOR.getDeclaredMethod(LangChain4jInternals.BLACKBOARD_ACTIVATOR_CAN_ACTIVATE, AgenticScope.class);
             method.setAccessible(true);
             return method;
         } catch (ReflectiveOperationException | RuntimeException e) {
@@ -85,7 +86,7 @@ public class BlackboardAdapter implements PatternAdapter {
     public Insight insight(Decision decision) {
         Planner planner = decision.planner();
         Map<String, Object> extras = new HashMap<>();
-        extras.put("invocations", planner.executionState().get("invocationCounter"));
+        extras.put("invocations", planner.executionState().get(LangChain4jInternals.INVOCATION_COUNTER));
         Object max = get(MAX, planner);
         if (max != null) {
             extras.put("maxInvocations", max);

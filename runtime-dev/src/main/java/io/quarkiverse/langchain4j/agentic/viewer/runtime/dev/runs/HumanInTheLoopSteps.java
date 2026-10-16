@@ -75,7 +75,7 @@ final class HumanInTheLoopSteps {
             }
         }
         if (!replaced.isEmpty()) {
-            Field own = AgentTrees.field(handler.getClass(), "subagents");
+            Field own = AgentTrees.field(handler.getClass(), LangChain4jInternals.PLANNER_HANDLER_SUBAGENTS);
             List<Object> agents = new ArrayList<>((List<Object>) own.get(handler));
             agents.replaceAll(subagent -> replaced.getOrDefault(subagent, subagent));
             own.set(handler, List.copyOf(agents));

@@ -363,7 +363,7 @@ public class DevUiAgentListener implements AgentListener {
      */
     void plannerDecision(Run run, AgentInstance plannerAgent, List<AgentInstance> subagents, Action action,
             Map<String, Object> patternExtras, Map<String, List<AgentInstance>> patternAgents) {
-        if (action.getClass().getSimpleName().equals("NoOpAction")) {
+        if (action.getClass().getSimpleName().equals(LangChain4jInternals.NO_OP_ACTION)) {
             return; // nothing decided
         }
         Invocation invocation = openInvocation(plannerAgent).orElse(null);
@@ -379,8 +379,8 @@ public class DevUiAgentListener implements AgentListener {
                 .put(name, agents.stream().map(agent -> childNodeId(nodeId, node, subagents, agent)).toList()));
         extras.put("action", action.isSuspended() ? "suspend"
                 : action instanceof Action.AgentCallAction ? "call"
-                        : action.getClass().getSimpleName().equals("DoneWithResultAction") ? "doneWithResult" : "done");
-        if (action.getClass().getSimpleName().equals("DoneWithResultAction") && action.result() != null) {
+                        : action.getClass().getSimpleName().equals(LangChain4jInternals.DONE_WITH_RESULT_ACTION) ? "doneWithResult" : "done");
+        if (action.getClass().getSimpleName().equals(LangChain4jInternals.DONE_WITH_RESULT_ACTION) && action.result() != null) {
             extras.put("result", action.result());
         }
         runManager.emit(run, new PlannerDecision(run.id(), now(), nodeId, invocation == null ? null : invocation.id(),

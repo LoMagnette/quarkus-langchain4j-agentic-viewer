@@ -116,7 +116,9 @@ At dev-mode startup `RunObservation` calls `RootListeners.attach`, which install
   workflow planners (sequence, loop, parallel, mapper, conditional) are left alone.
 `runs/AgentTrees` holds the shared walk of langchain4j's internal agent tree. All of these hooks use internal
 langchain4j API (no public one yet: upstream U3, U4, U5): they are isolated and guarded, so an incompatible upgrade
-disables the live information they give, never the application.
+disables the live information they give, never the application. Every internal class, field and method used is listed
+in `runs/LangChain4jInternals` (the hooks take the names from it; add new ones there): `LangChain4jInternalsTest` fails
+on an incompatible library on the build class path, and dev mode logs the missing parts at startup.
 
 Patterns module: there is no Quarkus extension for `langchain4j-agentic-patterns`, apps add it directly. runtime-dev
 depends on it as optional; `runtime-dev/.../patterns/*Adapter` classes refer to it and are registered as beans only when

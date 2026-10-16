@@ -56,7 +56,7 @@ final class ErrorHandlers {
 
     private static Field handlerField() {
         try {
-            Field field = Class.forName("dev.langchain4j.agentic.scope.DefaultAgenticScope").getDeclaredField("errorHandler");
+            Field field = Class.forName(LangChain4jInternals.SCOPE).getDeclaredField(LangChain4jInternals.SCOPE_ERROR_HANDLER);
             field.setAccessible(true);
             return field;
         } catch (ReflectiveOperationException | RuntimeException e) {

@@ -31,7 +31,6 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.PatternAda
 final class PlannerDecisions {
 
     private static final Logger LOG = Logger.getLogger(PlannerDecisions.class);
-    private static final String BUILT_IN_PLANNERS = "dev.langchain4j.agentic.workflow.impl.";
     private static volatile boolean warned;
 
     private PlannerDecisions() {
@@ -47,7 +46,7 @@ final class PlannerDecisions {
         try {
             int decorated = 0;
             for (Object handler : AgentTrees.handlers(root)) {
-                Field field = AgentTrees.field(handler.getClass(), "plannerSupplier");
+                Field field = AgentTrees.field(handler.getClass(), LangChain4jInternals.PLANNER_HANDLER_PLANNER_SUPPLIER);
                 Supplier<Planner> original = (Supplier<Planner>) field.get(handler);
                 if (original != null) {
                     field.set(handler, (Supplier<Planner>) () -> report(original.get(), listener));
@@ -66,7 +65,7 @@ final class PlannerDecisions {
     }
 
     private static Planner report(Planner planner, DevUiAgentListener listener) {
-        return planner == null || planner.getClass().getName().startsWith(BUILT_IN_PLANNERS) ? planner
+        return planner == null || planner.getClass().getName().startsWith(LangChain4jInternals.BUILT_IN_PLANNERS_PACKAGE) ? planner
                 : new ReportingPlanner(planner, listener);
     }
 

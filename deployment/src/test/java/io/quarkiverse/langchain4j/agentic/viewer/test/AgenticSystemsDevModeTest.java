@@ -45,6 +45,13 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
         super("quarkus-langchain4j-agentic-viewer");
     }
 
+    /** The internal parts of langchain4j-agentic the live view relies on are all there: no startup warning. */
+    @Test
+    void noInternalApiWarning() {
+        assertTrue(config.getLogRecords().stream().noneMatch(record -> String.valueOf(record.getMessage())
+                .contains("lacks internal parts")), "LangChain4jInternals check at startup");
+    }
+
     /** Without langchain4j-agentic-patterns: no adapter bean, no goal path preview, nothing about patterns logged. */
     @Test
     void noPatternAdapterWithoutTheModule() throws Exception {
