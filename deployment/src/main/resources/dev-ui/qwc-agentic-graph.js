@@ -329,9 +329,21 @@ export class QwcAgenticGraph extends observeState(LitElement) {
     constructor() {
         super();
         this.view = 'structure';
+        this._resetOverlay();
+    }
+
+    /**
+     * What the current run shows on the graph (node states, node information, path edges), kept apart from the
+     * Cytoscape elements so that a redraw (other view, theme) shows it again.
+     */
+    _resetOverlay() {
+        this._overlay = { states: new Map(), infos: new Map(), paths: new Map() };
     }
 
     willUpdate(changed) {
+        if (changed.has('system') && changed.get('system') !== undefined) {
+            this._resetOverlay();
+        }
         if (changed.has('system') || changed.has('view')) {
             this._graph = this.system ? (this.view === 'dataflow' ? toDataFlowGraph(this.system) : toGraph(this.system))
                 : undefined;
@@ -427,6 +439,7 @@ export class QwcAgenticGraph extends observeState(LitElement) {
                 wheelSensitivity: 0.2,
             });
             this._fit();
+            this._applyOverlay();
             // a click on a node selects it, a click on the background clears the selection (nodeId null)
             this._cy.on('tap', event => {
                 const node = event.target !== this._cy && event.target.isNode?.() && !event.target.data('helper')
@@ -451,6 +464,11 @@ export class QwcAgenticGraph extends observeState(LitElement) {
      * @return false when the node id is unknown
      */
     highlight(nodeId, state) {
+        state ? this._overlay.states.set(nodeId, state) : this._overlay.states.delete(nodeId);
+        return this._highlight(nodeId, state);
+    }
+
+    _highlight(nodeId, state) {
         const node = this._cy?.getElementById(nodeId);
         if (!node || node.empty()) {
             return false;
@@ -472,6 +490,11 @@ export class QwcAgenticGraph extends observeState(LitElement) {
      * @return false when the node id is unknown
      */
     setNodeInfo(nodeId, text) {
+        text ? this._overlay.infos.set(nodeId, text) : this._overlay.infos.delete(nodeId);
+        return this._setNodeInfo(nodeId, text);
+    }
+
+    _setNodeInfo(nodeId, text) {
         const node = this._cy?.getElementById(nodeId);
         if (!node || node.empty()) {
             return false;
@@ -493,8 +516,45 @@ export class QwcAgenticGraph extends observeState(LitElement) {
         return label === base ? null : label.substring(base.length).trim();
     }
 
+    /**
+     * Marks a sub-agent of a supervisor or planner as called: its candidate edge becomes solid, labelled with the
+     * call numbers (e.g. "2", "1, 3"). Null clears it.
+     * @return false when the structure view has no candidate edge to that node (e.g. in the data-flow view)
+     */
+    setPath(nodeId, label) {
+        label ? this._overlay.paths.set(nodeId, label) : this._overlay.paths.delete(nodeId);
+        return this._setPath(nodeId, label);
+    }
+
+    _setPath(nodeId, label) {
+        const edges = this._cy?.edges('.candidate').filter(edge => edge.target().id() === nodeId);
+        if (!edges || edges.empty()) {
+            return false;
+        }
+        edges.toggleClass('taken', !!label);
+        edges.data('label', label ?? '');
+        return true;
+    }
+
+    /** @return the sub-agents marked as called, with their call numbers: [{ nodeId, label }] */
+    takenPath() {
+        return this._cy ? this._cy.edges('.taken').map(edge => ({ nodeId: edge.target().id(), label: edge.data('label') }))
+            : [];
+    }
+
+    _applyOverlay() {
+        this._overlay.states.forEach((state, nodeId) => this._highlight(nodeId, state));
+        this._overlay.infos.forEach((text, nodeId) => this._setNodeInfo(nodeId, text));
+        this._overlay.paths.forEach((label, nodeId) => this._setPath(nodeId, label));
+    }
+
     /** Clears the highlights and run information of a previous run. */
     resetRun() {
+        this._resetOverlay();
+        this._cy?.edges('.taken').forEach(edge => {
+            edge.removeClass('taken');
+            edge.data('label', '');
+        });
         this.clearHighlights();
         this._cy?.nodes().forEach(node => {
             if (node.data('baseLabel') !== undefined) {
@@ -504,6 +564,7 @@ export class QwcAgenticGraph extends observeState(LitElement) {
     }
 
     clearHighlights() {
+        this._overlay.states.clear();
         this._cy?.nodes().removeClass(STATES.join(' '));
     }
 
@@ -755,6 +816,12 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             { selector: 'node.hub[parentKind = "SUPERVISOR"]', style: { 'background-color': KIND_STYLES.SUPERVISOR.color } },
             { selector: 'node.hub[parentKind = "PLANNER"]', style: { 'background-color': KIND_STYLES.PLANNER.color } },
             { selector: 'edge.candidate', style: { 'line-style': 'dashed', 'arrow-scale': 0.8 } },
+            // a sub-agent the supervisor or planner called in the current run, labelled with the call numbers
+            { selector: 'edge.candidate.taken', style: {
+                'line-style': 'solid', 'width': 3, 'arrow-scale': 1, 'line-color': KIND_STYLES.SUPERVISOR.color,
+                'target-arrow-color': KIND_STYLES.SUPERVISOR.color, 'color': text, 'font-size': 12, 'font-weight': 'bold',
+                'z-index': 10,
+            } },
             { selector: 'edge.guard', style: {
                 'line-color': KIND_STYLES.CONDITIONAL.color, 'target-arrow-color': KIND_STYLES.CONDITIONAL.color,
                 'color': text, 'font-style': 'italic',

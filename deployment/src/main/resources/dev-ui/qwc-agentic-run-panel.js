@@ -540,6 +540,8 @@ class LiveRun {
         this.handled = new Map();
         /** human-in-the-loop steps waiting for an answer: their AwaitingHumanInput events, oldest first */
         this.waiting = [];
+        /** sub-agents called by each supervisor or planner, in call order: node id -> [child node ids] */
+        this.calls = new Map();
     }
 
     /** @return the AwaitingHumanInput event of the oldest step waiting for an answer (the one provideHumanInput answers) */
@@ -569,6 +571,14 @@ class LiveRun {
                 if (event.iteration != null && parentKind === 'LOOP') {
                     this.loops.set(parent, Math.max(this.loops.get(parent) ?? 0, event.iteration + 1));
                     this._showInfo(parent);
+                }
+                if (parentKind === 'SUPERVISOR' || parentKind === 'PLANNER') {
+                    // the path taken: each called sub-agent gets the numbers of its calls
+                    const calls = this.calls.get(parent) ?? [];
+                    calls.push(event.nodeId);
+                    this.calls.set(parent, calls);
+                    const numbers = calls.map((id, i) => id === event.nodeId ? i + 1 : undefined).filter(Boolean);
+                    this.graph?.setPath(event.nodeId, numbers.join(', '));
                 }
                 if (event.itemIndex != null && parentKind === 'PARALLEL_MAPPER') {
                     const items = this.items.get(parent) ?? { started: 0, finished: 0 };
@@ -674,6 +684,7 @@ class LiveRun {
             items: Object.fromEntries(this.items),
             failed: [...this.failed],
             waiting: this.waiting.map(w => w.nodeId),
+            calls: Object.fromEntries(this.calls),
         };
     }
 }

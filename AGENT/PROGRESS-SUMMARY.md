@@ -532,3 +532,12 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
 - UI: dashed "waiting" node state, "waiting for input" on the node and the timeline row, paused run panel with the
   prompt, the step's inputs and an answer box; a waiting run reopened from the history after a refresh can be answered.
 - Gotcha: the build rejects a step parameter only given to the root (it must be an agent's output key).
+
+### Real model for the samples (TASK-69) and T3.1 supervisor path — done (Oct 16, 2026)
+
+- `-Dquarkus.profile=dev,ollama` runs the sample app on an OpenAI-compatible endpoint (local Ollama by default,
+  `qwen2.5:14b`): all 9 samples succeed from the Dev UI. The extension never picks a model.
+- T3.1: a supervisor's (or planner's) called sub-agents turn their dashed candidate edge solid, labelled with the call
+  numbers ("1", "2, 4"), live and on replay (`LiveRun.calls`, `graph.setPath`, `takenPath()` for checks).
+- The graph keeps the run overlay (node states, node info, path edges) and re-applies it after a redraw: switching
+  views or themes no longer drops the live highlighting.
