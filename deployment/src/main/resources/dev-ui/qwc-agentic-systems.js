@@ -6,6 +6,8 @@ import '@vaadin/button';
 import '@vaadin/icon';
 import { KIND_LABELS } from './qwc-agentic-graph.js';
 import './qwc-agentic-node-details.js';
+import './qwc-agentic-run-panel.js';
+import '@vaadin/tabs';
 
 /** The node with this id in a topology tree, undefined when none. */
 function findNode(node, id) {
@@ -93,10 +95,34 @@ export class QwcAgenticSystems extends LitElement {
             flex: 1;
             min-width: 0;
         }
-        qwc-agentic-node-details {
-            flex: 0 0 360px;
-            max-height: 100%;
+        .side {
+            flex: 0 0 380px;
+            display: flex;
+            flex-direction: column;
+            gap: var(--lumo-space-s);
+            min-height: 0;
+            border: 1px solid var(--lumo-contrast-10pct);
+            border-radius: var(--lumo-border-radius-m);
+            padding: var(--lumo-space-s) var(--lumo-space-m) var(--lumo-space-m);
             box-sizing: border-box;
+            overflow-y: auto;
+        }
+        .side-header {
+            display: flex;
+            align-items: center;
+        }
+        .side-header vaadin-tabs {
+            flex: 1;
+        }
+        .side [hidden] {
+            display: none;
+        }
+        qwc-agentic-node-details {
+            border: none;
+            padding: 0;
+        }
+        .header .spacer {
+            flex: 1;
         }
     `;
 
@@ -107,9 +133,21 @@ export class QwcAgenticSystems extends LitElement {
         _selected: { state: true },
         _systemError: { state: true },
         _node: { state: true },
+        /** side panel: undefined (closed), 'run' or 'details' */
+        _side: { state: true },
     };
 
     jsonRpc = new JsonRpc(this);
+
+    /**
+     * The JSON-RPC calls the run panel makes. A plain object: the JsonRpc proxy answers every property, including the
+     * one Lit probes to recognize directives, so it cannot be passed through a binding.
+     */
+    rpc = {
+        getInputSchema: params => this.jsonRpc.getInputSchema(params),
+        startRun: params => this.jsonRpc.startRun(params),
+        streamRun: params => this.jsonRpc.streamRun(params),
+    };
 
     connectedCallback() {
         super.connectedCallback();
@@ -163,6 +201,21 @@ export class QwcAgenticSystems extends LitElement {
     _closeDetails() {
         this._node = undefined;
         this.renderRoot.querySelector('qwc-agentic-graph')?.clearSelection();
+        this._side = this._runOpened ? 'run' : undefined;
+    }
+
+    _selectNode(system, nodeId) {
+        this._node = findNode(system.root, nodeId);
+        if (this._node) {
+            this._side = 'details';
+        } else if (this._side === 'details') {
+            this._side = this._runOpened ? 'run' : undefined;
+        }
+    }
+
+    _openRun() {
+        this._runOpened = true;
+        this._side = 'run';
     }
 
     _open(summary) {
@@ -172,6 +225,8 @@ export class QwcAgenticSystems extends LitElement {
         this._summary = summary;
         this._selected = undefined;
         this._node = undefined;
+        this._side = undefined;
+        this._runOpened = false;
         this._systemError = undefined;
         this.jsonRpc.getTopology({ systemId: summary.id })
             .then(response => {
@@ -186,6 +241,8 @@ export class QwcAgenticSystems extends LitElement {
         this._summary = undefined;
         this._selected = undefined;
         this._node = undefined;
+        this._side = undefined;
+        this._runOpened = false;
     }
 
     _renderSystem(summary, system) {
@@ -196,6 +253,10 @@ export class QwcAgenticSystems extends LitElement {
                 </vaadin-button>
                 <h3>${summary.name}</h3>
                 ${this._renderKinds(summary)}
+                <span class="spacer"></span>
+                <vaadin-button theme="primary" data-action="open-run" ?disabled=${!system} @click=${this._openRun}>
+                    <vaadin-icon icon="font-awesome-solid:play" slot="prefix"></vaadin-icon>Run
+                </vaadin-button>
             </div>
             <div class="muted">${summary.origin.toLowerCase()} system defined in
                 ${summary.sourceRef?.className}#${summary.sourceRef?.methodName}</div>
@@ -204,12 +265,24 @@ export class QwcAgenticSystems extends LitElement {
     }
 
     _renderGraph(system) {
+        const tabs = [...(this._runOpened ? ['run'] : []), ...(this._node ? ['details'] : [])];
         return html`
             <div class="system-body">
                 <qwc-agentic-graph .system=${system}
-                                   @node-selected=${e => this._node = findNode(system.root, e.detail.nodeId)}></qwc-agentic-graph>
-                ${this._node ? html`<qwc-agentic-node-details .node=${this._node}
-                                                              @close=${this._closeDetails}></qwc-agentic-node-details>` : ''}
+                                   @node-selected=${e => this._selectNode(system, e.detail.nodeId)}></qwc-agentic-graph>
+                <div class="side" ?hidden=${!this._side}>
+                    <div class="side-header">
+                        <vaadin-tabs .selected=${Math.max(0, tabs.indexOf(this._side))}
+                                @selected-changed=${e => { if (tabs[e.detail.value]) { this._side = tabs[e.detail.value]; } }}>
+                            ${tabs.map(tab => html`<vaadin-tab data-tab=${tab}>${tab === 'run' ? 'Run' : 'Details'}</vaadin-tab>`)}
+                        </vaadin-tabs>
+                    </div>
+                    ${this._runOpened ? html`<qwc-agentic-run-panel ?hidden=${this._side !== 'run'} .system=${system}
+                            .jsonRpc=${this.rpc} .graph=${this.renderRoot.querySelector('qwc-agentic-graph')}>
+                        </qwc-agentic-run-panel>` : ''}
+                    ${this._node ? html`<qwc-agentic-node-details ?hidden=${this._side !== 'details'} .node=${this._node}
+                            @close=${this._closeDetails}></qwc-agentic-node-details>` : ''}
+                </div>
             </div>`;
     }
 }

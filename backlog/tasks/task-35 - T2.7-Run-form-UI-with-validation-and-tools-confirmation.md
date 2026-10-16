@@ -1,9 +1,11 @@
 ---
 id: TASK-35
 title: 'T2.7: Run form UI with validation and tools confirmation'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-10-06 06:14'
+updated_date: '2026-10-16 14:33'
 labels:
   - dev-ui
   - run
@@ -25,5 +27,11 @@ Spec: T2.7 (F3.1 to F3.6). Split into form widgets, validation/submit and the to
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Invalid input is blocked and the confirmation is shown once per session
+- [x] #1 Invalid input is blocked and the confirmation is shown once per session
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Run form generated from the input schema with per-field validation, live view on submit, one-click re-run and a tools confirmation once per system and session (T2.7a-c).
+<!-- SECTION:FINAL_SUMMARY:END -->

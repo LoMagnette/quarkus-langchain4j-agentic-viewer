@@ -1,9 +1,11 @@
 ---
 id: TASK-36
 title: 'T2.8: Live graph highlighting with durations, tokens and counters'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-10-06 06:14'
+updated_date: '2026-10-16 14:33'
 labels:
   - dev-ui
   - live-view
@@ -28,5 +30,11 @@ Spec: T2.8 (F4.1, F4.2). Split into state highlighting and per-node metrics.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A loop of 3 iterations shows counter 3
+- [x] #1 A loop of 3 iterations shows counter 3
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Live graph highlighting of running, done and failed nodes with durations, tokens, loop and mapper counters; the 3-iteration loop shows ×3 (T2.8a-b).
+<!-- SECTION:FINAL_SUMMARY:END -->

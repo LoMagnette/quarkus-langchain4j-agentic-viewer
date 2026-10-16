@@ -466,6 +466,43 @@ export class QwcAgenticGraph extends observeState(LitElement) {
         this._cy?.nodes().unselect();
     }
 
+    /**
+     * Shows run information on a node (e.g. "1.2 s · 46 tokens", "×3"): a second label line under an agent, after the
+     * title of a box. Null removes it.
+     * @return false when the node id is unknown
+     */
+    setNodeInfo(nodeId, text) {
+        const node = this._cy?.getElementById(nodeId);
+        if (!node || node.empty()) {
+            return false;
+        }
+        const base = node.data('baseLabel') ?? node.data('label');
+        node.data('baseLabel', base);
+        node.data('label', !text ? base : node.isParent() ? `${base}   ${text}` : `${base}\n${text}`);
+        return true;
+    }
+
+    /** @return the run information shown on a node, or null */
+    nodeInfo(nodeId) {
+        const node = this._cy?.getElementById(nodeId);
+        if (!node || node.empty() || node.data('baseLabel') === undefined) {
+            return null;
+        }
+        const label = node.data('label');
+        const base = node.data('baseLabel');
+        return label === base ? null : label.substring(base.length).trim();
+    }
+
+    /** Clears the highlights and run information of a previous run. */
+    resetRun() {
+        this.clearHighlights();
+        this._cy?.nodes().forEach(node => {
+            if (node.data('baseLabel') !== undefined) {
+                node.data('label', node.data('baseLabel'));
+            }
+        });
+    }
+
     clearHighlights() {
         this._cy?.nodes().removeClass(STATES.join(' '));
     }
@@ -671,7 +708,7 @@ export class QwcAgenticGraph extends observeState(LitElement) {
         return [
             { selector: 'node', style: {
                 'label': 'data(label)', 'color': text, 'font-size': 12, 'text-valign': 'center', 'text-halign': 'center',
-                'text-wrap': 'ellipsis', 'text-max-width': LEAF_WIDTH - 12,
+                'text-wrap': 'wrap', 'text-max-width': LEAF_WIDTH - 12, 'line-height': 1.3,
                 'background-color': base, 'border-width': 2, 'border-color': contrast,
                 'width': LEAF_WIDTH, 'height': LEAF_HEIGHT, 'shape': 'round-rectangle',
             } },
@@ -735,7 +772,7 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             { selector: 'node:selected', style: {
                 'overlay-color': primary, 'overlay-opacity': 0.12, 'overlay-padding': 4,
             } },
-            { selector: 'node.running', style: { 'border-width': 4, 'border-color': primary } },
+            { selector: 'node.running', style: { 'border-width': 4, 'border-color': primary, 'border-style': 'solid' } },
             { selector: 'node.done', style: { 'border-width': 3, 'border-color': success } },
             { selector: 'node.failed', style: { 'border-width': 4, 'border-color': error } },
         ];
