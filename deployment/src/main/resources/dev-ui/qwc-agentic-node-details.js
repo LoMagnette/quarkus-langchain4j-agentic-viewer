@@ -3,6 +3,9 @@ import '@vaadin/button';
 import '@vaadin/icon';
 import { KIND_LABELS, KIND_STYLES } from './qwc-agentic-graph.js';
 
+/** Display names of the langchain4j-agentic-patterns planners. */
+const PATTERN_LABELS = { GOAP: 'goal-oriented (GOAP)', P2P: 'peer-to-peer', BLACKBOARD: 'blackboard' };
+
 /** "com.example.Outer$Inner#method" -> "Inner#method" */
 function shortRef(ref) {
     if (!ref) {
@@ -21,6 +24,10 @@ function shortRef(ref) {
 export class QwcAgenticNodeDetails extends LitElement {
 
     static styles = css`
+        .muted {
+            color: var(--lumo-secondary-text-color);
+            font-size: var(--lumo-font-size-xs);
+        }
         :host {
             display: flex;
             flex-direction: column;
@@ -143,8 +150,11 @@ export class QwcAgenticNodeDetails extends LitElement {
                 ${this._renderGuard(node.guard)}
                 ${node.plannerInfo ? html`
                     <dt>Planner</dt>
-                    <dd data-field="planner">${node.plannerInfo.plannerClass
-                        ?? (node.plannerInfo.extras?.supplier ? html`from ${shortRef(node.plannerInfo.extras.supplier)}` : this._none())}</dd>` : nothing}
+                    <dd data-field="planner"><span title=${node.plannerInfo.plannerClass ?? ''}>${node.plannerInfo.plannerClass
+                        ? shortRef(node.plannerInfo.plannerClass) : this._none()}</span>${node.plannerInfo.patternType
+                        && node.plannerInfo.patternType !== 'CUSTOM' ? html` · ${PATTERN_LABELS[node.plannerInfo.patternType]
+                        ?? node.plannerInfo.patternType} pattern` : nothing}${node.plannerInfo.extras?.supplier
+                        ? html`<div class="muted">from ${shortRef(node.plannerInfo.extras.supplier)}</div>` : nothing}</dd>` : nothing}
             </dl>
             ${node.kind === 'AI_AGENT' ? this._renderAiDetails(node.aiDetails) : nothing}
             ${node.remoteDetails ? this._renderRemoteDetails(node.kind, node.remoteDetails) : nothing}`;

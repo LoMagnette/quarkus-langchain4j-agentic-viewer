@@ -574,3 +574,10 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   only for the planners present; `PatternAdapters` hands them to the listener and decisions get `extras.pattern`.
 - Without the module: no adapter bean, nothing loaded or logged (dev-mode test); with it (dev mode -Ppatterns): the
   three pattern samples' decisions are tagged GOAP, P2P, BLACKBOARD, the custom planner none.
+
+### T4.2 planner type of each planner node — done (Oct 16, 2026)
+
+- `PlannerTypeDetector` (deployment) reads the `@PlannerSupplier` bytecode (ASM, build class loader): the first object
+  constructed that is a planner (pattern planner by name or subclass, or a `Planner` implementation in the index) gives
+  `PlannerInfo.plannerClass` and `patternType`; factories hide it (CUSTOM, no class). The details panel shows the class
+  and the pattern. Samples: TripGoalPlanner GOAP, ResearchTeam P2P, IncidentResponder BLACKBOARD, DraftReviewer CUSTOM.

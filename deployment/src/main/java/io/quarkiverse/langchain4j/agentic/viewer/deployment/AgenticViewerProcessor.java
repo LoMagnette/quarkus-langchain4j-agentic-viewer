@@ -12,6 +12,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticDescript
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticRootsBuildItem;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.RootSystemDetector;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.AgenticSystemsBuildItem;
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.PlannerTypeDetector;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.TopologyBuilder;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticSystemRegistry;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerJsonRpcService;
@@ -66,8 +67,11 @@ public class AgenticViewerProcessor {
      * Builds the topology of every declarative system (T1.4).
      */
     @BuildStep
-    AgenticSystemsBuildItem buildTopologies(AgenticRootsBuildItem roots) {
-        return new AgenticSystemsBuildItem(new TopologyBuilder().build(roots.getRoots()));
+    AgenticSystemsBuildItem buildTopologies(AgenticRootsBuildItem roots, CombinedIndexBuildItem index) {
+        // planner classes come from the bytecode of the @PlannerSupplier methods, read through the build class loader
+        PlannerTypeDetector plannerTypes = PlannerTypeDetector.of(index.getIndex(),
+                Thread.currentThread().getContextClassLoader());
+        return new AgenticSystemsBuildItem(new TopologyBuilder(plannerTypes).build(roots.getRoots()));
     }
 
     /**

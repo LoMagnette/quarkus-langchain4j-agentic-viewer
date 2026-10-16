@@ -29,6 +29,17 @@ public class TopologyBuilder {
     static final String SEGMENT_SEPARATOR = "/";
     static final String REPEAT_SEPARATOR = "~";
 
+    /** Tells the planner behind a {@code @PlannerSupplier}; null: unknown (CUSTOM, no class). */
+    private final PlannerTypeDetector plannerTypes;
+
+    public TopologyBuilder() {
+        this(null);
+    }
+
+    public TopologyBuilder(PlannerTypeDetector plannerTypes) {
+        this.plannerTypes = plannerTypes;
+    }
+
     /**
      * @param roots root systems, as found by the root system detector
      * @return one system per root, in the same order
@@ -53,7 +64,7 @@ public class TopologyBuilder {
     /**
      * @param guard activation condition given by the conditional parent, null otherwise
      */
-    private static AgentNode node(String id, AgentTree tree, Guard guard) {
+    private AgentNode node(String id, AgentTree tree, Guard guard) {
         AgentDescriptor descriptor = tree.descriptor();
         if (descriptor == null) {
             // langchain4j cannot build it either, unless it is an agent kind this scanner does not read yet
@@ -86,11 +97,14 @@ public class TopologyBuilder {
     }
 
     /**
-     * The planner a declarative {@code @PlannerSupplier} creates is only known at runtime; pattern detection is T4.2.
+     * The planner a declarative {@code @PlannerSupplier} creates, as far as its bytecode tells (PlannerTypeDetector).
      */
-    private static PlannerInfo plannerInfo(AgentDescriptor descriptor) {
+    private PlannerInfo plannerInfo(AgentDescriptor descriptor) {
         if (descriptor.kind() != NodeKind.PLANNER) {
             return null;
+        }
+        if (plannerTypes != null && descriptor.plannerSupplier() != null) {
+            return plannerTypes.detect(descriptor.plannerSupplier());
         }
         return new PlannerInfo(null, PatternType.CUSTOM,
                 descriptor.plannerSupplier() == null ? Map.of() : Map.of("supplier", descriptor.plannerSupplier()));
