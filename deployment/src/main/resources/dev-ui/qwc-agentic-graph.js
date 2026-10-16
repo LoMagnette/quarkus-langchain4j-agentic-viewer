@@ -152,7 +152,7 @@ function loopLabel(guard) {
 
 /**
  * Topology graph of one agentic system: Cytoscape.js rendering of an ELK layout, nested workflows as compound nodes.
- * Fires 'node-selected' (detail: { nodeId }) when a topology node is clicked.
+ * Fires 'node-selected' (detail: { nodeId }) when a topology node is clicked, with a null id when the background is.
  */
 export class QwcAgenticGraph extends observeState(LitElement) {
 
@@ -249,10 +249,31 @@ export class QwcAgenticGraph extends observeState(LitElement) {
         }
     }
 
+    firstUpdated() {
+        // the canvas follows its container (e.g. when a details panel opens next to it)
+        this._resizeObserver = new ResizeObserver(() => {
+            if (this._cy) {
+                this._cy.resize();
+                this._fit();
+            }
+        });
+        this._resizeObserver.observe(this.renderRoot.querySelector('#graph'));
+    }
+
     disconnectedCallback() {
+        this._resizeObserver?.disconnect();
         this._cy?.destroy();
         this._cy = undefined;
         super.disconnectedCallback();
+    }
+
+    /** Fits the whole graph, without zooming small graphs above 100%. */
+    _fit() {
+        this._cy.fit(undefined, 30);
+        if (this._cy.zoom() > 1) {
+            this._cy.zoom(1);
+            this._cy.center();
+        }
     }
 
     async _draw() {
@@ -277,15 +298,14 @@ export class QwcAgenticGraph extends observeState(LitElement) {
                 autoungrabify: true,
                 wheelSensitivity: 0.2,
             });
-            // fit() zooms small graphs far above 100%
-            if (this._cy.zoom() > 1) {
-                this._cy.zoom(1);
-                this._cy.center();
-            }
-            this._cy.on('tap', 'node', event => {
-                if (!event.target.data('helper')) {
+            this._fit();
+            // a click on a node selects it, a click on the background clears the selection (nodeId null)
+            this._cy.on('tap', event => {
+                const node = event.target !== this._cy && event.target.isNode?.() && !event.target.data('helper')
+                    ? event.target : null;
+                if (event.target === this._cy || node) {
                     this.dispatchEvent(new CustomEvent('node-selected', {
-                        detail: { nodeId: event.target.id() }, bubbles: true, composed: true,
+                        detail: { nodeId: node?.id() ?? null }, bubbles: true, composed: true,
                     }));
                 }
             });
@@ -312,6 +332,10 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             node.addClass(state);
         }
         return true;
+    }
+
+    clearSelection() {
+        this._cy?.nodes().unselect();
     }
 
     clearHighlights() {
@@ -515,6 +539,9 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             } },
             { selector: 'edge.back:loop', style: {
                 'curve-style': 'bezier', 'loop-direction': '90deg', 'loop-sweep': '-40deg', 'control-point-step-size': 60,
+            } },
+            { selector: 'node:selected', style: {
+                'overlay-color': primary, 'overlay-opacity': 0.12, 'overlay-padding': 4,
             } },
             { selector: 'node.running', style: { 'border-width': 4, 'border-color': primary } },
             { selector: 'node.done', style: { 'border-width': 3, 'border-color': success } },

@@ -5,6 +5,7 @@ import { columnBodyRenderer } from '@vaadin/grid/lit.js';
 import '@vaadin/button';
 import '@vaadin/icon';
 import { KIND_LABELS } from './qwc-agentic-graph.js';
+import './qwc-agentic-node-details.js';
 
 /** Agent kinds are not patterns. */
 const AGENT_KINDS = new Set(['AI_AGENT', 'NON_AI_AGENT']);
@@ -20,6 +21,20 @@ export function patternKinds(system) {
     };
     visit(system.root);
     return kinds;
+}
+
+/** The node with this id in a topology tree, undefined when none. */
+function findNode(node, id) {
+    if (!id || node.id === id) {
+        return id ? node : undefined;
+    }
+    for (const child of node.children ?? []) {
+        const found = findNode(child, id);
+        if (found) {
+            return found;
+        }
+    }
+    return undefined;
 }
 
 /**
@@ -81,13 +96,26 @@ export class QwcAgenticSystems extends LitElement {
         .header h3 {
             margin: 0;
         }
+        .system-body {
+            flex: 1;
+            display: flex;
+            gap: var(--lumo-space-m);
+            min-height: 0;
+        }
         qwc-agentic-graph {
             flex: 1;
+            min-width: 0;
+        }
+        qwc-agentic-node-details {
+            flex: 0 0 360px;
+            max-height: 100%;
+            box-sizing: border-box;
         }
     `;
 
     static properties = {
         _selected: { state: true },
+        _node: { state: true },
     };
 
     constructor() {
@@ -131,16 +159,22 @@ export class QwcAgenticSystems extends LitElement {
         return html`<span class="kinds">${kinds.map(kind => html`<span class="kind">${KIND_LABELS[kind] ?? kind}</span>`)}</span>`;
     }
 
+    _closeDetails() {
+        this._node = undefined;
+        this.renderRoot.querySelector('qwc-agentic-graph')?.clearSelection();
+    }
+
     _open(system) {
         if (system) {
             this._selected = system;
+            this._node = undefined;
         }
     }
 
     _renderSystem(system) {
         return html`
             <div class="header">
-                <vaadin-button theme="tertiary" @click=${() => this._selected = undefined}>
+                <vaadin-button theme="tertiary" @click=${() => { this._selected = undefined; this._node = undefined; }}>
                     <vaadin-icon icon="font-awesome-solid:arrow-left" slot="prefix"></vaadin-icon>Systems
                 </vaadin-button>
                 <h3>${system.name}</h3>
@@ -148,7 +182,12 @@ export class QwcAgenticSystems extends LitElement {
             </div>
             <div class="muted">${system.origin.toLowerCase()} system defined in
                 ${system.sourceRef?.className}#${system.sourceRef?.methodName}</div>
-            <qwc-agentic-graph .system=${system}></qwc-agentic-graph>`;
+            <div class="system-body">
+                <qwc-agentic-graph .system=${system}
+                                   @node-selected=${e => this._node = findNode(system.root, e.detail.nodeId)}></qwc-agentic-graph>
+                ${this._node ? html`<qwc-agentic-node-details .node=${this._node}
+                                                              @close=${this._closeDetails}></qwc-agentic-node-details>` : ''}
+            </div>`;
     }
 }
 
