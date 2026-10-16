@@ -166,6 +166,9 @@ export class QwcAgenticSystems extends LitElement {
         getInputSchema: params => this.jsonRpc.getInputSchema(params),
         startRun: params => this.jsonRpc.startRun(params),
         streamRun: params => this.jsonRpc.streamRun(params),
+        listRuns: params => this.jsonRpc.listRuns(params),
+        getRun: params => this.jsonRpc.getRun(params),
+        cancelRun: params => this.jsonRpc.cancelRun(params),
     };
 
     connectedCallback() {

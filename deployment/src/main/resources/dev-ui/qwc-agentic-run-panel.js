@@ -99,6 +99,41 @@ export class QwcAgenticRunPanel extends LitElement {
         .status.failed {
             color: var(--lumo-error-text-color);
         }
+        .status.cancelled {
+            color: var(--lumo-secondary-text-color);
+        }
+        .history {
+            display: flex;
+            flex-direction: column;
+            margin-top: var(--lumo-space-m);
+        }
+        .history-row {
+            display: grid;
+            grid-template-columns: 12px 1fr auto;
+            align-items: center;
+            gap: var(--lumo-space-s);
+            padding: 2px var(--lumo-space-xs);
+            border-radius: var(--lumo-border-radius-s);
+            cursor: pointer;
+        }
+        .history-row:hover, .history-row.current {
+            background: var(--lumo-contrast-5pct);
+        }
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--lumo-contrast-30pct);
+        }
+        .dot.SUCCEEDED {
+            background: var(--lumo-success-color);
+        }
+        .dot.FAILED {
+            background: var(--lumo-error-color);
+        }
+        .dot.RUNNING {
+            background: var(--lumo-primary-color);
+        }
         pre {
             margin: 0;
             padding: var(--lumo-space-s);
@@ -138,6 +173,7 @@ export class QwcAgenticRunPanel extends LitElement {
         _mode: { state: true },
         _pending: { state: true },
         _run: { state: true },
+        _history: { state: true },
     };
 
     constructor() {
@@ -152,7 +188,9 @@ export class QwcAgenticRunPanel extends LitElement {
             this._run = undefined;
             this._schema = undefined;
             this._schemaError = undefined;
+            this._history = undefined;
             const systemId = this.system.id;
+            this._loadHistory();
             this.jsonRpc?.getInputSchema({ systemId })
                 .then(response => {
                     if (this.system?.id === systemId) {
@@ -171,6 +209,7 @@ export class QwcAgenticRunPanel extends LitElement {
     render() {
         return html`
             ${this._mode === 'live' && this._run ? this._renderLive() : this._renderForm()}
+            ${this._renderHistory()}
             <vaadin-dialog header-title="Run ${this.system?.name ?? ''}?" .opened=${!!this._pending}
                     @opened-changed=${e => { if (!e.detail.value) { this._pending = undefined; } }}
                     ${dialogRenderer(() => this._renderConfirmation(), [this._pending])}
@@ -210,14 +249,16 @@ export class QwcAgenticRunPanel extends LitElement {
 
     _renderLive() {
         const run = this._run;
-        const label = { running: 'Running...', succeeded: 'Succeeded', failed: 'Failed' }[run.status];
+        const label = { running: 'Running...', succeeded: 'Succeeded', failed: 'Failed', cancelled: 'Cancelled' }[run.status];
         return html`
             <div class="status ${run.status}" data-run-status=${run.status}>
                 ${label}${run.duration != null ? html`<span class="muted">in ${formatDuration(run.duration)}</span>` : nothing}
             </div>
-            ${run.status === 'running' ? html`<vaadin-progress-bar indeterminate></vaadin-progress-bar>` : nothing}
+            ${run.status === 'running' ? html`<vaadin-progress-bar indeterminate></vaadin-progress-bar>
+                <div class="actions"><vaadin-button theme="error tertiary" data-action="cancel" ?disabled=${!run.runId}
+                        @click=${this._cancel}>Cancel</vaadin-button></div>` : nothing}
             ${run.status === 'succeeded' ? html`<h5>Output</h5><pre data-run-output>${this._format(run.output)}</pre>` : nothing}
-            ${run.status === 'failed' ? html`<h5>Error</h5><pre class="error" data-run-error>${run.error?.message ?? run.error?.exceptionClass ?? 'unknown error'}</pre>` : nothing}
+            ${run.status === 'failed' || run.status === 'cancelled' ? html`<h5>${run.status === 'cancelled' ? 'Cancelled' : 'Error'}</h5><pre class="error" data-run-error>${run.error?.message ?? run.error?.exceptionClass ?? 'unknown error'}</pre>` : nothing}
             <h5>Inputs</h5>
             <pre>${this._format(run.inputs)}</pre>
             <div class="actions">
@@ -230,6 +271,82 @@ export class QwcAgenticRunPanel extends LitElement {
 
     _format(value) {
         return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+    }
+
+    _renderHistory() {
+        if (!this._history || this._history.length === 0) {
+            return nothing;
+        }
+        return html`
+            <div class="history">
+                <h5>Recent runs</h5>
+                ${this._history.map(summary => html`
+                    <div class="history-row ${summary.runId === this._run?.runId ? 'current' : ''}"
+                            data-history-run=${summary.runId} title="Open this run"
+                            @click=${() => this._openPast(summary.runId)}>
+                        <span class="dot ${summary.status}"></span>
+                        <span>${new Date(summary.startedAt).toLocaleTimeString()} · ${summary.status.toLowerCase()}</span>
+                        <span class="muted">${summary.durationMillis != null ? formatDuration(summary.durationMillis) : '…'}</span>
+                    </div>`)}
+            </div>`;
+    }
+
+    _loadHistory() {
+        const systemId = this.system?.id;
+        this.jsonRpc?.listRuns({ systemId })
+            .then(response => {
+                if (this.system?.id === systemId) {
+                    this._history = response.result ?? [];
+                }
+            })
+            .catch(() => this._history = []);
+    }
+
+    /**
+     * Reopens a run of the history: its recorded events are replayed on the graph, the timeline and the scope panel;
+     * a run still running is followed live (streamRun replays what it already emitted).
+     */
+    _openPast(runId) {
+        const system = this.system;
+        this._stopStream();
+        this.jsonRpc.getRun({ runId }).then(response => {
+            const trace = response.result;
+            if (!trace || this.system !== system) {
+                return;
+            }
+            this.graph?.resetRun();
+            const summary = trace.summary;
+            this._mode = 'live';
+            if (summary.status === 'RUNNING') {
+                this._run = { status: 'running', inputs: summary.inputs, runId };
+                this._events = [];
+                this._publish(true);
+                this._follow(system, runId);
+                return;
+            }
+            const live = new LiveRun(system, this.graph);
+            this._live = live;
+            trace.events.forEach(event => live.apply(event));
+            this._events = trace.events;
+            this._publish(false);
+            this._run = this._ended({ inputs: summary.inputs, runId }, trace.events[trace.events.length - 1]);
+        }).catch(error => this._run = { status: 'failed', inputs: {},
+            error: { message: `Cannot open the run: ${error?.error?.message ?? error?.message ?? error}` } });
+    }
+
+    /** The run state after its terminal event. */
+    _ended(run, event) {
+        if (event?.type === 'RunFinished') {
+            return { ...run, status: 'succeeded', output: event.output, duration: event.durationMillis };
+        }
+        const cancelled = event?.error?.exceptionClass === 'java.util.concurrent.CancellationException';
+        return { ...run, status: cancelled ? 'cancelled' : 'failed', error: event?.error, duration: event?.durationMillis };
+    }
+
+    _cancel() {
+        if (this._run?.runId) {
+            this.jsonRpc.cancelRun({ runId: this._run.runId });
+        }
     }
 
     /** Asks for the confirmation of the reachable tools before the first run of the system in this session. */
@@ -267,6 +384,7 @@ export class QwcAgenticRunPanel extends LitElement {
                 const runId = response.result;
                 this._run = { ...this._run, runId };
                 this._follow(system, runId);
+                this._loadHistory();
             })
             .catch(error => this._run = { ...this._run, status: 'failed',
                 error: { message: error?.error?.message ?? error?.message ?? String(error) } });
@@ -284,12 +402,10 @@ export class QwcAgenticRunPanel extends LitElement {
             live.apply(event);
             this._events = [...this._events, event];
             this._publish(event.type !== 'RunFinished' && event.type !== 'RunFailed');
-            if (event.type === 'RunFinished') {
-                this._run = { ...this._run, status: 'succeeded', output: event.output, duration: event.durationMillis };
+            if (event.type === 'RunFinished' || event.type === 'RunFailed') {
+                this._run = this._ended(this._run, event);
                 this._stopStream();
-            } else if (event.type === 'RunFailed') {
-                this._run = { ...this._run, status: 'failed', error: event.error, duration: event.durationMillis };
-                this._stopStream();
+                this._loadHistory();
             }
         });
     }
