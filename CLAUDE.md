@@ -25,6 +25,9 @@ mvn test -pl integration-tests -Dtest=AgenticViewerTest
 
 # Include the langchain4j-agentic-patterns samples (always with clean when switching the profile)
 mvn clean verify -pl integration-tests -Ppatterns
+
+# Everything with the patterns module, as the second CI configuration (.github/workflows/build.yml)
+mvn clean install -Ppatterns
 ```
 
 Samples run on a scripted fake chat model (`integration-tests/.../it/fake/ScriptedChatModel`), no API key needed:

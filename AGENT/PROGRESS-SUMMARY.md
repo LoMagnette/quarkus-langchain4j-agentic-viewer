@@ -608,3 +608,10 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   goal reached or quiescent. Live: the other candidates light up, the picked one runs, the planner shows
   "invocations n/max · goal not reached" then "stopped: goal reached"; timeline steps
   "→ analyzeMetrics of analyzeLogs, analyzeMetrics · custom (IncidentResponder)".
+
+### T4.6 test matrix — done (Oct 16, 2026); Phase 4 complete
+
+- `.github/workflows/build.yml`: matrix without / with `-Ppatterns` (JDK 21, `mvn -B clean install`), not run on
+  GitHub yet (no remote); both commands pass locally.
+- deployment has a `patterns` profile too (module as test dependency, `src/patterns-test`): pattern tagging at build
+  time and a dev-mode test with the three adapters registered; the no-module dev-mode test is skipped there.

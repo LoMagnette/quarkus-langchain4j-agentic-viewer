@@ -2,6 +2,7 @@ package io.quarkiverse.langchain4j.agentic.viewer.test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -44,9 +45,12 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
         super("quarkus-langchain4j-agentic-viewer");
     }
 
-    /** Without langchain4j-agentic-patterns (not on this class path): no adapter bean, nothing about patterns logged. */
+    /** Without langchain4j-agentic-patterns: no adapter bean, no goal path preview, nothing about patterns logged. */
     @Test
     void noPatternAdapterWithoutTheModule() throws Exception {
+        // the "patterns" build (CI's second configuration) has the module: PatternAdaptersDevModeTest covers it
+        assumeFalse(getClass().getClassLoader().getResource(
+                "dev/langchain4j/agentic/patterns/goap/GoalOrientedPlanner.class") != null, "patterns module present");
         JsonNode beans = new DevUIBuildTimeDataTest("quarkus-arc") {
         }.getBuildTimeData("beans");
         List<String> classes = new ArrayList<>();

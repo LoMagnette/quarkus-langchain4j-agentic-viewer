@@ -85,4 +85,41 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- Build-time detection with langchain4j-agentic-patterns (optional for applications): the default build runs
+             without it, mvn clean install -Ppatterns adds it and the tests in src/patterns-test (CI runs both). -->
+        <profile>
+            <id>patterns</id>
+            <dependencies>
+                <dependency>
+                    <groupId>dev.langchain4j</groupId>
+                    <artifactId>langchain4j-agentic-patterns</artifactId>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <version>3.6.2</version>
+                        <executions>
+                            <execution>
+                                <id>add-patterns-test-sources</id>
+                                <goals>
+                                    <goal>add-test-source</goal>
+                                </goals>
+                                <configuration>
+                                    <sources>
+                                        <source>src/patterns-test/java</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
