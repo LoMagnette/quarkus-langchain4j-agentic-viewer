@@ -4,9 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A Quarkus extension that scans LangChain4j agentic systems at build time and shows them in the Quarkus Dev UI as
-interactive graphs (structure and data flow, node details), with live runs to come (Phase 2). It helps developers
-understand their agents, workflows, tools and the AgenticScope keys they share.
+A Quarkus extension adding an "Agentic Systems" page to the Dev UI for LangChain4j agentic systems: it finds the
+declarative systems at build time and shows them as interactive graphs (structure, data flow, node details), runs them
+from the Dev UI with live highlighting, a timeline, the AgenticScope state and tool calls, answers `@HumanInTheLoop`
+steps, shows supervisor and planner decisions step by step, and has dedicated views for the GOAP, peer-to-peer and
+blackboard planners of `langchain4j-agentic-patterns`. Dev mode only: nothing of it reaches prod or native builds.
+User documentation: `docs/modules/ROOT/pages/index.adoc`.
 
 ## Build Commands
 
@@ -14,32 +17,35 @@ understand their agents, workflows, tools and the AgenticScope keys they share.
 # Build all modules (skipping tests)
 mvn clean install -DskipTests
 
-# Build with tests
+# Build with tests (CI configuration 1)
 mvn clean install
 
-# Run integration tests only
-mvn verify -pl integration-tests
-
-# Run a single test
-mvn test -pl integration-tests -Dtest=AgenticViewerTest
-
-# Include the langchain4j-agentic-patterns samples (always with clean when switching the profile)
-mvn clean verify -pl integration-tests -Ppatterns
-
-# Everything with the patterns module, as the second CI configuration (.github/workflows/build.yml)
+# Everything with the patterns module (CI configuration 2, .github/workflows/build.yml); always clean when switching
 mvn clean install -Ppatterns
+
+# Integration tests only, or a single test
+mvn verify -pl integration-tests
+mvn test -pl integration-tests -Dtest=SampleRunsTest
+
+# Sample app in dev mode (scripted fake model, no API key): http://localhost:8080/q/dev-ui -> Agentic Systems
+mvn quarkus:dev -pl integration-tests              # add -Ppatterns for the pattern samples
+
+# Native build of the sample app (NativeArtifactIT then checks it has no Dev UI code)
+mvn package -pl integration-tests -Dquarkus.native.enabled=true -Dquarkus.package.jar.enabled=false \
+    -Dquarkus.native.container-build=true -DskipTests
+
+# Config reference of the docs (docs/modules/ROOT/pages/includes), generated from the config roots
+mvn install -pl docs
 ```
 
-Samples run on a scripted fake chat model (`integration-tests/.../it/fake/ScriptedChatModel`), no API key needed:
-declarative samples in `src/main/java/.../it/samples`, patterns samples in `src/patterns/java` (profile `patterns`).
-
-To try the Dev UI on a real model, start the sample app with the `ollama` profile: the fake is not produced and the
-OpenAI extension calls any OpenAI-compatible endpoint, by default a local Ollama (tool-capable model needed):
+Samples run on a scripted fake chat model (`integration-tests/.../it/fake/ScriptedChatModel`): declarative samples in
+`src/main/java/.../it/samples`, patterns samples in `src/patterns/java` (profile `patterns`). To try a real model, use
+the `ollama` profile: the fake is not produced and the OpenAI extension calls any OpenAI-compatible endpoint:
 
 ```bash
 mvn quarkus:dev -pl integration-tests -Dquarkus.profile=dev,ollama
 # overrides: OLLAMA_BASE_URL (default http://localhost:11434/v1; http://host.docker.internal:11434/v1 from the sandbox),
-#            OLLAMA_MODEL (default qwen2.5:14b), OPENAI_API_KEY (for a real OpenAI endpoint)
+#            OLLAMA_MODEL (default qwen2.5:14b, needs tool support), OPENAI_API_KEY (for a real OpenAI endpoint)
 ```
 
 The extension never picks a model: a Dev UI run calls the application's agent beans, which use the model the
@@ -47,17 +53,19 @@ application configures for each agent.
 
 ## Architecture
 
-### Module Structure
+### Modules
 
-This is a standard **Quarkus extension** with four modules:
-
-- **runtime/** - Runtime artifacts deployed with the application, also in prod. Only inert topology records
-  (`runtime/.../topology`: `AgenticSystem`, `AgentNode`, `Guard`, `PlannerInfo`, `AiAgentDetails`, `ToolInfo`,
-  `SystemInput`, `SourceRef`, enums); no beans or behaviour.
-- **runtime-dev/** - Dev-mode-only artifact (`quarkus-langchain4j-agentic-viewer-dev`), declared via `conditionalDevDependencies` in `runtime/pom.xml`. Holds everything live: the recorder and the JSON-RPC service. Build steps that reference it must be `onlyIf = IsDevelopment.class`.
-- **deployment/** - Build-time processing, only used during compilation: `AgenticViewerProcessor` (`@BuildStep`s),
-  the Jandex scan and the topology builder, and the Dev UI web components (`src/main/resources/dev-ui`).
-- **integration-tests/** - Test application with sample agents and tools.
+- **runtime/** - Deployed with the application, also in prod: only inert types. `topology` (records: `AgenticSystem`,
+  `AgentNode`, `Guard`, `PlannerInfo`, `AiAgentDetails`, `RemoteAgentDetails`, `ToolInfo`, `SystemInput`, `SourceRef`,
+  enums), `spi` (`AgenticTopologyContributor` + records) and `config` (`AgenticViewerRuntimeConfig`). No beans or
+  behaviour; `ProdArtifactIT` checks that nothing else reaches the prod artifact.
+- **runtime-dev/** - Dev-mode-only artifact (`quarkus-langchain4j-agentic-viewer-dev`), declared via
+  `conditionalDevDependencies` in `runtime/pom.xml`: recorder, registry, JSON-RPC service, runs, listener, pattern
+  adapters. Build steps that reference it run `onlyIf = { IsDevelopment.class, AgenticViewerEnabled.class }`.
+- **deployment/** - Build steps (`AgenticViewerProcessor`), Jandex scan, topology builder, planner type detection, build
+  config, and the Dev UI web components (`src/main/resources/dev-ui`).
+- **integration-tests/** - Sample app (samples, fake model, test-only systems in `src/test`) and its tests.
+- **docs/** - Antora documentation page and the generated config reference.
 
 ### Build-time chain
 
@@ -69,12 +77,20 @@ This is a standard **Quarkus extension** with four modules:
 2. `RootSystemDetector` nests them under root systems (`AgenticRootsBuildItem`): a root is an agent no other agent lists
    as a sub-agent.
 3. `deployment/.../topology/TopologyBuilder` turns each root into an `AgenticSystem` (`AgenticSystemsBuildItem`). Node ids:
-   `Class#method` for the root, then `/<SubAgentSimpleClassName>` per level (`~2` for a repeated sibling); runtime
-   events will be correlated with them.
-4. Dev mode only: the systems are recorded into runtime-dev (`AgenticViewerRecorder.getSystems()`), where the
-   `AgenticSystemRegistry` bean (registered by a dev-only build step) holds them by id for the JSON-RPC service.
+   `Class#method` for the root, then `/<SubAgentSimpleClassName>` per level (`~2` for a repeated sibling); run events
+   are correlated with them. `PlannerTypeDetector` reads the `@PlannerSupplier` bytecode (ASM) to fill
+   `PlannerInfo.plannerClass` / `patternType` (GOAP, P2P, BLACKBOARD, CUSTOM).
+4. Dev mode only: the systems are recorded into runtime-dev (`AgenticViewerRecorder`), where the `AgenticSystemRegistry`
+   bean holds them by id; the application's topology contributors are recorded by class name too.
 
-Builder (`AgenticServices.*Builder()`) systems are discovered at runtime in Phase 5.
+Builder (`AgenticServices.*Builder()`) systems are not discovered yet (Phase 5, deferred).
+
+### Configuration
+
+Config roots under `quarkus.langchain4j.agentic.dev-ui`: `enabled` (build time, `deployment/.../AgenticViewerBuildConfig`,
+checked by every dev-only build step through `AgenticViewerEnabled`), `history-size` and `max-payload-size` (run time,
+`runtime/.../config/AgenticViewerRuntimeConfig`, read by `RunManager`). The extension processor runs on runtime and
+deployment so they are registered and documented.
 
 ### Runs (runtime-dev, dev mode only)
 
@@ -83,58 +99,69 @@ Builder (`AgenticServices.*Builder()`) systems are discovered at runtime in Phas
 calls the root CDI bean inside a fresh request context (request-scoped chat memory must not leak between runs).
 Events are delivered by one event thread (callbacks only queue them); `streamRun` replays a run then follows it
 (`RunManager.stream`). Over the Dev UI websocket a stream sends a `Void` ack, then one `SubscriptionMessage` per event and
-no completion message: the client stops at `RunFinished` / `RunFailed`.
-Event payloads are bounded on the event thread (`events/PayloadTruncator`, `quarkus.langchain4j.agentic.dev-ui.max-payload-size`,
-default 2048 chars of JSON; config roots: `runtime/.../config/AgenticViewerRuntimeConfig` for `history-size` and
-`max-payload-size`, `deployment/.../AgenticViewerBuildConfig` for `enabled`, which every dev-only build step checks
-through `AgenticViewerEnabled`) and must be plain Java values (maps, lists, strings, numbers): the Dev UI serializer writes
-a Jackson `JsonNode` as a bean.
-runtime-dev beans only exist in dev mode: tests build `RunManager` directly (`new RunManager(lookup, new CdiRunInvoker())`,
-see `integration-tests/.../samples/SampleRunsTest`).
-`@HumanInTheLoop` steps of Dev UI runs never call the annotated method: `runs/HumanInTheLoopSteps` (installed with the
-listener by `RootListeners.attach`) swaps each step's invoker, through internal langchain4j API, for one that emits
-`AwaitingHumanInput` and blocks until `provideHumanInput` (or cancel). Outside Dev UI runs the method runs as usual.
-Tests that attach a `DevUiAgentListener` and run TripPlanner must answer (`HumanInputAnswers.answerInTheDevUi`).
-Planner decisions: `runs/PlannerDecisions` (also installed by `RootListeners.attach`) replaces each workflow's
-`plannerSupplier` (reflection on a final field) so supervisors, `@PlannerSupplier` and pattern planners are wrapped in a
-delegating planner that emits `PlannerDecision` per Action; built-in workflow planners (sequence, loop, parallel,
-mapper, conditional) are left alone. `runs/AgentTrees` holds the shared walk of langchain4j's internal agent tree.
+no completion message: the client stops at `RunFinished` / `RunFailed`. History is bounded per system.
+Event payloads are bounded on the event thread (`events/PayloadTruncator`) and must be plain Java values (maps, lists,
+strings, numbers): the Dev UI serializer writes a Jackson `JsonNode` as a bean.
+`RunManager.shutdown` (@PreDestroy, also on hot reload) ends open runs CANCELLED, completes their streams, releases
+waiting human steps and stops its threads; the registry is rebuilt by the restart.
 
-Topology contributor SPI (`runtime/.../spi/AgenticTopologyContributor`, inert interface + records): implementations
-are found with Jandex at build time (dev only), created in runtime-dev (`TopologyContributions`, no-arg constructor)
-and matched to PLANNER nodes by the class of their `@PlannerSupplier`; `getContributions(systemId)` serves them with
-resolved ids (`<planner node id>::<id>` for contributed nodes) and the graph draws them instead of the hub and
-candidates (step numbers then go on the nodes). Sample: `integration-tests/.../samples/DraftReviewTopology`.
+At dev-mode startup `RunObservation` calls `RootListeners.attach`, which installs on each root agent bean:
+- `DevUiAgentListener` through the internal `InternalAgent.registerInheritedParentListener` (CDI listeners only reach AI
+  agents): turns callbacks into events, correlating them to node ids (parent invocation + topology, loop counter,
+  mapper item suffix) and observing `@ErrorHandler`s (`ErrorHandlers`, wraps the scope's handler).
+- `HumanInTheLoopSteps`: swaps each `@HumanInTheLoop` step's invoker so that, in a Dev UI run, the annotated method is
+  not called: `AwaitingHumanInput` is emitted and the step waits for `provideHumanInput` (or cancel).
+- `PlannerDecisions`: replaces each workflow's `plannerSupplier` (reflection on a final field) to wrap supervisors,
+  `@PlannerSupplier` and pattern planners in a delegating planner emitting `PlannerDecision` per Action; built-in
+  workflow planners (sequence, loop, parallel, mapper, conditional) are left alone.
+`runs/AgentTrees` holds the shared walk of langchain4j's internal agent tree. All of these hooks use internal
+langchain4j API (no public one yet: upstream U3, U4, U5): they are isolated and guarded, so an incompatible upgrade
+disables the live information they give, never the application.
 
 Patterns module: there is no Quarkus extension for `langchain4j-agentic-patterns`, apps add it directly. runtime-dev
 depends on it as optional; `runtime-dev/.../patterns/*Adapter` classes refer to it and are registered as beans only when
 their planner class is present (`AgenticViewerProcessor.patternAdapters`, names only, never loaded otherwise);
-`PatternAdapters` (always registered) hands them to the Dev UI listener, and pattern planners' decisions carry
-`extras.pattern`. Never reference an adapter class from code that runs without the module. Adapters give an
-`Insight` per decision (extras, planned path) and may preview paths (`GoapAdapter` runs the module's own
-`GoalOrientedSearchGraph`: `previewGoalPath`, `extras.path` on the first decision). A GOAP planner node is drawn as its
-key dependency graph (`goalGraph` in `toGraph`). A P2P planner node is a bipartite agent/key graph (`peerGraph`, laid out left to right
-with ELK graph wrapping); `P2PAdapter` reads the private maximum and exit condition by reflection to tell the
-termination reason (`extras.termination`). A blackboard planner node is a central board read and written by its agents
-(`boardGraph`); `BlackboardAdapter` reads the private activators, strategy, goal predicate and maximum by reflection
-to tell each step's candidates (`extras.candidates`), the strategy, the goal status and the termination. These
-adapters stand in for upstream U3 (planner decision callbacks): langchain4j upgrades may break their reflection, in
-which case only those extras disappear.
+`PatternAdapters` (always registered) hands them to the listener. Never reference an adapter class from code that runs
+without the module. Per decision an adapter gives an `Insight` (extras + named agent lists mapped to node ids):
+`GoapAdapter` runs the module's own `GoalOrientedSearchGraph` (`previewGoalPath`, `extras.path`); `P2PAdapter` tells
+invocations, ready agents and the termination reason; `BlackboardAdapter` the candidates, strategy, goal status and
+termination (private planner state read by reflection).
 
-### Dev UI Integration
+Topology contributor SPI (`runtime/.../spi/AgenticTopologyContributor`): implementations are found with Jandex at build
+time, created in runtime-dev (`TopologyContributions`, no-arg constructor) and matched to PLANNER nodes by the class of
+their `@PlannerSupplier`; `getContributions(systemId)` serves them with resolved ids (`<planner node id>::<id>`).
+Sample: `integration-tests/.../samples/DraftReviewTopology`.
+
+### Dev UI
 
 `AgenticViewerProcessor.registerDevUI()` registers the card with one page, "Agentic Systems" (`qwc-agentic-systems.js`),
-whose link shows the number of systems known at build time. The page gets everything over JSON-RPC
-(`AgenticViewerJsonRpcService`: `listSystems`, `getTopology`, `getInputSchema`; unknown ids are JSON-RPC errors) and shows
-the selected system with the graph component `qwc-agentic-graph.js` (Cytoscape.js + elkjs from mvnpm; `toGraph()` / `toDataFlowGraph()`
-map a topology to nodes/edges; each compound is laid out separately by ELK to keep declaration order;
-`highlight(nodeId, state)` for the live view) and the details panel `qwc-agentic-node-details.js`. JSON-RPC method
-names are `quarkus-langchain4j-agentic-viewer_<method>`. `DevUIJsonRPCTest` only reads successful results: test error
-answers over a raw websocket (see `AgenticSystemsDevModeTest`).
-Runs are started from the system view (Run button): `qwc-agentic-run-panel.js` (form `qwc-agentic-run-form.js`, tools
-confirmation, live view driving the graph's `highlight` / `setNodeInfo`). Never pass the Dev UI `JsonRpc` proxy through a
-Lit binding (lit-html probes `_$litDirective$` and the proxy answers every property): pass a plain adapter object.
+whose link shows the number of systems known at build time. Everything comes over JSON-RPC
+(`AgenticViewerJsonRpcService`: `listSystems`, `getTopology`, `getContributions`, `getInputSchema`, `previewGoalPath`,
+`startRun`, `streamRun`, `listRuns`, `getRun`, `cancelRun`, `provideHumanInput`; unknown ids are JSON-RPC errors);
+method names are `quarkus-langchain4j-agentic-viewer_<method>`. Components (Lit + Vaadin, served by the Dev UI):
+- `qwc-agentic-graph.js`: Cytoscape.js + elkjs (mvnpm). `toGraph()` / `toDataFlowGraph()` map a topology to
+  nodes/edges (pattern planners: `goalGraph`, `peerGraph`, `boardGraph`; contributions replace the candidates); each
+  compound is laid out separately by ELK to keep declaration order. The live view goes through `highlight`,
+  `setNodeInfo` and `setPath`, kept in a run overlay re-applied after a redraw (view or theme switch).
+- `qwc-agentic-run-panel.js` (form `qwc-agentic-run-form.js`, tools confirmation, `LiveRun` turning events into graph
+  states, human input box, history and replay), `qwc-agentic-timeline.js`, `qwc-agentic-scope-state.js`,
+  `qwc-agentic-node-details.js`.
+Never pass the Dev UI `JsonRpc` proxy through a Lit binding (lit-html probes `_$litDirective$` and the proxy answers
+every property): pass a plain adapter object (`rpc` in `qwc-agentic-systems.js`).
 Dev mode does not reload a rebuilt extension: restart it to see Dev UI changes.
+
+### Testing
+
+- runtime-dev beans only exist in dev mode: `@QuarkusTest`s build `RunManager` directly
+  (`new RunManager(lookup, new CdiRunInvoker())`), attach `new DevUiAgentListener(runManager)` with
+  `RootListeners.attach`, and call the JSON-RPC service class directly (see `integration-tests/.../samples`). Tests
+  running TripPlanner with a Dev UI listener must answer its human step (`HumanInputAnswers.answerInTheDevUi`).
+- Dev-mode tests (`QuarkusDevModeTest`, deployment) cover JSON-RPC, config and hot reload. `DevUIJsonRPCTest` only
+  reads successful results: test error answers over a raw websocket (see `AgenticSystemsDevModeTest`). Fixture apps
+  need a `ChatModel` bean even without AI agents; without a model provider their AI agents fail at bean creation (logged).
+- The build validation of quarkus-langchain4j-agentic rejects a sub-agent parameter that only the root provides when the
+  sub-agent is a `@HumanInTheLoop` step: make it the output of another agent.
+- The Dev UI pages have no automated browser tests yet (TASK-62); they were checked with headless Chromium scripts.
 
 ### Progress
 All progress made on this project is tracked in [this file](AGENT/PROGRESS-SUMMARY.md).
