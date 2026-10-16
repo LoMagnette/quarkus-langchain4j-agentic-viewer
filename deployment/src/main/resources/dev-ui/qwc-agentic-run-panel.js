@@ -202,6 +202,8 @@ export class QwcAgenticRunPanel extends LitElement {
         _answer: { state: true },
         _answerError: { state: true },
         _answering: { state: true },
+        /** goal-oriented planners' previewed paths for the inputs filled in the form: planner node id -> [node ids] */
+        _preview: { state: true },
     };
 
     constructor() {
@@ -217,6 +219,7 @@ export class QwcAgenticRunPanel extends LitElement {
             this._schema = undefined;
             this._schemaError = undefined;
             this._history = undefined;
+            this._preview = undefined;
             const systemId = this.system.id;
             this._loadHistory();
             this.jsonRpc?.getInputSchema({ systemId })
@@ -257,10 +260,64 @@ export class QwcAgenticRunPanel extends LitElement {
         const last = session.get(LAST_INPUTS + this.system.id);
         return html`
             <qwc-agentic-run-form .schema=${this._schema} .values=${last}
-                    @run=${e => this._requestRun(e.detail.inputs)}></qwc-agentic-run-form>
+                    @run=${e => this._requestRun(e.detail.inputs)}
+                    @inputs-changed=${e => this._previewGoalPaths(e.detail.keys)}></qwc-agentic-run-form>
+            ${this._renderPreview()}
             ${last && this._run ? html`<div class="actions">
                 <vaadin-button theme="tertiary" @click=${() => this._mode = 'live'}>Back to the last run</vaadin-button>
             </div>` : nothing}`;
+    }
+
+    /** Goal-oriented planner nodes of the system (they get a path preview). */
+    _goalPlanners() {
+        const planners = [];
+        const visit = node => {
+            if (node.plannerInfo?.patternType === 'GOAP') {
+                planners.push(node);
+            }
+            node.children?.forEach(visit);
+        };
+        if (this.system) {
+            visit(this.system.root);
+        }
+        return planners;
+    }
+
+    /** Asks the path each goal-oriented planner would take for the filled inputs (debounced). */
+    _previewGoalPaths(keys) {
+        if (this._goalPlanners().length === 0) {
+            return;
+        }
+        clearTimeout(this._previewTimer);
+        const systemId = this.system.id;
+        this._previewTimer = setTimeout(() => this.jsonRpc.previewGoalPath({ systemId, inputKeys: keys })
+            .then(response => {
+                if (this.system?.id === systemId) {
+                    this._preview = response.result ?? {};
+                }
+            })
+            .catch(() => this._preview = undefined), 250);
+    }
+
+    _renderPreview() {
+        const planners = this._goalPlanners();
+        if (planners.length === 0 || !this._preview) {
+            return nothing;
+        }
+        const names = new Map();
+        const index = node => {
+            names.set(node.id, node.name);
+            node.children?.forEach(index);
+        };
+        index(this.system.root);
+        return html`${planners.filter(p => this._preview[p.id]).map(planner => {
+            const path = this._preview[planner.id];
+            return html`<div class="preview" data-goal-preview=${planner.id}>
+                <h5>Planned path${planners.length > 1 ? ` of ${planner.name}` : ''}</h5>
+                ${path.length > 0 ? html`<div data-goal-path>${path.map(id => names.get(id) ?? id).join(' → ')}</div>`
+                    : html`<div class="muted" data-goal-path>no path to <code>${planner.outputKey}</code> from these inputs</div>`}
+            </div>`;
+        })}`;
     }
 
     _renderConfirmation() {
@@ -540,6 +597,8 @@ class LiveRun {
         this.handled = new Map();
         /** human-in-the-loop steps waiting for an answer: their AwaitingHumanInput events, oldest first */
         this.waiting = [];
+        /** nodes on the path a goal-oriented planner computed, not run yet: node id -> position (1-based) */
+        this.planned = new Map();
         /** sub-agents called by each supervisor or planner, in call order: node id -> [child node ids] */
         this.calls = new Map();
         /** decisions of each supervisor or planner, in order: node id -> [{ selected, done, action }] */
@@ -568,6 +627,9 @@ class LiveRun {
             case 'AgentStarted': {
                 this.running.set(event.nodeId, (this.running.get(event.nodeId) ?? 0) + 1);
                 this.graph?.highlight(event.nodeId, 'running');
+                if (this.planned.has(event.nodeId)) {
+                    this._showInfo(event.nodeId); // no longer "planned"
+                }
                 const parent = this._parent(event.nodeId);
                 const parentKind = this.nodes.get(parent)?.kind;
                 if (event.iteration != null && parentKind === 'LOOP') {
@@ -627,6 +689,16 @@ class LiveRun {
                 break;
             }
             case 'PlannerDecision': {
+                if (Array.isArray(event.extras?.path)) {
+                    // the path a goal-oriented planner computed: highlighted, then walked step by step
+                    event.extras.path.forEach((id, i) => {
+                        this.planned.set(id, i + 1);
+                        if ((this.running.get(id) ?? 0) === 0 && !this.stats.has(id)) {
+                            this.graph?.highlight(id, 'planned');
+                            this._showInfo(id);
+                        }
+                    });
+                }
                 // the path taken, step by step: each chosen sub-agent gets the numbers of the steps that chose it
                 const steps = this.decisions.get(event.nodeId) ?? [];
                 steps.push({ selected: event.selectedNodeIds ?? [], done: event.done, action: event.extras?.action });
@@ -673,6 +745,9 @@ class LiveRun {
             const items = this.items.get(nodeId);
             parts.push(`${items.finished}/${items.started} items`);
         }
+        if (this.planned.has(nodeId) && (this.running.get(nodeId) ?? 0) === 0 && !this.stats.has(nodeId)) {
+            parts.push(`planned ${this.planned.get(nodeId)}`);
+        }
         const steps = this.decisions.get(nodeId);
         if (steps?.length) {
             const calls = steps.filter(step => step.selected.length > 0).length;
@@ -705,6 +780,7 @@ class LiveRun {
             waiting: this.waiting.map(w => w.nodeId),
             calls: Object.fromEntries(this.calls),
             decisions: Object.fromEntries(this.decisions),
+            planned: Object.fromEntries(this.planned),
         };
     }
 }

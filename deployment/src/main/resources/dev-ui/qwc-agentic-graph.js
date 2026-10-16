@@ -12,7 +12,7 @@ const LEAF_HEIGHT = 44;
 const TITLE_CHAR_WIDTH = 7;
 const COMPOUND_PADDING = 20;
 const TITLE_SPACE = 24;
-const STATES = ['running', 'waiting', 'done', 'failed', 'recovered'];
+const STATES = ['planned', 'running', 'waiting', 'done', 'failed', 'recovered'];
 
 /** Display labels of the node kinds. */
 export const KIND_LABELS = {
@@ -514,7 +514,8 @@ export class QwcAgenticGraph extends observeState(LitElement) {
     }
 
     /**
-     * Highlights a node: state is one of running, waiting (for human input), done, failed, recovered (null clears it).
+     * Highlights a node: state is one of planned, running, waiting (for human input), done, failed, recovered (null clears
+     * it).
      * @return false when the node id is unknown
      */
     highlight(nodeId, state) {
@@ -928,6 +929,8 @@ export class QwcAgenticGraph extends observeState(LitElement) {
                 'overlay-color': primary, 'overlay-opacity': 0.12, 'overlay-padding': 4,
             } },
             { selector: 'node.running', style: { 'border-width': 4, 'border-color': primary, 'border-style': 'solid' } },
+            // on the path a goal-oriented planner computed, not run yet
+            { selector: 'node.planned', style: { 'border-width': 3, 'border-color': primary, 'border-style': 'dashed' } },
             // a human-in-the-loop step waiting for the answer given in the run panel
             { selector: 'node.waiting', style: { 'border-width': 4, 'border-color': primary, 'border-style': 'dashed' } },
             { selector: 'node.done', style: { 'border-width': 3, 'border-color': success } },

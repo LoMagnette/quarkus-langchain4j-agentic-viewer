@@ -114,6 +114,7 @@ export function validate(schema, value, path = '') {
 /**
  * Run form of an agentic system, generated from its input JSON schema (getInputSchema).
  * Fires 'run' (detail: { inputs }) with valid inputs; invalid fields are flagged and nothing is fired.
+ * Fires 'inputs-changed' (detail: { keys }) with the names of the inputs that have a value, as they change.
  */
 export class QwcAgenticRunForm extends LitElement {
 
@@ -174,6 +175,17 @@ export class QwcAgenticRunForm extends LitElement {
                     ? JSON.stringify(value !== undefined ? value : skeleton(property), null, 2)
                     : value;
             });
+        }
+    }
+
+    updated(changed) {
+        if (changed.has('_texts')) {
+            // a required text left empty is collected as '' (and refused at submit): it has no value yet
+            const keys = Object.entries(this.collect().inputs).filter(([, value]) => value !== '').map(([key]) => key).sort();
+            if (keys.join() !== this._lastKeys) {
+                this._lastKeys = keys.join();
+                this.dispatchEvent(new CustomEvent('inputs-changed', { detail: { keys }, bubbles: true, composed: true }));
+            }
         }
     }
 

@@ -581,3 +581,12 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   constructed that is a planner (pattern planner by name or subclass, or a `Planner` implementation in the index) gives
   `PlannerInfo.plannerClass` and `patternType`; factories hide it (CUSTOM, no class). The details panel shows the class
   and the pattern. Samples: TripGoalPlanner GOAP, ResearchTeam P2P, IncidentResponder BLACKBOARD, DraftReviewer CUSTOM.
+
+### T4.3 GOAP adapter — done (Oct 16, 2026)
+
+- Static: a GOAP planner node is drawn as its key dependency graph (inputs on top, goal key highlighted).
+- `previewGoalPath(systemId, inputKeys)` and the live path both run the module's `GoalOrientedSearchGraph` (stand-ins
+  from the topology for the preview, the real sub-agents and scope keys at the first decision for the run). The run
+  form shows "Planned path" as inputs are filled; a run marks the path "planned", then walks it.
+- TripGoalPlanner: preview = computed path = walked path (HotelFinder, WeatherForecaster, ActivityPlanner,
+  ItineraryBuilder).

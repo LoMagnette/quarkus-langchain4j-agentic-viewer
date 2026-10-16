@@ -105,7 +105,10 @@ Patterns module: there is no Quarkus extension for `langchain4j-agentic-patterns
 depends on it as optional; `runtime-dev/.../patterns/*Adapter` classes refer to it and are registered as beans only when
 their planner class is present (`AgenticViewerProcessor.patternAdapters`, names only, never loaded otherwise);
 `PatternAdapters` (always registered) hands them to the Dev UI listener, and pattern planners' decisions carry
-`extras.pattern`. Never reference an adapter class from code that runs without the module.
+`extras.pattern`. Never reference an adapter class from code that runs without the module. Adapters give an
+`Insight` per decision (extras, planned path) and may preview paths (`GoapAdapter` runs the module's own
+`GoalOrientedSearchGraph`: `previewGoalPath`, `extras.path` on the first decision). A GOAP planner node is drawn as its
+key dependency graph (`goalGraph` in `toGraph`).
 
 ### Dev UI Integration
 
