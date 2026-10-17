@@ -91,7 +91,10 @@ application configures for each agent.
 4. Dev mode only: the systems are recorded into runtime-dev (`AgenticViewerRecorder`), where the `AgenticSystemRegistry`
    bean holds them by id; the application's topology contributors are recorded by class name too.
 
-Builder (`AgenticServices.*Builder()`) systems are not discovered yet (Phase 5, deferred).
+Builder (`AgenticServices.*Builder()`) systems are not discovered yet (Phase 5). Their topology comes from the live
+agent tree: `runtime-dev/.../builder/BuilderTopology` builds the same model from the public `AgentInstance` API (loops
+and conditions through `as()`, AI details from the annotations of `type()`), with the node id rule of the run events
+(simple name of each agent's type); findings in Backlog doc-5 (tree) and doc-6 (discovery).
 
 ### Configuration
 

@@ -675,3 +675,14 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
 - Finding in Backlog doc-6, prototype `it/spike/BuilderDiscoverySpikeTest`. Recommended default: `cdi`, with a
   build-time scan of producer bodies for agentic `build()` calls (typed interface beans tell nothing by type) and lazy
   creation; `transform` opt-in for non-bean and per-request systems until U2.
+
+### TASK-53 T5.2 runtime topology of builder systems — done (Oct 17, 2026)
+
+- `runtime-dev/.../builder/BuilderTopology.system(id, name, sourceRef, root)`: AgenticSystem from a live
+  AgentInstance tree. Kind from the planner class first (supervisors and planners report SEQUENCE), human steps from
+  the topology or the @HumanInTheLoop annotation, A2A/MCP from annotations; workflow input keys computed from their
+  agents when the builder declares none; lambda guards labelled "lambda"; origin BUILDER, MIXED when a sub-workflow is
+  declarative. The builder twin of StoryCreator gives the declarative build-time graph (guard labels aside), and so
+  does the declarative StoryCreator read at runtime. Planner class names added to LangChain4jInternals.
+- Limits: a builder mapper's items key is private (its inputs are its agent's), A2A builder agents not covered (module
+  and server needed).

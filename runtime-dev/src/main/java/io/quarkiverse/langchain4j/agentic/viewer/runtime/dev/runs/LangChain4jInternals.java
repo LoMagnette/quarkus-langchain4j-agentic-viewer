@@ -51,6 +51,12 @@ public final class LangChain4jInternals {
     public static final String SCOPE_ERROR_HANDLER = "errorHandler";
     /** Package of the built-in workflow planners (sequence, loop, parallel, parallel mapper, conditional). */
     public static final String BUILT_IN_PLANNERS_PACKAGE = "dev.langchain4j.agentic.workflow.impl.";
+    public static final String SEQUENTIAL_PLANNER = BUILT_IN_PLANNERS_PACKAGE + "SequentialPlanner";
+    public static final String PARALLEL_PLANNER = BUILT_IN_PLANNERS_PACKAGE + "ParallelPlanner";
+    public static final String PARALLEL_MAPPER_PLANNER = BUILT_IN_PLANNERS_PACKAGE + "ParallelMapperPlanner";
+    public static final String LOOP_PLANNER = BUILT_IN_PLANNERS_PACKAGE + "LoopPlanner";
+    public static final String CONDITIONAL_PLANNER = BUILT_IN_PLANNERS_PACKAGE + "ConditionalPlanner";
+    public static final String SUPERVISOR_PLANNER = "dev.langchain4j.agentic.supervisor.SupervisorPlanner";
     public static final String NO_OP_ACTION = "NoOpAction";
     public static final String DONE_WITH_RESULT_ACTION = "DoneWithResultAction";
     // quarkus-langchain4j-agentic
@@ -79,6 +85,7 @@ public final class LangChain4jInternals {
     private static final String HUMAN = "human-in-the-loop answers";
     private static final String DECISIONS = "planner decisions";
     private static final String ERRORS = "@ErrorHandler events";
+    private static final String BUILDER_KINDS = "kinds of builder system nodes";
 
     public static final List<Dependency> DEPENDENCIES = List.of(
             // the listener of every run, inherited by the sub-agents (RootListeners)
@@ -106,11 +113,18 @@ public final class LangChain4jInternals {
                     LISTENER, SCOPE_INTERFACE, AGENT_INSTANCE, "java.util.Map", "java.lang.Throwable"),
             // planner decisions (PlannerDecisions, DevUiAgentListener)
             field(Library.AGENTIC, PLANNER_HANDLER, PLANNER_HANDLER_PLANNER_SUPPLIER, DECISIONS),
-            cls(Library.AGENTIC, BUILT_IN_PLANNERS_PACKAGE + "SequentialPlanner", DECISIONS + " (built-in planners left alone)"),
+            cls(Library.AGENTIC, SEQUENTIAL_PLANNER, DECISIONS + " (built-in planners left alone)"),
             cls(Library.AGENTIC, ACTION + "$" + NO_OP_ACTION, DECISIONS),
             cls(Library.AGENTIC, ACTION + "$" + DONE_WITH_RESULT_ACTION, DECISIONS),
             // errors handled by an @ErrorHandler (ErrorHandlers)
             field(Library.AGENTIC, SCOPE, SCOPE_ERROR_HANDLER, ERRORS),
+            // builder systems read at runtime (BuilderTopology): the planner class tells a workflow's kind
+            cls(Library.AGENTIC, SEQUENTIAL_PLANNER, BUILDER_KINDS),
+            cls(Library.AGENTIC, PARALLEL_PLANNER, BUILDER_KINDS),
+            cls(Library.AGENTIC, PARALLEL_MAPPER_PLANNER, BUILDER_KINDS),
+            cls(Library.AGENTIC, LOOP_PLANNER, BUILDER_KINDS),
+            cls(Library.AGENTIC, CONDITIONAL_PLANNER, BUILDER_KINDS),
+            cls(Library.AGENTIC, SUPERVISOR_PLANNER, BUILDER_KINDS),
             // pattern adapters
             method(Library.PATTERNS, "dev.langchain4j.agentic.patterns.goap.GoalOrientedSearchGraph", "<init>",
                     "GOAP path preview and live path", "java.util.List"),
