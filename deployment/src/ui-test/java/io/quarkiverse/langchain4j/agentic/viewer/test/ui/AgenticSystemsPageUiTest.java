@@ -25,6 +25,7 @@ import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
+import com.microsoft.playwright.options.ReducedMotion;
 import com.microsoft.playwright.options.WaitForSelectorState;
 
 import io.quarkus.test.QuarkusDevModeTest;
@@ -197,6 +198,30 @@ public class AgenticSystemsPageUiTest {
         assertThat(panel().locator("[data-run-output]")).containsText("a lighthouse");
         assertTrue(page.locator("qwc-agentic-timeline .row").count() >= 3, "root and agents in the timeline");
         assertThat(page.locator("qwc-agentic-scope-state [data-key=\"facts\"]")).containsText("a lighthouse");
+    }
+
+    /** With reduced motion nothing moves, but the running and just-finished agents are still marked. */
+    @Test
+    void reducedMotionKeepsTheFeedback() {
+        context.close();
+        context = browser.newContext(new Browser.NewContextOptions().setViewportSize(1500, 1000)
+                .setReducedMotion(ReducedMotion.REDUCE));
+        context.setDefaultTimeout(60_000);
+        page = context.newPage();
+        page.onPageError(pageErrors::add);
+        openRunForm();
+        fill("a harbour");
+        clickRun();
+        confirmIfAsked();
+
+        waitFor(() -> "running".equals(stateOf(RESEARCHER)), "Researcher running");
+        double halo = halo(RESEARCHER);
+        page.waitForTimeout(300);
+        assertTrue(halo > 0, "a halo around the running agent");
+        assertEquals(halo, halo(RESEARCHER), "standing still");
+        waitFor(() -> "running".equals(stateOf(WRITER)), "Writer running");
+        assertTrue(halo(RESEARCHER) > 0, "afterglow of the agent that just finished, still");
+        assertThat(status()).hasAttribute("data-run-status", "succeeded");
     }
 
     @Test

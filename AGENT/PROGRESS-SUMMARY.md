@@ -773,3 +773,6 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
 - Follow-up (owner: no animation seen live): on the scripted model agents run for milliseconds, so the pulse never
   showed. An agent that just finished now keeps a fading halo for 1 s (its result color), and a running box pulses its
   border. Replays and redraws start no afterglow. UI test checks both.
+- With reduced motion (macOS "Reduce motion") the halos used to be skipped entirely, so fast runs showed nothing: now
+  they stand still (halo while active, afterglow for 1 s, applied at once). UI test with reduced motion.
+- integration-tests: `<extensions>true</extensions>` on the Quarkus Maven plugin (its build warning).

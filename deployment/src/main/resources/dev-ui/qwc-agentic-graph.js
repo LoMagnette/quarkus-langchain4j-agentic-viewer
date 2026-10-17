@@ -17,7 +17,8 @@ const STATES = ['planned', 'ready', 'running', 'waiting', 'done', 'failed', 'rec
 const ACTIVE_STATES = ['running', 'waiting'];
 /**
  * What the animation sets on a node: the halo of an active agent, the fading halo of an agent that just finished (fast
- * agents would show nothing otherwise), the border of a running box. Static when the system asks for reduced motion.
+ * agents would show nothing otherwise), the border of a running box. When the system asks for reduced motion nothing
+ * moves, but the feedback stays: a still halo while active, a still afterglow for the same time.
  */
 const PULSE_STYLES = 'underlay-color underlay-opacity underlay-padding underlay-shape border-width';
 const PULSE_PERIOD_MS = 1200;
@@ -617,22 +618,26 @@ export class QwcAgenticGraph extends observeState(LitElement) {
         if (ACTIVE_STATES.includes(state)) {
             this._pulse();
         } else if (previous === 'running' && state && node.isChildless()) {
-            // a run went through it (not a replay or a redraw): a fading halo marks where it just was
+            // a run went through it (not a replay or a redraw): a fading halo marks where it just was, at once (the timer
+            // fades it)
             node.scratch('afterglow', performance.now());
+            node.style({ 'underlay-color': node.style('border-color'), 'underlay-shape': 'round-rectangle',
+                'underlay-opacity': 0.4, 'underlay-padding': 6 });
             this._pulse();
         }
         return true;
     }
 
     /**
-     * Animates the halo of the active nodes: one timer for all of them, stopped when none is left (or never started
-     * when the system asks for reduced motion: the stylesheet's static halo then).
+     * Animates the halo of the active nodes and the afterglow of the finished ones: one timer for all of them, stopped
+     * when none is left. With reduced motion the halos stand still (the stylesheet's halo while active).
      */
     _pulse() {
-        if (this._pulseTimer || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+        if (this._pulseTimer) {
             return;
         }
         this._pulseTimer = setInterval(() => {
+            const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
             if (!this._cy) {
                 this._stopPulse();
                 return;
@@ -640,9 +645,11 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             const now = performance.now();
             const wave = (1 - Math.cos((now % PULSE_PERIOD_MS) / PULSE_PERIOD_MS * 2 * Math.PI)) / 2;
             const agents = this._cy.nodes(ACTIVE_STATES.map(state => '.' + state + ':childless').join(', '));
-            agents.style({ 'underlay-opacity': 0.12 + 0.3 * wave, 'underlay-padding': 4 + 10 * wave });
             const boxes = this._cy.nodes('.running:parent');
-            boxes.style({ 'border-width': 3 + 3 * wave });
+            if (!still) {
+                agents.style({ 'underlay-opacity': 0.12 + 0.3 * wave, 'underlay-padding': 4 + 10 * wave });
+                boxes.style({ 'border-width': 3 + 3 * wave });
+            }
             const glowing = this._cy.nodes(':childless').filter(node => node.scratch('afterglow') !== undefined);
             glowing.forEach(node => {
                 const age = (now - node.scratch('afterglow')) / AFTERGLOW_MS;
@@ -651,10 +658,10 @@ export class QwcAgenticGraph extends observeState(LitElement) {
                     node.removeStyle(PULSE_STYLES);
                 } else {
                     node.style({ 'underlay-color': node.style('border-color'), 'underlay-shape': 'round-rectangle',
-                        'underlay-opacity': 0.4 * (1 - age), 'underlay-padding': 6 + 8 * age });
+                        'underlay-opacity': still ? 0.35 : 0.4 * (1 - age), 'underlay-padding': still ? 8 : 6 + 8 * age });
                 }
             });
-            if (agents.empty() && boxes.empty() && glowing.empty()) {
+            if (glowing.empty() && (still || agents.empty() && boxes.empty())) {
                 this._stopPulse();
             }
         }, 50);
