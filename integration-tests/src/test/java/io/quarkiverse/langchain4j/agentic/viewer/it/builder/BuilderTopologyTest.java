@@ -229,6 +229,8 @@ class BuilderTopologyTest {
         assertEquals(List.of("topic"), child(node, 5).inputKeys());
         assertNull(child(node, 4).plannerInfo(), "a supervisor has no planner info, as at build time");
         assertEquals(List.of("draft"), child(node, 6).inputKeys());
+        // the scope an agentAction takes is no input (a form field "@AgenticScope" otherwise)
+        assertEquals(List.of(), child(node, 7).inputKeys());
         assertEquals("approval", child(node, 6).outputKey());
     }
 

@@ -41,4 +41,4 @@ jobs:
           -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install --with-deps chromium-headless-shell"
       - name: UI tests
         if: matrix.configuration == 'without-patterns'
-        run: mvn -B test -pl deployment -Pui-tests -Dtest=AgenticSystemsPageUiTest
+        run: mvn -B test -pl deployment -Pui-tests '-Dtest=AgenticSystemsPageUiTest,LargeSystemUiTest'

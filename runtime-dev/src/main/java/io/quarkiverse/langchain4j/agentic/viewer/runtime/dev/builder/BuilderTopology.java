@@ -230,14 +230,17 @@ public final class BuilderTopology {
      * declares none: the parameters of its one method then (what its callers provide, by {@code @V} name).
      */
     private static List<AgentArgument> declaredArguments(AgentInstance agent) {
+        // the scope given to an agent (e.g. an agentAction) is no input, as for the build-time scanner
+        List<AgentArgument> declared = agent.arguments().stream()
+                .filter(argument -> !AgenticScope.class.isAssignableFrom(argument.rawType())).toList();
         Class<?> type = agent.type();
         if (!agent.arguments().isEmpty() || type == null || !type.isInterface() || type.getName().startsWith(LIBRARY)) {
-            return agent.arguments();
+            return declared;
         }
         List<Method> methods = Arrays.stream(type.getMethods())
                 .filter(method -> Modifier.isAbstract(method.getModifiers()) && method.getDeclaringClass() == type).toList();
         if (methods.size() != 1) {
-            return agent.arguments();
+            return declared;
         }
         List<AgentArgument> arguments = new ArrayList<>();
         for (Parameter parameter : methods.get(0).getParameters()) {

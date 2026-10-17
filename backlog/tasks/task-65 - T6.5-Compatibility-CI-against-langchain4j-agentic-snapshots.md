@@ -1,9 +1,11 @@
 ---
 id: TASK-65
 title: 'T6.5: Compatibility CI against langchain4j-agentic snapshots'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-10-06 06:16'
+updated_date: '2026-10-17 14:05'
 labels:
   - ci
   - testing

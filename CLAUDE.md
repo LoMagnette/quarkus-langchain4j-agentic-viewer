@@ -23,8 +23,11 @@ mvn clean install
 # Everything with the patterns module (CI configuration 2, .github/workflows/build.yml); always clean when switching
 mvn clean install -Ppatterns
 
-# Browser tests of the Dev UI page (Playwright, downloads Chromium on first use)
-mvn test -pl deployment -Pui-tests -Dtest=AgenticSystemsPageUiTest
+# Browser tests of the Dev UI page (Playwright, downloads Chromium on first use); LargeSystemUiTest measures a 50-node system
+mvn test -pl deployment -Pui-tests '-Dtest=AgenticSystemsPageUiTest,LargeSystemUiTest'
+
+# Listener overhead per agent invocation (not part of the build)
+mvn test -pl integration-tests -Dtest=ListenerOverheadBenchmark
 
 # Integration tests only, or a single test
 mvn verify -pl integration-tests

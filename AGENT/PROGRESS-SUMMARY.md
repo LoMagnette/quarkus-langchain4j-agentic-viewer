@@ -746,3 +746,13 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   MIXED, the page shows "mixed system".
 - Fix of T5.4: `BuiltSystems` held instances weakly, so a system built per request vanished at the next GC; now held
   strongly (bounded by call sites and shapes), the transform test forces a GC.
+
+### TASK-61 T6.3 performance — done (Oct 17, 2026)
+
+- Listener overhead (`ListenerOverheadBenchmark`, 50 instant non-AI agents, best median of 5x1000 calls): no listener
+  0.46 us per invocation; listener attached, application's own call 0.48 us (+0.02); Dev UI run 3.37 us (+2.9, events and
+  run bookkeeping included). Negligible next to a model call.
+- 50-node generated builder system (`LargeSystemUiTest`, ui-tests, in CI): render ~0.5 s (longest main-thread task
+  ~60 ms), run of ~0.3 s of agent work ends in ~0.95 s from the Run click (confirmation included) with no long task,
+  all 50 nodes lit, 60 timeline rows. No performance regression found.
+- Found and fixed: builder systems with `agentAction` agents asked for an "@AgenticScope" form input.
