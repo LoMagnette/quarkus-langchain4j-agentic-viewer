@@ -48,6 +48,7 @@ class SampleDescriptorsTest {
                 "DraftReviewer", "PLANNER",
                 "ExpertRouter", "SEQUENCE",
                 "PhraseTranslator", "PARALLEL_MAPPER",
+                "ProductLaunch", "SEQUENCE",
                 "ResearchGatherer", "PARALLEL",
                 "ResilientStoryWriter", "SEQUENCE",
                 "StoryCreator", "SEQUENCE",
@@ -92,6 +93,12 @@ class SampleDescriptorsTest {
                 "ExpertRouter[ExpertRouter$CategoryRouter, ExpertRouter$Experts[ExpertRouter$MedicalExpert,"
                         + " ExpertRouter$TechnicalExpert, ExpertRouter$LegalExpert]]",
                 "PhraseTranslator[PhraseTranslator$Translator]",
+                "ProductLaunch[ProductLaunch$MarketResearch[ProductLaunch$CompetitorAnalyst, ProductLaunch$TrendAnalyst,"
+                        + " ProductLaunch$AudienceAnalyst], ProductLaunch$LocalizedPitches[ProductLaunch$PitchWriter],"
+                        + " ProductLaunch$CampaignDrafter, ProductLaunch$CampaignRefinement[ProductLaunch$CampaignCritic,"
+                        + " ProductLaunch$CampaignEditor], ProductLaunch$ChannelSelection[ProductLaunch$PremiumChannels"
+                        + "[ProductLaunch$MediaBuyer, ProductLaunch$EventPlanner], ProductLaunch$DigitalChannels],"
+                        + " ProductLaunch$LaunchSummarizer]",
                 "ResearchGatherer[ResearchGatherer$WebSearcher, ResearchGatherer$DatabaseSearcher,"
                         + " ResearchGatherer$ArchiveSearcher]",
                 "ResilientStoryWriter[ResilientStoryWriter$TopicWriter]",

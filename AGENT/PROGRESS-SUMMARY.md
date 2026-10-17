@@ -782,3 +782,11 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
 - BlurbedStory (declarative, MIXED) failed with "No agent for the builder system": the invoker chose the builder path
   by origin. It now takes it only when a builder root is known. The builder system a step calls is reported under that
   step (it showed as the run's root again). Dev-mode test runs a mixed declarative system and checks the event ids.
+
+### Sample: ProductLaunch, a larger multi-pattern system with several inputs (Oct 17, 2026, owner's request)
+
+- `integration-tests/.../samples/ProductLaunch`: 17 nodes, sequence > parallel research (3 analysts), parallel mapper
+  (one pitch per market), drafter, refinement loop (3 iterations), conditional on the budget (premium branch is a nested
+  sequence, digital a single agent), summarizer; inputs text, enum, integer, list, record. Scripted model answers.
+- `ProductLaunchTest`: both budget branches, 17-node graph, run form schema (5 typed fields), a run from form JSON values
+  (21 agent events, all on graph nodes). Checked in the browser: the form shows text, select, integer and JSON fields.

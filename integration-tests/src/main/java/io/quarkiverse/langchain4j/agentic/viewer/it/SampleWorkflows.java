@@ -8,6 +8,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.it.samples.BankSupervisor;
 import io.quarkiverse.langchain4j.agentic.viewer.it.samples.DraftReviewer;
 import io.quarkiverse.langchain4j.agentic.viewer.it.samples.ExpertRouter;
 import io.quarkiverse.langchain4j.agentic.viewer.it.samples.PhraseTranslator;
+import io.quarkiverse.langchain4j.agentic.viewer.it.samples.ProductLaunch;
 import io.quarkiverse.langchain4j.agentic.viewer.it.samples.ResearchGatherer;
 import io.quarkiverse.langchain4j.agentic.viewer.it.samples.ResilientStoryWriter;
 import io.quarkiverse.langchain4j.agentic.viewer.it.samples.StoryCreator;
@@ -51,4 +52,7 @@ public class SampleWorkflows {
 
     @Inject
     BlurbedStory blurbedStory;
+
+    @Inject
+    ProductLaunch productLaunch;
 }
