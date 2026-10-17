@@ -669,3 +669,9 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   loops and conditions, and the annotations of `type()` for AI details) gives the whole topology of builder systems,
   except lambda guard texts ("<unknown>"), builder-given tools, supervisor settings and the system's origin. Builder
   roots declare no inputs. Supervisors and planners report SEQUENCE: the planner type decides the kind.
+
+### TASK-11 spike T0.6 (builder discovery) — done (Oct 17, 2026)
+
+- Finding in Backlog doc-6, prototype `it/spike/BuilderDiscoverySpikeTest`. Recommended default: `cdi`, with a
+  build-time scan of producer bodies for agentic `build()` calls (typed interface beans tell nothing by type) and lazy
+  creation; `transform` opt-in for non-bean and per-request systems until U2.
