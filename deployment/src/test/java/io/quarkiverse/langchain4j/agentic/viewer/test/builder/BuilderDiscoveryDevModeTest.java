@@ -85,9 +85,10 @@ public class BuilderDiscoveryDevModeTest extends DevUIJsonRPCTest {
         assertEquals("{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"required\":[\"name\"]}",
                 executeJsonRPCMethod("getInputSchema", Map.of("systemId", GREETER)).toString());
 
-        for (String system : List.of(PIPELINE, GREETER)) {
-            String runId = executeJsonRPCMethod("startRun", Map.of("systemId", system, "inputs", Map.of("name", "Ada")))
-                    .asText();
+        // the declarative DelegatingWorkflow is MIXED (its step injects pipeline): it runs as a declarative system
+        for (String system : List.of(PIPELINE, GREETER, DELEGATING)) {
+            String runId = executeJsonRPCMethod("startRun", Map.of("systemId", system, "inputs",
+                    Map.of("name", "Ada", "topic", "dragons"))).asText();
             JsonNode summary = null;
             for (int i = 0; i < 100 && (summary == null || "RUNNING".equals(summary.path("status").asText())); i++) {
                 Thread.sleep(100);
@@ -99,6 +100,18 @@ public class BuilderDiscoveryDevModeTest extends DevUIJsonRPCTest {
             }
             JsonNode trace = executeJsonRPCMethod("getRun", Map.of("runId", runId));
             assertEquals("SUCCEEDED", summary.path("status").asText(), () -> system + ": " + trace);
+            if (system.equals(DELEGATING)) {
+                // the pipeline its step runs is reported under the step, not as the run's root again
+                List<String> started = new ArrayList<>();
+                trace.path("events").forEach(event -> {
+                    if ("AgentStarted".equals(event.path("type").asText())) {
+                        started.add(event.path("nodeId").asText().substring(DELEGATING.length()));
+                    }
+                });
+                assertEquals(List.of("", "/Step", "/Step/UntypedAgent", "/Step/UntypedAgent/AgenticScopeAction",
+                        "/Step/UntypedAgent/UntypedAgent", "/Step/UntypedAgent/UntypedAgent/AgenticScopeAction",
+                        "/Step/UntypedAgent/UntypedAgent/AgenticScopeAction"), started, trace::toString);
+            }
         }
     }
 }

@@ -52,7 +52,13 @@ public class CdiRunInvoker implements RunInvoker {
 
     @Override
     public Object invoke(AgenticSystem system, Map<String, Object> inputs) throws Exception {
-        Call call = system.origin() == SystemOrigin.DECLARATIVE ? declarativeCall(system, inputs) : builderCall(system, inputs);
+        // a declarative system may be MIXED too (an agent of it injects a builder system): the root tells
+        Optional<Object> builderRoot = system.origin() == SystemOrigin.DECLARATIVE ? Optional.empty()
+                : builderRoots.apply(system.id());
+        if (builderRoot.isEmpty() && system.origin() == SystemOrigin.BUILDER) {
+            throw new IllegalStateException("No agent for the builder system " + system.id());
+        }
+        Call call = builderRoot.isPresent() ? builderCall(system, builderRoot.get(), inputs) : declarativeCall(system, inputs);
         // a run is handled like a request: request-scoped state, such as the chat memory of the agents, starts empty and
         // is cleared when the run ends, instead of leaking from one run into the next on the reused run threads
         ManagedContext requestContext = Arc.container().requestContext();
@@ -94,9 +100,7 @@ public class CdiRunInvoker implements RunInvoker {
      * A builder system (T5.6): an UntypedAgent is invoked with the form values converted to the types of its inputs;
      * a typed agent interface through its method, as a declarative root.
      */
-    private Call builderCall(AgenticSystem system, Map<String, Object> inputs) {
-        Object root = builderRoots.apply(system.id())
-                .orElseThrow(() -> new IllegalStateException("No agent for the builder system " + system.id()));
+    private static Call builderCall(AgenticSystem system, Object root, Map<String, Object> inputs) {
         if (root instanceof UntypedAgent untyped) {
             Map<String, Object> values = values(system, inputs);
             return () -> untyped.invoke(values);

@@ -204,6 +204,11 @@ public class DevUiAgentListener implements AgentListener {
         ErrorHandlers.observe(request.agenticScope(), errorObservers.computeIfAbsent(run.id(), id -> errorObserver(run)));
         AgentInstance agent = request.agent();
         Invocation parent = openInvocation(agent.parent()).orElse(null);
+        if (parent == null && agent.parent() == null) {
+            // another system called from an agent of the run (e.g. a step delegating to a builder system): under that
+            // agent, not as the run's root (its nodes are not in the graph, the timeline nests them)
+            parent = threadInvocations.get().peekLast();
+        }
         String nodeId = parent == null ? nodeId(run, agent) : childNodeId(run, parent, agent);
         Map<String, Object> inputs = copy(request.inputs());
         Integer iteration = parent == null ? null : parent.iteration;
