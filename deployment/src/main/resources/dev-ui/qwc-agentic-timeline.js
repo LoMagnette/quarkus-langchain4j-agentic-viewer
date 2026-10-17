@@ -184,7 +184,7 @@ export class QwcAgenticTimeline extends LitElement {
         }
         .kind {
             display: inline-block;
-            margin-left: var(--lumo-space-xs);
+            margin-right: var(--lumo-space-xs);
             padding: 0 4px;
             border: 1px solid;
             border-radius: var(--lumo-border-radius-s);
@@ -309,7 +309,7 @@ export class QwcAgenticTimeline extends LitElement {
             <div class="row ${row.kind}" data-row=${row.id} data-depth=${row.depth}
                     @click=${['tool', 'agent', 'result'].includes(row.kind) ? () => this._toggle(row.id) : undefined}>
                 <span class="label" style="padding-left: ${row.depth * 14}px" title=${row.kind === 'decision' ? `${row.name} ${row.decision ?? ''}` : row.nodeId ?? row.name}>
-                    ${row.kind === 'tool' ? '🔧 ' : row.kind === 'error' ? '⚠ ' : row.kind === 'decision' ? '◆ ' : ''}${row.name}${this._kind(kinds.get(row.nodeId))}${this._detail(row)}
+                    ${row.kind === 'tool' ? '🔧 ' : row.kind === 'error' ? '⚠ ' : row.kind === 'decision' ? '◆ ' : ''}${this._kind(kinds.get(row.nodeId))}${row.name}${this._detail(row)}
                 </span>
                 <span class="track">
                     <span class="bar ${row.kind === 'tool' || row.kind === 'decision' ? row.kind : row.status}"
