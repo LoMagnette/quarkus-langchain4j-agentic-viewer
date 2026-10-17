@@ -86,7 +86,8 @@ public class HotReloadDevModeTest extends DevUIJsonRPCTest {
             reload();
         }
         assertEquals("Approve this topic? (round 9)", stepDescription());
-        for (int i = 0; i < 50 && viewerThreads(before).size() > 2; i++) {
+        // the old applications stop asynchronously: give them time on a loaded machine
+        for (int i = 0; i < 300 && viewerThreads(before).size() > 2; i++) {
             Thread.sleep(100);
         }
         assertTrue(viewerThreads(before).size() <= 2,

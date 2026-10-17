@@ -722,3 +722,18 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   AgentListener (external completion already exists upstream: `AgenticScope.completePendingResponse`), U5 public
   inherited listener registration + CDI listeners at the roots, U6 bug: an agent shared by two systems is re-parented.
   TASK-2/3/4/16 In Progress, waiting for the owner's go to post.
+
+### TASK-56 T5.4 transform discovery — done (Oct 17, 2026), U2 parked
+
+- `builder-discovery=transform` (adds to cdi): dev-mode bytecode transform of the application classes calling an
+  agentic `build()`; `BuiltSystems` keeps the latest instance per call site (a per-request system is listed once),
+  registered and observed on the next listing. Tests: transform dev-mode test (field and per-call systems, nested and
+  CDI builds not duplicated, run), cdi test (not listed), outside-dev-mode test (no transformer, mutation-checked).
+  Samples in dev mode: ExpertResource#ask listed once after 3 requests, ResearchService once used (new
+  `/builder/research` endpoint), runs with live events.
+
+### TASK-57.1 T5.5a deduplication — done (Oct 17, 2026)
+
+- `BuiltSystems` keys entries by call site and shape (fingerprint of kinds, names, types; at most 10 shapes per call
+  site): a system rebuilt per request is one entry, a call site building different shapes gets `~2`, `~3`.
+- HotReloadDevModeTest: the old applications get 30 s (was 5 s) to stop their threads; it failed once on a loaded run.

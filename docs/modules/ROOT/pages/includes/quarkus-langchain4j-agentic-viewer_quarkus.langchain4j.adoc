@@ -36,7 +36,7 @@ endif::add-copy-button-to-config-props[]
 
 [.description]
 --
-How the systems built with the `AgenticServices` builders are found, in dev mode. `cdi`: the beans the application produces whose type is an agent (`UntypedAgent`, `SupervisorAgent`) or whose producer calls a builder's `build()`; they are created when the Dev UI first lists the systems, not at startup. Systems kept in a field or built per call are not found. `none`: declarative systems only.
+How the systems built with the `AgenticServices` builders are found, in dev mode. `cdi`: the beans the application produces whose type is an agent (`UntypedAgent`, `SupervisorAgent`) or whose producer calls a builder's `build()`; they are created when the Dev UI first lists the systems, not at startup. Systems kept in a field or built per call are not found. `transform`: also every system the application builds, beans or not, once built: in dev mode only, the application classes calling a builder's `build()` are rewritten to report its result (one entry per call site, its latest instance). `none`: declarative systems only.
 
 
 ifdef::add-copy-button-to-env-var[]
@@ -46,7 +46,7 @@ ifndef::add-copy-button-to-env-var[]
 Environment variable: `+++QUARKUS_LANGCHAIN4J_AGENTIC_DEV_UI_BUILDER_DISCOVERY+++`
 endif::add-copy-button-to-env-var[]
 --
-a|`cdi`, `none`
+a|`cdi`, `transform`, `none`
 |`+++cdi+++`
 
 a| [[quarkus-langchain4j-agentic-viewer_quarkus-langchain4j-agentic-dev-ui-history-size]] [.property-path]##link:#quarkus-langchain4j-agentic-viewer_quarkus-langchain4j-agentic-dev-ui-history-size[`+++quarkus.langchain4j.agentic.dev-ui.history-size+++`]##

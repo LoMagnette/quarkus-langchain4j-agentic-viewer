@@ -8,6 +8,7 @@ import java.util.function.Predicate;
 
 import org.jboss.jandex.DotName;
 
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.builder.BuildCallTransformer;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.builder.BuilderSystemBeans;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotationScanner;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticDescriptorsBuildItem;
@@ -30,9 +31,12 @@ import io.quarkus.arc.deployment.SynthesisFinishedBuildItem;
 import io.quarkus.arc.deployment.UnremovableBeanBuildItem;
 import io.quarkus.bootstrap.classloading.QuarkusClassLoader;
 import io.quarkus.deployment.IsDevelopment;
+import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.annotations.ExecutionTime;
 import io.quarkus.deployment.annotations.Record;
+import io.quarkus.deployment.builditem.ApplicationIndexBuildItem;
+import io.quarkus.deployment.builditem.BytecodeTransformerBuildItem;
 import io.quarkus.deployment.builditem.CombinedIndexBuildItem;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.devui.spi.JsonRPCProvidersBuildItem;
@@ -125,6 +129,21 @@ public class AgenticViewerProcessor {
                 .map(beans::candidate).sorted(Comparator.comparing(BuilderCandidate::declaringClass)
                         .thenComparing(BuilderCandidate::member))
                 .toList());
+    }
+
+    /**
+     * builder-discovery=transform (T5.4): rewrites the application classes calling a builder's build(), so every system
+     * the application builds is reported with its call site. Dev mode only: the registry lives in runtime-dev.
+     */
+    @BuildStep(onlyIf = { IsDevelopment.class, AgenticViewerEnabled.class, BuilderDiscoveryTransform.class })
+    void transformBuildCalls(ApplicationIndexBuildItem applicationIndex,
+            BuildProducer<BytecodeTransformerBuildItem> transformers) {
+        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+        for (String className : BuildCallTransformer.classesToTransform(applicationIndex.getIndex(),
+                name -> classLoader.getResourceAsStream(name.replace('.', '/') + ".class"))) {
+            transformers.produce(new BytecodeTransformerBuildItem.Builder().setClassToTransform(className)
+                    .setVisitorFunction(BuildCallTransformer::visitor).build());
+        }
     }
 
     /**

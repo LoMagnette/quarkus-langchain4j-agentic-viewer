@@ -90,14 +90,18 @@ public class AgenticSystemRegistry {
     }
 
     private void loadBuilderSystems() {
-        if (builderSystemsLoaded || builderSystems == null) {
+        if (builderSystems == null) {
             return;
         }
-        synchronized (this) {
-            if (!builderSystemsLoaded) {
-                builderSystemsLoaded = true;
-                builderSystems.discover().forEach(this::register);
+        if (!builderSystemsLoaded) {
+            synchronized (this) {
+                if (!builderSystemsLoaded) {
+                    builderSystemsLoaded = true;
+                    builderSystems.discover().forEach(this::register);
+                }
             }
         }
+        // systems built since (builder-discovery=transform): new call sites, or newer instances at known ones
+        builderSystems.built().forEach(this::register);
     }
 }

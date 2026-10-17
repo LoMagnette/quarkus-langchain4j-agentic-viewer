@@ -28,7 +28,7 @@ public class BuilderSystemBeans {
             "dev.langchain4j.agentic.UntypedAgent",
             "dev.langchain4j.agentic.supervisor.SupervisorAgent",
             "dev.langchain4j.agentic.planner.AgentInstance");
-    private static final String AGENTIC_PACKAGE = "dev/langchain4j/agentic/";
+    static final String AGENTIC_PACKAGE = "dev/langchain4j/agentic/";
     /** langchain4j, quarkus-langchain4j-agentic and this extension: their beans are no application systems. */
     private static final Set<String> LIBRARY_PACKAGES = Set.of("dev.langchain4j.", "io.quarkiverse.langchain4j.agentic.runtime.",
             "io.quarkiverse.langchain4j.agentic.viewer.runtime.");
@@ -71,7 +71,7 @@ public class BuilderSystemBeans {
                 : target.asField().declaringClass()).name().toString();
     }
 
-    private static boolean library(String className) {
+    static boolean library(String className) {
         return LIBRARY_PACKAGES.stream().anyMatch(className::startsWith);
     }
 

@@ -102,7 +102,11 @@ creates them when the Dev UI first lists the systems (`AgenticSystemRegistry` lo
 Live view (T5.3): `BuilderSystems` hands each root found to `RunObservation.observe`, which attaches the same Dev UI
 listener as for the declarative roots (`RootListeners.attach(systemId, root, listener)`: listener, human steps,
 planner decorator); the builder node ids follow the listener's id rule.
-Their topology comes from the live agent tree: `runtime-dev/.../builder/BuilderTopology` builds the same model from the public `AgentInstance` API (loops
+`builder-discovery=transform` (T5.4) adds the systems that are no beans: `deployment/.../builder/BuildCallTransformer`
+rewrites the application classes calling an agentic `build()` (dev mode only, `BytecodeTransformerBuildItem`) to hand
+each result to `runtime-dev/.../builder/BuiltSystems.register(result, "Class#method:line")`, which keeps the latest
+instance per call site; the registry picks new or rebuilt ones up on each listing (`BuilderSystems.built()`: roots
+only, not the CDI producers' own builds). Their topology comes from the live agent tree: `runtime-dev/.../builder/BuilderTopology` builds the same model from the public `AgentInstance` API (loops
 and conditions through `as()`, AI details from the annotations of `type()`), with the node id rule of the run events
 (simple name of each agent's type); findings in Backlog doc-5 (tree) and doc-6 (discovery).
 

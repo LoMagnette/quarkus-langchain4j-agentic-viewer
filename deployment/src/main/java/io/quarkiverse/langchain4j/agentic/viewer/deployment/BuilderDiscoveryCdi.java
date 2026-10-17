@@ -3,7 +3,8 @@ package io.quarkiverse.langchain4j.agentic.viewer.deployment;
 import java.util.function.BooleanSupplier;
 
 /**
- * Whether builder systems are discovered among the CDI beans ({@code builder-discovery=cdi}, the default).
+ * Whether builder systems are discovered among the CDI beans ({@code builder-discovery=cdi}, the default, or
+ * {@code transform}, which adds to it).
  */
 public class BuilderDiscoveryCdi implements BooleanSupplier {
 
@@ -15,6 +16,6 @@ public class BuilderDiscoveryCdi implements BooleanSupplier {
 
     @Override
     public boolean getAsBoolean() {
-        return config.builderDiscovery() == AgenticViewerBuildConfig.BuilderDiscovery.CDI;
+        return config.builderDiscovery() != AgenticViewerBuildConfig.BuilderDiscovery.NONE;
     }
 }

@@ -1,13 +1,15 @@
 package io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.builder;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
+import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -71,7 +73,41 @@ public class BuilderSystems {
     }
 
     /**
-     * @return the root agent of a builder system found by {@link #discover()}
+     * The systems the transform reported (builder-discovery=transform, T5.4) that are new since the last call, or
+     * rebuilt (a newer instance of a known entry): roots only, not those a CDI producer already shows. One entry per
+     * call site and shape (T5.5a): a system built per request is one entry, its latest instance is what a run invokes.
+     *
+     * @return the systems to register or replace, by id {@code Class#method:line}, {@code ~n} for the n-th shape
+     */
+    public synchronized List<AgenticSystem> built() {
+        Set<String> producers = new HashSet<>();
+        AgenticViewerRecorder.getBuilderCandidates().forEach(c -> producers.add(c.declaringClass() + "#" + c.member()));
+        List<AgenticSystem> systems = new ArrayList<>();
+        BuiltSystems.latest().forEach((id, built) -> {
+            AgentInstance agent = (AgentInstance) built;
+            String callSite = id.contains("~") ? id.substring(0, id.indexOf('~')) : id;
+            String producer = callSite.substring(0, callSite.lastIndexOf(':'));
+            if (agent.parent() != null || producers.contains(producer) || roots.get(id) == built) {
+                return;
+            }
+            String className = producer.substring(0, producer.indexOf('#'));
+            String method = producer.substring(producer.indexOf('#') + 1);
+            String name = agent.name() != null && !agent.name().isBlank() ? agent.name()
+                    : BuilderTopology.simpleName(className) + "." + method;
+            systems.add(BuilderTopology.system(id, name, new SourceRef(className, method, callSite), agent));
+            roots.put(id, built);
+            observation.observe(id, built);
+        });
+        return systems;
+    }
+
+    @PreDestroy
+    void forgetBuiltSystems() {
+        BuiltSystems.clear();
+    }
+
+    /**
+     * @return the root agent of a builder system found by {@link #discover()} or {@link #built()}
      */
     public Optional<Object> root(String systemId) {
         return Optional.ofNullable(roots.get(systemId));

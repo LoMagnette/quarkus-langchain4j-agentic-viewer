@@ -1,11 +1,11 @@
 ---
 id: TASK-3
 title: 'U3: Planner decision callbacks on AgentListener (langchain4j-agentic)'
-status: In Progress
+status: To Do
 assignee:
   - '@claude'
 created_date: '2026-10-06 06:12'
-updated_date: '2026-10-17 10:48'
+updated_date: '2026-10-17 11:55'
 labels:
   - upstream
   - langchain4j-agentic
@@ -38,4 +38,6 @@ Today the only way to observe planner decisions is to decorate the `Supplier<Pla
 
 <!-- SECTION:NOTES:BEGIN -->
 Oct 17, 2026: proposal drafted in Backlog doc-7 (motivation, current viewer workaround, API sketch, test), grounded in langchain4j-agentic 1.20.2-beta30 / quarkus-langchain4j 1.14.1 sources. Nothing posted: opening the issue/PR upstream waits for the project owner's go.
+
+Oct 17, 2026: parked by the project owner (drafts stay in doc-7).
 <!-- SECTION:NOTES:END -->

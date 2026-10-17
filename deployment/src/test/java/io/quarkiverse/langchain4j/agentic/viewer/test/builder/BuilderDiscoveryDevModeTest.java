@@ -24,7 +24,7 @@ public class BuilderDiscoveryDevModeTest extends DevUIJsonRPCTest {
     @RegisterExtension
     static final QuarkusDevModeTest config = new QuarkusDevModeTest()
             .withApplicationRoot(jar -> jar.addClasses(PipelineSystems.class, PipelineSystems.Greeter.class,
-                    PipelineSystems.FixtureChatModel.class))
+                    PipelineSystems.FixtureChatModel.class, FieldSystems.class))
             .setLogRecordPredicate(record -> true);
 
     private static final String PIPELINE = PipelineSystems.class.getName() + "#pipeline";
@@ -46,7 +46,8 @@ public class BuilderDiscoveryDevModeTest extends DevUIJsonRPCTest {
         JsonNode systems = executeJsonRPCMethod("listSystems");
         List<String> ids = new ArrayList<>();
         systems.forEach(system -> ids.add(system.get("id").asText()));
-        assertEquals(List.of(GREETER, PIPELINE), ids.stream().sorted().toList(), "cleanup is a sub-agent of pipeline");
+        // cleanup is a sub-agent of pipeline; the systems of FieldSystems are no beans (builder-discovery=transform only)
+        assertEquals(List.of(GREETER, PIPELINE), ids.stream().sorted().toList());
         assertTrue(produced("pipeline") && produced("greeter"));
 
         JsonNode pipeline = null;

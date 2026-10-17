@@ -60,6 +60,12 @@ condition or an activation condition given as a lambda without description is sh
 given to a builder directly are not shown. `quarkus.langchain4j.agentic.dev-ui.builder-discovery=none` lists the
 declarative systems only.
 
+Systems that are not beans (kept in a field, built per request) are found with
+`quarkus.langchain4j.agentic.dev-ui.builder-discovery=transform`: in dev mode only, the application classes calling a
+builder's `build()` are rewritten to report what they build. Such a system appears once it has been built (after the
+first request, for one built per request), once per place in the code (its latest instance), named after the
+`name(...)` given to the builder.
+
 They run from the page like the others, with the same live view (agents, timeline, human steps, planner decisions).
 The form asks for the inputs their agents need from the caller (the parameters of the method, for a typed agent
 interface): an `UntypedAgent` is invoked with a map of these values.
@@ -196,7 +202,8 @@ image::contributor.png[A custom planner drawn by its topology contributor]
 
 == Limitations
 
-* Builder systems are listed when they are CDI beans; systems kept in a field or built per call are not.
+* Builder systems are listed when they are CDI beans; systems kept in a field or built per call only with
+  `builder-discovery=transform`, once built.
 * Runs, human-in-the-loop answers, planner decisions and the pattern views rely on internal parts of
   `langchain4j-agentic` and `langchain4j-agentic-patterns` (there is no public API for them yet). A version of these
   libraries that changes them may disable some of the live information; the structure views do not depend on them.
