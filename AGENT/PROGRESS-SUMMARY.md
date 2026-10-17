@@ -651,3 +651,14 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
 - Found and fixed a run form bug: after an error, a click on Run could be lost (the field validated itself on blur,
   hid its error and moved the button under the pointer) and a second error on the same field was not flagged. Fields
   now use manual validation and an edit clears the field's error.
+
+### TASK-66 builder and mixed-style samples — done (Oct 17, 2026), Phase 5 started
+
+- `integration-tests/.../it/builder`: `BuilderStoryCreator` (UntypedAgent bean, builder twin of StoryCreator, lambda
+  exit condition), `BuilderStoryWriter` (typed interface bean without agentic annotation, declarative sub-agents),
+  `ResearchService` (system in a private field, not a bean), `ExpertResource` (rebuilt per REST request, lambda
+  conditions with and without description), `BlurbedStory` (declarative workflow whose non-AI step delegates to the
+  builder StoryCreator). `BuilderSamplesTest` runs each on the fake model; `MixedPatternExample` removed.
+- Quarkus findings: builder sub-agents given as interfaces are built anew without the app's chat model (fails): pass
+  the agent beans, unwrapped from their client proxies; a non-AI agent class is resolved from CDI and must be
+  `@Unremovable`; untyped `agentBuilder()` agents ignore their prompt under Quarkus (TASK-8.1).

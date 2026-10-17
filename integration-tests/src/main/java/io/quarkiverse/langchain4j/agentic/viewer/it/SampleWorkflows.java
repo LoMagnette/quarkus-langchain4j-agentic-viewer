@@ -3,6 +3,7 @@ package io.quarkiverse.langchain4j.agentic.viewer.it;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import io.quarkiverse.langchain4j.agentic.viewer.it.builder.BlurbedStory;
 import io.quarkiverse.langchain4j.agentic.viewer.it.samples.BankSupervisor;
 import io.quarkiverse.langchain4j.agentic.viewer.it.samples.DraftReviewer;
 import io.quarkiverse.langchain4j.agentic.viewer.it.samples.ExpertRouter;
@@ -47,4 +48,7 @@ public class SampleWorkflows {
 
     @Inject
     ResilientStoryWriter resilientStoryWriter;
+
+    @Inject
+    BlurbedStory blurbedStory;
 }

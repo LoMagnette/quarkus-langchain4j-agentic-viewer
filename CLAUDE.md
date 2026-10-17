@@ -44,7 +44,10 @@ mvn install -pl docs
 ```
 
 Samples run on a scripted fake chat model (`integration-tests/.../it/fake/ScriptedChatModel`): declarative samples in
-`src/main/java/.../it/samples`, patterns samples in `src/patterns/java` (profile `patterns`). To try a real model, use
+`src/main/java/.../it/samples`, builder (`AgenticServices.*Builder()`) and mixed samples in `src/main/java/.../it/builder`
+(not discovered by the viewer yet, Phase 5), patterns samples in `src/patterns/java` (profile `patterns`). Under Quarkus,
+builder sub-agents are the agent beans of annotated interfaces, unwrapped from their client proxies (`AgentBeans`); a
+non-AI agent class (`@Agent` method on a class) must be an unremovable bean. To try a real model, use
 the `ollama` profile: the fake is not produced and the OpenAI extension calls any OpenAI-compatible endpoint:
 
 ```bash
