@@ -13,11 +13,15 @@ const TITLE_CHAR_WIDTH = 7;
 const COMPOUND_PADDING = 20;
 const TITLE_SPACE = 24;
 const STATES = ['planned', 'ready', 'running', 'waiting', 'done', 'failed', 'recovered'];
-/** States that pulse: an agent running, a human step waiting for its answer (agents only: a box keeps its border). */
+/** States that pulse: an agent running, a human step waiting for its answer (a running box pulses its border). */
 const ACTIVE_STATES = ['running', 'waiting'];
-/** The halo animated around active nodes (a static halo when the system asks for reduced motion). */
-const PULSE_STYLES = 'underlay-opacity underlay-padding';
+/**
+ * What the animation sets on a node: the halo of an active agent, the fading halo of an agent that just finished (fast
+ * agents would show nothing otherwise), the border of a running box. Static when the system asks for reduced motion.
+ */
+const PULSE_STYLES = 'underlay-color underlay-opacity underlay-padding underlay-shape border-width';
 const PULSE_PERIOD_MS = 1200;
+const AFTERGLOW_MS = 1000;
 
 /** Display labels of the node kinds. */
 export const KIND_LABELS = {
@@ -603,14 +607,19 @@ export class QwcAgenticGraph extends observeState(LitElement) {
         if (!node || node.empty()) {
             return false;
         }
+        const previous = STATES.find(s => node.hasClass(s));
         node.removeClass(STATES.join(' '));
         if (state) {
             node.addClass(state);
         }
+        node.removeStyle(PULSE_STYLES);
+        node.removeScratch('afterglow');
         if (ACTIVE_STATES.includes(state)) {
             this._pulse();
-        } else {
-            node.removeStyle(PULSE_STYLES);
+        } else if (previous === 'running' && state && node.isChildless()) {
+            // a run went through it (not a replay or a redraw): a fading halo marks where it just was
+            node.scratch('afterglow', performance.now());
+            this._pulse();
         }
         return true;
     }
@@ -624,13 +633,30 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             return;
         }
         this._pulseTimer = setInterval(() => {
-            const active = this._cy?.nodes(ACTIVE_STATES.map(state => '.' + state + ':childless').join(', '));
-            if (!active || active.empty()) {
+            if (!this._cy) {
                 this._stopPulse();
                 return;
             }
-            const wave = (1 - Math.cos((performance.now() % PULSE_PERIOD_MS) / PULSE_PERIOD_MS * 2 * Math.PI)) / 2;
-            active.style({ 'underlay-opacity': 0.12 + 0.3 * wave, 'underlay-padding': 4 + 10 * wave });
+            const now = performance.now();
+            const wave = (1 - Math.cos((now % PULSE_PERIOD_MS) / PULSE_PERIOD_MS * 2 * Math.PI)) / 2;
+            const agents = this._cy.nodes(ACTIVE_STATES.map(state => '.' + state + ':childless').join(', '));
+            agents.style({ 'underlay-opacity': 0.12 + 0.3 * wave, 'underlay-padding': 4 + 10 * wave });
+            const boxes = this._cy.nodes('.running:parent');
+            boxes.style({ 'border-width': 3 + 3 * wave });
+            const glowing = this._cy.nodes(':childless').filter(node => node.scratch('afterglow') !== undefined);
+            glowing.forEach(node => {
+                const age = (now - node.scratch('afterglow')) / AFTERGLOW_MS;
+                if (age >= 1) {
+                    node.removeScratch('afterglow');
+                    node.removeStyle(PULSE_STYLES);
+                } else {
+                    node.style({ 'underlay-color': node.style('border-color'), 'underlay-shape': 'round-rectangle',
+                        'underlay-opacity': 0.4 * (1 - age), 'underlay-padding': 6 + 8 * age });
+                }
+            });
+            if (agents.empty() && boxes.empty() && glowing.empty()) {
+                this._stopPulse();
+            }
         }, 50);
     }
 
@@ -749,7 +775,7 @@ export class QwcAgenticGraph extends observeState(LitElement) {
 
     clearHighlights() {
         this._overlay.states.clear();
-        this._cy?.nodes().removeClass(STATES.join(' ')).removeStyle(PULSE_STYLES);
+        this._cy?.nodes().removeClass(STATES.join(' ')).removeStyle(PULSE_STYLES).removeScratch('afterglow');
     }
 
     /**

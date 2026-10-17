@@ -770,3 +770,6 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
 - Running agents and human steps waiting for an answer get a pulsing halo (Cytoscape underlay, one shared timer that
   stops when nothing is active, static halo with prefers-reduced-motion); boxes keep their border only (a halo would
   tint the whole box). UI test checks the halo changes while running and is gone once done.
+- Follow-up (owner: no animation seen live): on the scripted model agents run for milliseconds, so the pulse never
+  showed. An agent that just finished now keeps a fading halo for 1 s (its result color), and a running box pulses its
+  border. Replays and redraws start no afterglow. UI test checks both.

@@ -179,13 +179,21 @@ public class AgenticSystemsPageUiTest {
         page.waitForTimeout(300);
         assertTrue(halo > 0 && halo != halo(RESEARCHER), "pulsing halo around the running agent");
         assertThat(status()).hasAttribute("data-run-status", "running");
+        // the running sequence box pulses its border
+        double border = number(ROOT, "border-width");
+        page.waitForTimeout(300);
+        assertNotEquals(border, number(ROOT, "border-width"), "pulsing border of the running box");
         waitFor(() -> "running".equals(stateOf(WRITER)), "Writer running");
         assertEquals("done", stateOf(RESEARCHER));
+        // the agent that just finished keeps a fading halo for a moment (fast agents would show nothing otherwise)
+        assertTrue(halo(RESEARCHER) > 0, "afterglow of the agent that just finished");
 
         assertThat(status()).hasAttribute("data-run-status", "succeeded");
         assertEquals("done", stateOf(RESEARCHER));
         assertEquals("done", stateOf(WRITER));
-        assertEquals(0.0, halo(RESEARCHER), "no halo once done");
+        page.waitForTimeout(1200);
+        assertEquals(0.0, halo(RESEARCHER), "no halo a moment after");
+        assertEquals(0.0, halo(WRITER), "no halo a moment after");
         assertThat(panel().locator("[data-run-output]")).containsText("a lighthouse");
         assertTrue(page.locator("qwc-agentic-timeline .row").count() >= 3, "root and agents in the timeline");
         assertThat(page.locator("qwc-agentic-scope-state [data-key=\"facts\"]")).containsText("a lighthouse");
@@ -254,8 +262,13 @@ public class AgenticSystemsPageUiTest {
 
     /** The opacity of a node's halo (0 without one). */
     private double halo(String nodeId) {
-        return Double.parseDouble(String.valueOf(graph().evaluate("(g, id) => g._cy.getElementById(id).style('underlay-opacity')",
-                nodeId)));
+        return number(nodeId, "underlay-opacity");
+    }
+
+    /** A numeric style of a graph node ("4px" -> 4). */
+    private double number(String nodeId, String style) {
+        return Double.parseDouble(String.valueOf(graph().evaluate("(g, [id, style]) => g._cy.getElementById(id).style(style)",
+                List.of(nodeId, style))).replace("px", ""));
     }
 
     private String stateOf(String nodeId) {
