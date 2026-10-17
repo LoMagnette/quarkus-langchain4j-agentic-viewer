@@ -3,10 +3,11 @@ id: TASK-2
 title: >-
   U2: ServiceLoader observer for built root agentic systems
   (langchain4j-agentic)
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-10-06 06:12'
-updated_date: '2026-10-06 06:26'
+updated_date: '2026-10-17 10:48'
 labels:
   - upstream
   - langchain4j-agentic
@@ -40,4 +41,6 @@ Builder-built systems (`AgenticServices.*Builder().build()`) are created in user
 
 <!-- SECTION:NOTES:BEGIN -->
 Deferred 2026-10-06 (decision-2): the project owner chose to support declarative agentic systems first; builder API support comes later, as it is more complex.
+
+Oct 17, 2026: proposal drafted in Backlog doc-7 (motivation, current viewer workaround, API sketch, test), grounded in langchain4j-agentic 1.20.2-beta30 / quarkus-langchain4j 1.14.1 sources. Nothing posted: opening the issue/PR upstream waits for the project owner's go.
 <!-- SECTION:NOTES:END -->

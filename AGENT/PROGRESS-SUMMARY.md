@@ -715,3 +715,10 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
 - Builder workflow inputs: in order for sequences and loops, "read and written by no agent" for the others (a planner's
   agents run in any order): the builder DraftReviewer gets the declarative form (topic only).
 - Non-bean systems still need U2 (or the transform, T5.4) to be observed.
+
+### Upstream proposals U2-U6 drafted (Oct 17, 2026), not posted
+
+- Backlog doc-7: U2 observer of built systems, U3 planner decisions on AgentListener, U4 pending responses on
+  AgentListener (external completion already exists upstream: `AgenticScope.completePendingResponse`), U5 public
+  inherited listener registration + CDI listeners at the roots, U6 bug: an agent shared by two systems is re-parented.
+  TASK-2/3/4/16 In Progress, waiting for the owner's go to post.
