@@ -40,6 +40,8 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
             .setLogRecordPredicate(record -> true);
 
     private static final String ROOT = StoryWorkflow.class.getName() + "#writeStory";
+    /** The Dev UI JSON-RPC websocket of the dev-mode test application (DevUIJsonRPCTest keeps its own private). */
+    private static final String JSON_RPC_WS = "ws://localhost:8080/q/dev-ui/json-rpc-ws";
 
     public AgenticSystemsDevModeTest() {
         super("quarkus-langchain4j-agentic-viewer");
@@ -194,7 +196,7 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
         List<JsonNode> items = new CopyOnWriteArrayList<>();
         CompletableFuture<Void> done = new CompletableFuture<>();
         WebSocket socket = HttpClient.newHttpClient().newWebSocketBuilder()
-                .buildAsync(URI.create(uri.toString().replaceFirst("^http", "ws")), new WebSocket.Listener() {
+                .buildAsync(URI.create(JSON_RPC_WS), new WebSocket.Listener() {
                     private final StringBuilder text = new StringBuilder();
 
                     @Override
@@ -242,9 +244,8 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
         int id = (int) (Math.random() * Integer.MAX_VALUE);
         CompletableFuture<String> response = new CompletableFuture<>();
         List<String> received = new CopyOnWriteArrayList<>();
-        // uri is the .../dev-ui/json-rpc-ws endpoint
         WebSocket socket = HttpClient.newHttpClient().newWebSocketBuilder()
-                .buildAsync(URI.create(uri.toString().replaceFirst("^http", "ws")),
+                .buildAsync(URI.create(JSON_RPC_WS),
                         new WebSocket.Listener() {
                             private final StringBuilder text = new StringBuilder();
 

@@ -15,7 +15,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /**
- * The native executable of the sample app (built with -Dnative, e.g. -Dquarkus.native.container-build=true) carries
+ * The native executable of the sample app (built with -Dquarkus.native.enabled=true, see CLAUDE.md) carries
  * nothing of the Dev UI (F6.4): none of its class or resource names is in the image. Skipped without a native build.
  */
 class NativeArtifactIT {
@@ -37,7 +37,7 @@ class NativeArtifactIT {
     @Test
     void noDevUiCodeInTheNativeExecutable() throws IOException {
         Optional<Path> runner = runner();
-        assumeTrue(runner.isPresent(), "no native executable in target/ (build with -Dnative)");
+        assumeTrue(runner.isPresent(), "no native executable in target/ (build with -Dquarkus.native.enabled=true)");
         // the image keeps class names (hubs, reflection metadata): search the bytes
         String image = new String(Files.readAllBytes(runner.get()), StandardCharsets.ISO_8859_1);
         assertTrue(image.contains("io.quarkiverse.langchain4j.agentic.viewer.it.samples"), "the sample app is in the image");

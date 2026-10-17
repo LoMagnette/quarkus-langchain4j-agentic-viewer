@@ -805,3 +805,11 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
 - Quarkus 3.33.3.1 -> 3.33.4, quarkus-langchain4j 1.14.1 -> 1.14.2 (latest final; it still brings langchain4j 1.20.2,
   agentic 1.20.2-beta30). Full builds green: default deployment 125 + integration 98, -Ppatterns 129 + 117, UI 7/7.
 - Not taken: 1.15.0.CR1 (Quarkus 3.40, langchain4j 1.21.0, release candidate) and 2.0.0.Beta1 (Quarkus 4 beta).
+
+### TASK-63 native check — done (Oct 17, 2026)
+
+- The owner's native build failed in quarkus-langchain4j(-openai) JSON holders initialized at build time (they read the
+  CDI container); the sample app initializes the three at run time (`quarkus.native.additional-build-args`). Container
+  build (Mandrel JDK 21) + NativeArtifactIT green: no Dev UI code in the executable.
+- Also: test artifacts renamed `quarkus-junit` / `quarkus-junit-internal` (relocation warning); the raw-websocket tests
+  use the fixed Dev UI address (Quarkus 3.40 made `DevUIJsonRPCTest.uri` private).

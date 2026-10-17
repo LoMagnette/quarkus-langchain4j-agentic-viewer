@@ -27,6 +27,9 @@ import io.quarkus.test.QuarkusDevModeTest;
  */
 public class TopologyContributorDevModeTest extends DevUIJsonRPCTest {
 
+    /** The Dev UI JSON-RPC websocket of the dev-mode test application (DevUIJsonRPCTest keeps its own private). */
+    private static final String JSON_RPC_WS = "ws://localhost:8080/q/dev-ui/json-rpc-ws";
+
     @RegisterExtension
     static final QuarkusDevModeTest config = new QuarkusDevModeTest()
             .withApplicationRoot(jar -> jar.addClasses(ReviewSystem.class, ReviewSystem.Writer.class,
@@ -71,7 +74,7 @@ public class TopologyContributorDevModeTest extends DevUIJsonRPCTest {
         int id = 4242;
         CompletableFuture<String> answer = new CompletableFuture<>();
         StringBuilder text = new StringBuilder();
-        WebSocket socket = HttpClient.newHttpClient().newWebSocketBuilder().buildAsync(URI.create(uri.toString().replaceFirst("^http", "ws")),
+        WebSocket socket = HttpClient.newHttpClient().newWebSocketBuilder().buildAsync(URI.create(JSON_RPC_WS),
                 new WebSocket.Listener() {
                     @Override
                     public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {

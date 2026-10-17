@@ -44,7 +44,8 @@ mvn test -pl integration-tests -Dtest=SampleRunsTest
 mvn quarkus:dev -pl integration-tests              # add -Ppatterns for the pattern samples
 
 # Native build of the sample app, then NativeArtifactIT checks it has no Dev UI code (local GraalVM/Mandrel, or add
-# -Dquarkus.native.container-build=true); ProdArtifactIT does the same on the JVM package in every build
+# -Dquarkus.native.container-build=true); ProdArtifactIT does the same on the JVM package in every build. The sample app
+# initializes three quarkus-langchain4j JSON holders at run time for this (application.properties)
 mvn install -DskipTests
 mvn verify -pl integration-tests -Dquarkus.native.enabled=true -Dquarkus.package.jar.enabled=false \
     -Dtest=none -Dsurefire.failIfNoSpecifiedTests=false -Dit.test=NativeArtifactIT
