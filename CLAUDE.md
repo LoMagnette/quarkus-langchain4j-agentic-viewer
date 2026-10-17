@@ -26,6 +26,10 @@ mvn clean install -Ppatterns
 # Browser tests of the Dev UI page (Playwright, downloads Chromium on first use); LargeSystemUiTest measures a 50-node system
 mvn test -pl deployment -Pui-tests '-Dtest=AgenticSystemsPageUiTest,LargeSystemUiTest'
 
+# Against the langchain4j snapshots (nightly CI, .github/workflows/snapshots.yml): the langchain4j BOM is imported first
+# at ${langchain4j.version} (the version quarkus-langchain4j brings; keep in sync), the profile sets the snapshot
+mvn -U clean install -Ppatterns,langchain4j-snapshots
+
 # Listener overhead per agent invocation (not part of the build)
 mvn test -pl integration-tests -Dtest=ListenerOverheadBenchmark
 

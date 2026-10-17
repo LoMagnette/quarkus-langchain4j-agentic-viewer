@@ -26,6 +26,9 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <quarkus.version>3.33.3.1</quarkus.version>
         <quarkus-langchain4j.version>1.14.1</quarkus-langchain4j.version>
+        <!-- the langchain4j that quarkus-langchain4j brings (keep in sync when upgrading it); the langchain4j-snapshots
+             profile replaces it -->
+        <langchain4j.version>1.20.2</langchain4j.version>
         <!-- Dev UI graph libraries (mvnpm) -->
         <mvnpm.cytoscape.version>3.34.3</mvnpm.cytoscape.version>
         <mvnpm.elkjs.version>0.12.0</mvnpm.elkjs.version>
@@ -37,6 +40,14 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- first: the first import managing an artifact wins -->
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-bom</artifactId>
+                <version>${langchain4j.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>io.quarkus.platform</groupId>
                 <artifactId>quarkus-bom</artifactId>
@@ -85,4 +96,26 @@
             </plugins>
         </pluginManagement>
     </build>
+    <profiles>
+        <!-- Compatibility check against the next langchain4j (nightly CI, .github/workflows/snapshots.yml): the
+             langchain4j BOM, imported first, at its snapshot version. -->
+        <profile>
+            <id>langchain4j-snapshots</id>
+            <properties>
+                <langchain4j.version>1.23.0-SNAPSHOT</langchain4j.version>
+            </properties>
+            <repositories>
+                <repository>
+                    <id>central-snapshots</id>
+                    <url>https://central.sonatype.com/repository/maven-snapshots/</url>
+                    <releases>
+                        <enabled>false</enabled>
+                    </releases>
+                    <snapshots>
+                        <enabled>true</enabled>
+                    </snapshots>
+                </repository>
+            </repositories>
+        </profile>
+    </profiles>
 </project>

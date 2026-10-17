@@ -1,0 +1,23 @@
+name: langchain4j snapshots
+
+# langchain4j-agentic and its patterns module are experimental and change often: build and test every night against
+# their snapshots (profile langchain4j-snapshots), to learn about a breaking change before it is released
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  snapshots:
+    name: Build and test against langchain4j snapshots
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      # -U: the latest snapshots, not the cached ones
+      - name: Build and test
+        run: mvn -B -U clean install -Ppatterns,langchain4j-snapshots

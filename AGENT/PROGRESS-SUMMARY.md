@@ -756,3 +756,11 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   ~60 ms), run of ~0.3 s of agent work ends in ~0.95 s from the Run click (confirmation included) with no long task,
   all 50 nodes lit, 60 timeline rows. No performance regression found.
 - Found and fixed: builder systems with `agentAction` agents asked for an "@AgenticScope" form input.
+
+### TASK-65 T6.5 nightly CI against langchain4j snapshots — done (Oct 17, 2026)
+
+- `.github/workflows/snapshots.yml` (nightly + manual): `mvn -B -U clean install -Ppatterns,langchain4j-snapshots`. The root
+  pom imports the langchain4j BOM first at `${langchain4j.version}` (1.20.2, what quarkus-langchain4j 1.14.1 brings); the
+  profile sets 1.23.0-SNAPSHOT (agentic 1.23.0-beta33-SNAPSHOT) and the Central snapshot repository.
+- Same command run locally: green (deployment 129, integration 112, internals check included); default build unchanged.
+  Not run on GitHub (no remote).
