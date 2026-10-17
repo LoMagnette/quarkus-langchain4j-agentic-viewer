@@ -799,3 +799,9 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
 - Owner's follow-up: the run's output moved to an **Output** tab (Run | Output | Scope; the Run tab links to it), out of
   the timeline and the run panel; agent details show Inputs and Output side by side through `qwc-agentic-value`
   (text as text, records and maps as key/value lists, nested indented, lists numbered, JSON strings as structure).
+
+### Dependency upgrade (Oct 17, 2026)
+
+- Quarkus 3.33.3.1 -> 3.33.4, quarkus-langchain4j 1.14.1 -> 1.14.2 (latest final; it still brings langchain4j 1.20.2,
+  agentic 1.20.2-beta30). Full builds green: default deployment 125 + integration 98, -Ppatterns 129 + 117, UI 7/7.
+- Not taken: 1.15.0.CR1 (Quarkus 3.40, langchain4j 1.21.0, release candidate) and 2.0.0.Beta1 (Quarkus 4 beta).

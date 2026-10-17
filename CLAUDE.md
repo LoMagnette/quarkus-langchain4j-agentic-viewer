@@ -26,6 +26,9 @@ mvn clean install -Ppatterns
 # Browser tests of the Dev UI page (Playwright, downloads Chromium on first use); LargeSystemUiTest measures a 50-node system
 mvn test -pl deployment -Pui-tests '-Dtest=AgenticSystemsPageUiTest,LargeSystemUiTest'
 
+# Versions: root pom properties quarkus.version, quarkus-langchain4j.version and langchain4j.version (the langchain4j
+# that quarkus-langchain4j brings: read <langchain4j.version> in its quarkus-langchain4j-parent pom when upgrading)
+
 # Against the langchain4j snapshots (nightly CI, .github/workflows/snapshots.yml): the langchain4j BOM is imported first
 # at ${langchain4j.version} (the version quarkus-langchain4j brings; keep in sync), the profile sets the snapshot
 mvn -U clean install -Ppatterns,langchain4j-snapshots

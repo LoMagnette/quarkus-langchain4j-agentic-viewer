@@ -24,8 +24,8 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <quarkus.version>3.33.3.1</quarkus.version>
-        <quarkus-langchain4j.version>1.14.1</quarkus-langchain4j.version>
+        <quarkus.version>3.33.4</quarkus.version>
+        <quarkus-langchain4j.version>1.14.2</quarkus-langchain4j.version>
         <!-- the langchain4j that quarkus-langchain4j brings (keep in sync when upgrading it); the langchain4j-snapshots
              profile replaces it -->
         <langchain4j.version>1.20.2</langchain4j.version>

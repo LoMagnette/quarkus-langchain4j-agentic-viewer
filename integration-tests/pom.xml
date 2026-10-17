@@ -23,7 +23,7 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-rest</artifactId>
         </dependency>
-        <!-- Works around quarkus-langchain4j 1.14.1 only wiring an application ChatModel bean into AI services when a
+        <!-- Works around quarkus-langchain4j 1.14.x only wiring an application ChatModel bean into AI services when a
              provider extension is present: the scripted fake model (it.fake) replaces it. Also the real model of the
              ollama profile (application.properties). -->
         <dependency>
