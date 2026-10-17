@@ -662,3 +662,10 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
 - Quarkus findings: builder sub-agents given as interfaces are built anew without the app's chat model (fails): pass
   the agent beans, unwrapped from their client proxies; a non-AI agent class is resolved from CDI and must be
   `@Unremovable`; untyped `agentBuilder()` agents ignore their prompt under Quarkus (TASK-8.1).
+
+### TASK-10 spike T0.5 (AgentInstance tree at runtime) — done (Oct 17, 2026)
+
+- Finding in Backlog doc-5, prototype `it/spike/AgentTreeSpikeTest`: the public `AgentInstance` API (plus `as()` for
+  loops and conditions, and the annotations of `type()` for AI details) gives the whole topology of builder systems,
+  except lambda guard texts ("<unknown>"), builder-given tools, supervisor settings and the system's origin. Builder
+  roots declare no inputs. Supervisors and planners report SEQUENCE: the planner type decides the kind.
