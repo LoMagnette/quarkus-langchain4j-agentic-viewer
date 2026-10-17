@@ -96,7 +96,9 @@ Builder (`AgenticServices.*Builder()`) systems produced as CDI beans are listed 
 `deployment/.../builder/BuilderSystemBeans` picks the producer beans whose type is an agent or whose body calls an
 agentic `build()` (ASM), keeps them unremovable and records their bean ids; `runtime-dev/.../builder/BuilderSystems`
 creates them when the Dev UI first lists the systems (`AgenticSystemRegistry` loads them lazily; startup code uses
-`buildTimeSystems()` so no bean is created early) and keeps those without a parent. They cannot be run yet (T5.6).
+`buildTimeSystems()` so no bean is created early) and keeps those without a parent. Runs (T5.6): `CdiRunInvoker` invokes an `UntypedAgent` root with a map of the form values
+(converted to the input types), a typed builder interface through its one method; the form schema comes from
+`RuntimeInputSchema` (same rules as the build-time `InputSchemaGenerator`, `RuntimeInputSchemaTest` checks parity).
 Their topology comes from the live agent tree: `runtime-dev/.../builder/BuilderTopology` builds the same model from the public `AgentInstance` API (loops
 and conditions through `as()`, AI details from the annotations of `type()`), with the node id rule of the run events
 (simple name of each agent's type); findings in Backlog doc-5 (tree) and doc-6 (discovery).

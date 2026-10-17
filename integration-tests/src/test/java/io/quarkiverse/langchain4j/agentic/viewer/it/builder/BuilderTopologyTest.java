@@ -39,7 +39,6 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.Guard;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.PatternType;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SourceRef;
-import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemInput;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemOrigin;
 import io.quarkus.arc.ClientProxy;
 import io.quarkus.test.junit.QuarkusTest;
@@ -126,7 +125,7 @@ class BuilderTopologyTest {
         AgenticSystem twin = declarative.get("StoryCreator");
 
         assertEquals(graph(twin.root()), graph(builder.root()));
-        assertEquals(List.of(new SystemInput("topic", "java.lang.String", null, true)), builder.inputs());
+        assertEquals(twin.inputs(), builder.inputs(), "same run form");
         assertEquals(SystemOrigin.BUILDER, builder.origin());
         // only the guard label differs: the builder's exit condition is a lambda
         assertEquals("goodEnough", child(twin.root(), 1).guard().label());

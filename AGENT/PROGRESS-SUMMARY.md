@@ -697,3 +697,12 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
 - Finding: an agent has one parent; Quarkus shares the agent beans with its declarative systems, so builder systems
   must build their own agents (`agentBuilder(Interface.class).chatModel(..)`); samples and tests changed, regression
   test added. Docs: builder systems section and config reference.
+
+### TASK-58 T5.6 runs of builder systems — done (Oct 17, 2026)
+
+- Form: builder inputs get a JSON schema at runtime (`RuntimeInputSchema`, parity-tested against the build-time
+  generator); a typed builder interface takes its inputs from its method. The builder StoryCreator twin gets the
+  declarative one's form.
+- Runs: `CdiRunInvoker` invokes an UntypedAgent with a map of converted values, a typed interface through its method;
+  `BuilderSystems` keeps the root agents. Verified in tests (dev-mode fixture, integration samples) and from the Dev UI
+  (builder StoryCreator: "A story about a lighthouse (draft 4)"). The graph is not lit during builder runs (T5.3).

@@ -37,6 +37,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.config.AgenticViewerRuntimeConfig;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticSystemRegistry;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.builder.BuilderSystems;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentFinished;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentStarted;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AwaitingHumanInput;
@@ -89,8 +90,8 @@ public class RunManager {
     public static final int DEFAULT_HISTORY_SIZE = 20;
 
     @Inject
-    public RunManager(AgenticSystemRegistry registry, AgenticViewerRuntimeConfig config) {
-        this(registry::find, new CdiRunInvoker(), config.maxPayloadSize(), config.historySize());
+    public RunManager(AgenticSystemRegistry registry, BuilderSystems builderSystems, AgenticViewerRuntimeConfig config) {
+        this(registry::find, new CdiRunInvoker(builderSystems::root), config.maxPayloadSize(), config.historySize());
     }
 
     public RunManager(Function<String, Optional<AgenticSystem>> systems, RunInvoker invoker) {

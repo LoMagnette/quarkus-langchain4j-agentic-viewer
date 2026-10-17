@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Set;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -27,6 +29,9 @@ import io.quarkus.arc.InjectableBean;
 public class BuilderSystems {
 
     private static final Logger LOG = Logger.getLogger(BuilderSystems.class);
+
+    // the root agent of each system found, by system id: what a run invokes
+    private final Map<String, Object> roots = new ConcurrentHashMap<>();
     private static final Set<String> UNTYPED = Set.of("dev.langchain4j.agentic.UntypedAgent",
             "dev.langchain4j.agentic.supervisor.SupervisorAgent", "dev.langchain4j.agentic.planner.AgentInstance");
 
@@ -53,9 +58,17 @@ public class BuilderSystems {
                 String id = candidate.declaringClass() + "#" + candidate.member();
                 systems.add(BuilderTopology.system(id, name(candidate), new SourceRef(candidate.declaringClass(),
                         candidate.member(), null), agent));
+                roots.put(id, agent);
             }
         });
         return systems;
+    }
+
+    /**
+     * @return the root agent of a builder system found by {@link #discover()}
+     */
+    public Optional<Object> root(String systemId) {
+        return Optional.ofNullable(roots.get(systemId));
     }
 
     private static AgentInstance agent(BuilderCandidate candidate) {

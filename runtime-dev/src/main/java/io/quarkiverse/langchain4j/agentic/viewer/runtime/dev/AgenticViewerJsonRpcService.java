@@ -22,7 +22,6 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgentNode;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.PatternType;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemInput;
-import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemOrigin;
 
 /**
  * JSON-RPC service of the Agentic Viewer Dev UI (method names: {@code quarkus-langchain4j-agentic-viewer_<method>}).
@@ -121,13 +120,9 @@ public class AgenticViewerJsonRpcService {
      *
      * @param inputs input values by name, as filled in the run form
      * @return the run id
-     * @throws IllegalArgumentException for an unknown id, or a system built with the builders (not runnable yet, T5.6)
+     * @throws IllegalArgumentException for an unknown id
      */
     public String startRun(String systemId, Map<String, Object> inputs) {
-        if (system(systemId).origin() != SystemOrigin.DECLARATIVE) {
-            throw new IllegalArgumentException("Runs of systems built with the AgenticServices builders are not supported"
-                    + " yet: " + systemId);
-        }
         return runManager.startRun(systemId, inputs);
     }
 
@@ -182,7 +177,7 @@ public class AgenticViewerJsonRpcService {
 
     private static Map<String, Object> parse(String jsonSchema) {
         if (jsonSchema == null) {
-            return Map.of(); // any value: builder system inputs have no schema yet (T5.6)
+            return Map.of(); // any value
         }
         try {
             return MAPPER.readValue(jsonSchema, new TypeReference<>() {

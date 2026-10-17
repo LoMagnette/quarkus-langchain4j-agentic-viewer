@@ -69,4 +69,27 @@ public class BuilderDiscoveryDevModeTest extends DevUIJsonRPCTest {
         JsonNode greeter = executeJsonRPCMethod("getTopology", Map.of("systemId", GREETER));
         assertEquals("Greeter", greeter.get("name").asText(), "named after its interface");
     }
+
+    /** T5.6: the form of a typed builder system comes from its interface method; builder systems run. */
+    @Test
+    void builderSystemsRun() throws Exception {
+        assertEquals("{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"required\":[\"name\"]}",
+                executeJsonRPCMethod("getInputSchema", Map.of("systemId", GREETER)).toString());
+
+        for (String system : List.of(PIPELINE, GREETER)) {
+            String runId = executeJsonRPCMethod("startRun", Map.of("systemId", system, "inputs", Map.of("name", "Ada")))
+                    .asText();
+            JsonNode summary = null;
+            for (int i = 0; i < 100 && (summary == null || "RUNNING".equals(summary.path("status").asText())); i++) {
+                Thread.sleep(100);
+                for (JsonNode run : executeJsonRPCMethod("listRuns", Map.of("systemId", system))) {
+                    if (runId.equals(run.path("runId").asText())) {
+                        summary = run;
+                    }
+                }
+            }
+            JsonNode trace = executeJsonRPCMethod("getRun", Map.of("runId", runId));
+            assertEquals("SUCCEEDED", summary.path("status").asText(), () -> system + ": " + trace);
+        }
+    }
 }

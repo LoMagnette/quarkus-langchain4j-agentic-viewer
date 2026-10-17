@@ -5,9 +5,12 @@ import java.io.InputStream;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.lang.reflect.Parameter;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -18,6 +21,7 @@ import java.util.Set;
 import dev.langchain4j.agentic.planner.AgentArgument;
 import dev.langchain4j.agentic.planner.AgentInstance;
 import dev.langchain4j.agentic.planner.AgenticSystemTopology;
+import dev.langchain4j.agentic.scope.AgenticScope;
 import dev.langchain4j.agentic.workflow.ConditionalAgentInstance;
 import dev.langchain4j.agentic.workflow.LoopAgentInstance;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.LangChain4jInternals;
@@ -50,6 +54,8 @@ public final class BuilderTopology {
     public static final String LAMBDA = "lambda";
 
     private static final String UNKNOWN_CONDITION = "<unknown>";
+    private static final String LIBRARY = "dev.langchain4j.";
+    private static final String V = "dev.langchain4j.service.V";
     private static final String DECLARATIVE = "dev.langchain4j.agentic.declarative.";
     private static final String AGENT = "dev.langchain4j.agentic.Agent";
     private static final String HUMAN_IN_THE_LOOP = DECLARATIVE + "HumanInTheLoop";
@@ -169,8 +175,9 @@ public final class BuilderTopology {
      * siblings' outputs, a condition's keys are unknown).
      */
     private static List<String> inputKeys(AgentInstance agent, List<AgentNode> children) {
-        if (!agent.arguments().isEmpty() || children.isEmpty()) {
-            return agent.arguments().stream().map(AgentArgument::name).toList();
+        List<AgentArgument> declared = declaredArguments(agent);
+        if (!declared.isEmpty() || children.isEmpty()) {
+            return declared.stream().map(AgentArgument::name).toList();
         }
         Set<String> inputs = new LinkedHashSet<>();
         Set<String> written = new LinkedHashSet<>();
@@ -183,20 +190,46 @@ public final class BuilderTopology {
         return List.copyOf(inputs);
     }
 
-    /** The root's inputs, with the type of the first agent reading each; all required (they have no default). */
+    /** The root's inputs, with the type of the first agent reading each and its form schema (T5.6). */
     private static List<SystemInput> inputs(AgentInstance root, AgentNode rootNode) {
         Map<String, AgentArgument> arguments = new LinkedHashMap<>();
         collectArguments(root, arguments);
         return rootNode.inputKeys().stream().map(key -> {
             AgentArgument argument = arguments.get(key);
             Type type = argument == null ? Object.class : argument.type();
-            return new SystemInput(key, type.getTypeName(), null, argument == null || !argument.isOptional());
+            boolean required = argument == null || !argument.isOptional() && RuntimeInputSchema.required(type, null);
+            return new SystemInput(key, type.getTypeName(), RuntimeInputSchema.schema(type), required);
         }).toList();
     }
 
     private static void collectArguments(AgentInstance agent, Map<String, AgentArgument> arguments) {
-        agent.arguments().forEach(argument -> arguments.putIfAbsent(argument.name(), argument));
+        declaredArguments(agent).forEach(argument -> arguments.putIfAbsent(argument.name(), argument));
         agent.subagents().forEach(sub -> collectArguments(sub, arguments));
+    }
+
+    /**
+     * The agent's arguments; a typed agent interface given to a builder carries no agentic annotation, so langchain4j
+     * declares none: the parameters of its one method then (what its callers provide, by {@code @V} name).
+     */
+    private static List<AgentArgument> declaredArguments(AgentInstance agent) {
+        Class<?> type = agent.type();
+        if (!agent.arguments().isEmpty() || type == null || !type.isInterface() || type.getName().startsWith(LIBRARY)) {
+            return agent.arguments();
+        }
+        List<Method> methods = Arrays.stream(type.getMethods())
+                .filter(method -> Modifier.isAbstract(method.getModifiers()) && method.getDeclaringClass() == type).toList();
+        if (methods.size() != 1) {
+            return agent.arguments();
+        }
+        List<AgentArgument> arguments = new ArrayList<>();
+        for (Parameter parameter : methods.get(0).getParameters()) {
+            if (!AgenticScope.class.isAssignableFrom(parameter.getType())) {
+                Annotation v = annotation(parameter, V);
+                String name = v != null ? (String) value(v, "value") : parameter.getName();
+                arguments.add(new AgentArgument(parameter.getParameterizedType(), name));
+            }
+        }
+        return arguments;
     }
 
     private static Guard loopGuard(AgentInstance agent) {

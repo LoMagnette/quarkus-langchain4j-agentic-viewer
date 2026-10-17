@@ -284,9 +284,7 @@ export class QwcAgenticSystems extends LitElement {
                 <h3>${summary.name}</h3>
                 ${this._renderKinds(summary)}
                 <span class="spacer"></span>
-                <vaadin-button theme="primary" data-action="open-run" ?disabled=${!system || summary.origin !== 'DECLARATIVE'}
-                        title=${summary.origin !== 'DECLARATIVE' ? 'Runs of systems built with the builders are not supported yet' : ''}
-                        @click=${this._openRun}>
+                <vaadin-button theme="primary" data-action="open-run" ?disabled=${!system} @click=${this._openRun}>
                     <vaadin-icon icon="font-awesome-solid:play" slot="prefix"></vaadin-icon>Run
                 </vaadin-button>
             </div>
