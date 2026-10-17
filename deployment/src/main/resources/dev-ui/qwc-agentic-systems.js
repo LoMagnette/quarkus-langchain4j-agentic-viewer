@@ -303,7 +303,7 @@ export class QwcAgenticSystems extends LitElement {
                 <div class="graph-column">
                     <qwc-agentic-graph .system=${system}
                                        @node-selected=${e => this._selectNode(system, e.detail.nodeId)}></qwc-agentic-graph>
-                    ${this._runEvents ? html`<qwc-agentic-timeline .events=${this._runEvents}
+                    ${this._runEvents ? html`<qwc-agentic-timeline .events=${this._runEvents} .system=${system}
                             .running=${!!this._runRunning}></qwc-agentic-timeline>` : ''}
                 </div>
                 <div class="side" ?hidden=${!this._side}>

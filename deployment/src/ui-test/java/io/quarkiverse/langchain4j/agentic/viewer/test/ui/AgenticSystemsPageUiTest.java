@@ -198,6 +198,25 @@ public class AgenticSystemsPageUiTest {
         assertThat(panel().locator("[data-run-output]")).containsText("a lighthouse");
         assertTrue(page.locator("qwc-agentic-timeline .row").count() >= 3, "root and agents in the timeline");
         assertThat(page.locator("qwc-agentic-scope-state [data-key=\"facts\"]")).containsText("a lighthouse");
+
+        // the timeline tags each row with the kind of its node
+        Locator timeline = page.locator("qwc-agentic-timeline");
+        Locator research = timeline.locator(".row.agent", new Locator.LocatorOptions().setHasText("research"));
+        assertThat(research.locator(".kind")).hasText("AI agent");
+        assertThat(timeline.locator(".row.agent").first().locator(".kind")).hasText("Sequence");
+        // an agent row opens on its inputs and output
+        research.click();
+        Locator details = timeline.locator("[data-details]");
+        assertThat(details).containsText("Inputs");
+        assertThat(details).containsText("\"topic\": \"a lighthouse\"");
+        assertThat(details).containsText("echo: Collect facts about a lighthouse from [almanac]");
+        research.click();
+        // the last row is the run's output
+        Locator result = timeline.locator(".row.result");
+        assertThat(result).containsText("Output");
+        assertThat(result).containsText("echo: Write a newsletter from");
+        result.click();
+        assertThat(timeline.locator("[data-details=\"result\"]")).containsText("a lighthouse");
     }
 
     /** With reduced motion nothing moves, but the running and just-finished agents are still marked. */

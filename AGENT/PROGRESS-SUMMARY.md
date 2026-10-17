@@ -790,3 +790,9 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   sequence, digital a single agent), summarizer; inputs text, enum, integer, list, record. Scripted model answers.
 - `ProductLaunchTest`: both budget branches, 17-node graph, run form schema (5 typed fields), a run from form JSON values
   (21 agent events, all on graph nodes). Checked in the browser: the form shows text, select, integer and JSON fields.
+
+### UI: timeline details, kind tags, final output (Oct 17, 2026, owner's request)
+
+- Every agent row expands on a click to its inputs and its output (or error); rows carry a tag with the kind of their
+  node (Sequence, AI agent, Planner...), colored like the graph legend; a last "Output" (or "Failed") row previews the
+  run's result and expands to it in full. UI test covers the three.
