@@ -796,3 +796,6 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
 - Every agent row expands on a click to its inputs and its output (or error); rows carry a tag with the kind of their
   node (Sequence, AI agent, Planner...), colored like the graph legend; a last "Output" (or "Failed") row previews the
   run's result and expands to it in full. UI test covers the three.
+- Owner's follow-up: the run's output moved to an **Output** tab (Run | Output | Scope; the Run tab links to it), out of
+  the timeline and the run panel; agent details show Inputs and Output side by side through `qwc-agentic-value`
+  (text as text, records and maps as key/value lists, nested indented, lists numbered, JSON strings as structure).

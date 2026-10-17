@@ -355,7 +355,9 @@ export class QwcAgenticRunPanel extends LitElement {
             ${run.status === 'running' ? html`
                 <div class="actions"><vaadin-button theme="error tertiary" data-action="cancel" ?disabled=${!run.runId}
                         @click=${this._cancel}>Cancel</vaadin-button></div>` : nothing}
-            ${run.status === 'succeeded' ? html`<h5>Output</h5><pre data-run-output>${this._format(run.output)}</pre>` : nothing}
+            ${run.status === 'succeeded' ? html`<div class="actions"><vaadin-button theme="tertiary" data-action="show-output"
+                    @click=${() => this.dispatchEvent(new CustomEvent('show-output', { bubbles: true, composed: true }))}>
+                    Show output</vaadin-button></div>` : nothing}
             ${run.status === 'failed' || run.status === 'cancelled' ? html`<h5>${run.status === 'cancelled' ? 'Cancelled' : 'Error'}</h5>
                 ${run.status === 'failed' && (run.failingAgent || run.error?.exceptionClass) ? html`<div data-run-failure>
                     ${run.failingAgent ? html`in <strong>${run.failingAgent}</strong>: ` : nothing}${simpleClass(run.error?.exceptionClass)}</div>` : nothing}

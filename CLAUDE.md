@@ -182,8 +182,10 @@ method names are `quarkus-langchain4j-agentic-viewer_<method>`. Components (Lit 
   compound is laid out separately by ELK to keep declaration order. The live view goes through `highlight`,
   `setNodeInfo` and `setPath`, kept in a run overlay re-applied after a redraw (view or theme switch).
 - `qwc-agentic-run-panel.js` (form `qwc-agentic-run-form.js`, tools confirmation, `LiveRun` turning events into graph
-  states, human input box, history and replay), `qwc-agentic-timeline.js`, `qwc-agentic-scope-state.js`,
-  `qwc-agentic-node-details.js`.
+  states, human input box, history and replay), `qwc-agentic-timeline.js` (rows tagged with their node kind, agent
+  rows expand to inputs/output), `qwc-agentic-output.js` (Output tab), `qwc-agentic-scope-state.js`,
+  `qwc-agentic-node-details.js`; `qwc-agentic-value.js` renders run values for reading (text as text, records as
+  key/value lists).
 Never pass the Dev UI `JsonRpc` proxy through a Lit binding (lit-html probes `_$litDirective$` and the proxy answers
 every property): pass a plain adapter object (`rpc` in `qwc-agentic-systems.js`).
 Dev mode does not reload a rebuilt extension: restart it to see Dev UI changes.

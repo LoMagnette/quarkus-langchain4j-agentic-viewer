@@ -8,6 +8,7 @@ import { KIND_LABELS } from './qwc-agentic-graph.js';
 import './qwc-agentic-node-details.js';
 import './qwc-agentic-run-panel.js';
 import './qwc-agentic-timeline.js';
+import './qwc-agentic-output.js';
 import './qwc-agentic-scope-state.js';
 import '@vaadin/tabs';
 
@@ -295,9 +296,9 @@ export class QwcAgenticSystems extends LitElement {
     }
 
     _renderGraph(system) {
-        const tabs = [...(this._runOpened ? ['run'] : []), ...(this._runEvents ? ['scope'] : []),
+        const tabs = [...(this._runOpened ? ['run'] : []), ...(this._runEvents ? ['output', 'scope'] : []),
             ...(this._node ? ['details'] : [])];
-        const labels = { run: 'Run', scope: 'Scope', details: 'Details' };
+        const labels = { run: 'Run', output: 'Output', scope: 'Scope', details: 'Details' };
         return html`
             <div class="system-body">
                 <div class="graph-column">
@@ -313,10 +314,13 @@ export class QwcAgenticSystems extends LitElement {
                             ${tabs.map(tab => html`<vaadin-tab data-tab=${tab}>${labels[tab]}</vaadin-tab>`)}
                         </vaadin-tabs>
                     </div>
+                    ${this._runEvents ? html`<qwc-agentic-output ?hidden=${this._side !== 'output'}
+                            .events=${this._runEvents}></qwc-agentic-output>` : ''}
                     ${this._runEvents ? html`<qwc-agentic-scope-state ?hidden=${this._side !== 'scope'}
                             .events=${this._runEvents}></qwc-agentic-scope-state>` : ''}
                     ${this._runOpened ? html`<qwc-agentic-run-panel ?hidden=${this._side !== 'run'} .system=${system}
                             @run-updated=${e => { this._runEvents = e.detail.events; this._runRunning = e.detail.running; }}
+                            @show-output=${() => this._side = 'output'}
                             .jsonRpc=${this.rpc} .graph=${this.renderRoot.querySelector('qwc-agentic-graph')}>
                         </qwc-agentic-run-panel>` : ''}
                     ${this._node ? html`<qwc-agentic-node-details ?hidden=${this._side !== 'details'} .node=${this._node}

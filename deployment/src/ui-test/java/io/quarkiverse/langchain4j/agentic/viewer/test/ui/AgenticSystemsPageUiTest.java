@@ -195,7 +195,7 @@ public class AgenticSystemsPageUiTest {
         page.waitForTimeout(1200);
         assertEquals(0.0, halo(RESEARCHER), "no halo a moment after");
         assertEquals(0.0, halo(WRITER), "no halo a moment after");
-        assertThat(panel().locator("[data-run-output]")).containsText("a lighthouse");
+        assertThat(output()).containsText("a lighthouse");
         assertTrue(page.locator("qwc-agentic-timeline .row").count() >= 3, "root and agents in the timeline");
         assertThat(page.locator("qwc-agentic-scope-state [data-key=\"facts\"]")).containsText("a lighthouse");
 
@@ -204,19 +204,20 @@ public class AgenticSystemsPageUiTest {
         Locator research = timeline.locator(".row.agent", new Locator.LocatorOptions().setHasText("research"));
         assertThat(research.locator(".kind")).hasText("AI agent");
         assertThat(timeline.locator(".row.agent").first().locator(".kind")).hasText("Sequence");
-        // an agent row opens on its inputs and output
+        // an agent row opens on its inputs (key by key, text as text) and its output
         research.click();
-        Locator details = timeline.locator("[data-details]");
-        assertThat(details).containsText("Inputs");
-        assertThat(details).containsText("\"topic\": \"a lighthouse\"");
-        assertThat(details).containsText("echo: Collect facts about a lighthouse from [almanac]");
+        Locator inputs = timeline.locator("[data-details-inputs]");
+        assertThat(inputs.locator("qwc-agentic-value dt", new Locator.LocatorOptions().setHasText(Pattern.compile("^topic$"))))
+                .hasCount(1);
+        assertThat(inputs).containsText("a lighthouse");
+        assertThat(inputs.locator("qwc-agentic-value li")).hasText(new String[] { "almanac" });
+        assertThat(timeline.locator("[data-details-output]")).containsText("echo: Collect facts about a lighthouse from [almanac]");
         research.click();
-        // the last row is the run's output
-        Locator result = timeline.locator(".row.result");
-        assertThat(result).containsText("Output");
-        assertThat(result).containsText("echo: Write a newsletter from");
-        result.click();
-        assertThat(timeline.locator("[data-details=\"result\"]")).containsText("a lighthouse");
+        assertThat(timeline.locator("[data-details]")).hasCount(0);
+        // the run panel leads to the Output tab
+        panel().locator("vaadin-button[data-action=\"show-output\"]").click();
+        assertThat(page.locator("qwc-agentic-output")).isVisible();
+        assertThat(page.locator("qwc-agentic-output [data-run-output]")).containsText("echo: Write a newsletter from");
     }
 
     /** With reduced motion nothing moves, but the running and just-finished agents are still marked. */
@@ -254,7 +255,7 @@ public class AgenticSystemsPageUiTest {
         fill("a bridge");
         clickRun();
         assertThat(status()).hasAttribute("data-run-status", "succeeded");
-        assertThat(panel().locator("[data-run-output]")).containsText("a bridge");
+        assertThat(output()).containsText("a bridge");
 
         // newest first: the second entry is the windmill run
         panel().locator("[data-history-run]").nth(1).click();
@@ -268,7 +269,7 @@ public class AgenticSystemsPageUiTest {
 
     private void assertReplayed(String topic) {
         assertThat(status()).hasAttribute("data-run-status", "succeeded");
-        assertThat(panel().locator("[data-run-output]")).containsText(topic);
+        assertThat(output()).containsText(topic);
         assertThat(page.locator("qwc-agentic-scope-state [data-key=\"topic\"]")).containsText(topic);
         waitFor(() -> "done".equals(stateOf(RESEARCHER)) && "done".equals(stateOf(WRITER)), "agents shown done");
     }
@@ -329,6 +330,11 @@ public class AgenticSystemsPageUiTest {
 
     private Locator form() {
         return page.locator("qwc-agentic-run-form");
+    }
+
+    /** The output of the run shown, in the Output tab (read without switching to it). */
+    private Locator output() {
+        return page.locator("qwc-agentic-output [data-run-output]");
     }
 
     private Locator status() {
