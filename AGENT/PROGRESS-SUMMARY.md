@@ -764,3 +764,9 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   profile sets 1.23.0-SNAPSHOT (agentic 1.23.0-beta33-SNAPSHOT) and the Central snapshot repository.
 - Same command run locally: green (deployment 129, integration 112, internals check included); default build unchanged.
   Not run on GitHub (no remote).
+
+### UI: pulsing halo on the active agents (Oct 17, 2026, owner's request)
+
+- Running agents and human steps waiting for an answer get a pulsing halo (Cytoscape underlay, one shared timer that
+  stops when nothing is active, static halo with prefers-reduced-motion); boxes keep their border only (a halo would
+  tint the whole box). UI test checks the halo changes while running and is gone once done.

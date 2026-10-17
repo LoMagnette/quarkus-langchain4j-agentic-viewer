@@ -174,6 +174,10 @@ public class AgenticSystemsPageUiTest {
         // the agents light up in turn while the run goes on
         waitFor(() -> "running".equals(stateOf(RESEARCHER)), "Researcher running");
         assertNotEquals("done", stateOf(WRITER));
+        // the running agent pulses: its halo changes over time
+        double halo = halo(RESEARCHER);
+        page.waitForTimeout(300);
+        assertTrue(halo > 0 && halo != halo(RESEARCHER), "pulsing halo around the running agent");
         assertThat(status()).hasAttribute("data-run-status", "running");
         waitFor(() -> "running".equals(stateOf(WRITER)), "Writer running");
         assertEquals("done", stateOf(RESEARCHER));
@@ -181,6 +185,7 @@ public class AgenticSystemsPageUiTest {
         assertThat(status()).hasAttribute("data-run-status", "succeeded");
         assertEquals("done", stateOf(RESEARCHER));
         assertEquals("done", stateOf(WRITER));
+        assertEquals(0.0, halo(RESEARCHER), "no halo once done");
         assertThat(panel().locator("[data-run-output]")).containsText("a lighthouse");
         assertTrue(page.locator("qwc-agentic-timeline .row").count() >= 3, "root and agents in the timeline");
         assertThat(page.locator("qwc-agentic-scope-state [data-key=\"facts\"]")).containsText("a lighthouse");
@@ -245,6 +250,12 @@ public class AgenticSystemsPageUiTest {
         if (page.locator("vaadin-dialog[opened]").count() > 0) {
             page.locator("vaadin-button[data-confirm=\"run\"]").click();
         }
+    }
+
+    /** The opacity of a node's halo (0 without one). */
+    private double halo(String nodeId) {
+        return Double.parseDouble(String.valueOf(graph().evaluate("(g, id) => g._cy.getElementById(id).style('underlay-opacity')",
+                nodeId)));
     }
 
     private String stateOf(String nodeId) {

@@ -13,6 +13,11 @@ const TITLE_CHAR_WIDTH = 7;
 const COMPOUND_PADDING = 20;
 const TITLE_SPACE = 24;
 const STATES = ['planned', 'ready', 'running', 'waiting', 'done', 'failed', 'recovered'];
+/** States that pulse: an agent running, a human step waiting for its answer (agents only: a box keeps its border). */
+const ACTIVE_STATES = ['running', 'waiting'];
+/** The halo animated around active nodes (a static halo when the system asks for reduced motion). */
+const PULSE_STYLES = 'underlay-opacity underlay-padding';
+const PULSE_PERIOD_MS = 1200;
 
 /** Display labels of the node kinds. */
 export const KIND_LABELS = {
@@ -522,6 +527,7 @@ export class QwcAgenticGraph extends observeState(LitElement) {
     }
 
     disconnectedCallback() {
+        this._stopPulse();
         this._resizeObserver?.disconnect();
         this._cy?.destroy();
         this._cy = undefined;
@@ -601,7 +607,36 @@ export class QwcAgenticGraph extends observeState(LitElement) {
         if (state) {
             node.addClass(state);
         }
+        if (ACTIVE_STATES.includes(state)) {
+            this._pulse();
+        } else {
+            node.removeStyle(PULSE_STYLES);
+        }
         return true;
+    }
+
+    /**
+     * Animates the halo of the active nodes: one timer for all of them, stopped when none is left (or never started
+     * when the system asks for reduced motion: the stylesheet's static halo then).
+     */
+    _pulse() {
+        if (this._pulseTimer || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+            return;
+        }
+        this._pulseTimer = setInterval(() => {
+            const active = this._cy?.nodes(ACTIVE_STATES.map(state => '.' + state + ':childless').join(', '));
+            if (!active || active.empty()) {
+                this._stopPulse();
+                return;
+            }
+            const wave = (1 - Math.cos((performance.now() % PULSE_PERIOD_MS) / PULSE_PERIOD_MS * 2 * Math.PI)) / 2;
+            active.style({ 'underlay-opacity': 0.12 + 0.3 * wave, 'underlay-padding': 4 + 10 * wave });
+        }, 50);
+    }
+
+    _stopPulse() {
+        clearInterval(this._pulseTimer);
+        this._pulseTimer = undefined;
     }
 
     clearSelection() {
@@ -714,7 +749,7 @@ export class QwcAgenticGraph extends observeState(LitElement) {
 
     clearHighlights() {
         this._overlay.states.clear();
-        this._cy?.nodes().removeClass(STATES.join(' '));
+        this._cy?.nodes().removeClass(STATES.join(' ')).removeStyle(PULSE_STYLES);
     }
 
     /**
@@ -1008,6 +1043,10 @@ export class QwcAgenticGraph extends observeState(LitElement) {
                 'overlay-color': primary, 'overlay-opacity': 0.12, 'overlay-padding': 4,
             } },
             { selector: 'node.running', style: { 'border-width': 4, 'border-color': primary, 'border-style': 'solid' } },
+            // active agents get a halo, pulsing (_pulse); on a box it would tint the whole box
+            { selector: 'node.running:childless, node.waiting:childless', style: {
+                'underlay-color': primary, 'underlay-opacity': 0.25, 'underlay-padding': 8, 'underlay-shape': 'round-rectangle',
+            } },
             // on the path a goal-oriented planner computed, not run yet
             { selector: 'node.planned', style: { 'border-width': 3, 'border-color': primary, 'border-style': 'dashed' } },
             // a peer-to-peer agent whose inputs are all in the scope
