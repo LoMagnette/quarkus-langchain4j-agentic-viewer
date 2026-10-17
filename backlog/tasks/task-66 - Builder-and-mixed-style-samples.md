@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-10-06 06:26'
-updated_date: '2026-10-17 05:57'
+updated_date: '2026-10-17 06:22'
 labels:
   - samples
   - builder
@@ -58,6 +58,8 @@ Findings for the spikes and Phase 5:
 - A typed builder interface needs no agentic annotation (any method writes its @V parameters to the scope), so it is no declarative agent, but its root AgentInstance then declares no arguments (matters for the run form, T5.6).
 - BlurbedStory: the builder system runs as a separate root invocation with its own scope.
 Validation: BuilderSamplesTest 5/5; integration-tests clean verify default 74 tests + ProdArtifactIT, -Ppatterns 93 + ProdArtifactIT (native IT skipped). Runs done in a scratch copy of the repo, since a dev mode on the host uses integration-tests/target.
+
+Correction (TASK-52, Oct 17): passing the agent beans to a builder is wrong. A langchain4j agent has one parent and building a system re-parents and renames its sub-agents; Quarkus gives the same application-scoped agent beans to its declarative systems (QuarkusSubAgentResolver), so a builder system using them broke the declarative ones (ListenerHookSpikeTest: 'No ongoing parent invocation found for agent ID: transact$0'). The samples now build their own agents with AgenticServices.agentBuilder(Interface.class).chatModel(chatModel) (it.builder.Agents); BuilderSamplesTest checks that the declarative agents keep their parent and id.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

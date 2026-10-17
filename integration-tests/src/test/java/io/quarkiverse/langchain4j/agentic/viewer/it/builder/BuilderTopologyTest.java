@@ -62,32 +62,14 @@ class BuilderTopologyTest {
     @Inject
     ChatModel chatModel;
 
-    @Inject
-    StoryWriter.IntroWriter introWriter;
 
-    @Inject
-    ResearchGatherer.WebSearcher webSearcher;
 
-    @Inject
-    ResearchGatherer.DatabaseSearcher databaseSearcher;
 
-    @Inject
-    PhraseTranslator.Translator translator;
 
-    @Inject
-    ExpertRouter.MedicalExpert medicalExpert;
 
-    @Inject
-    ExpertRouter.TechnicalExpert technicalExpert;
 
-    @Inject
-    BankSupervisor.ExchangeAgent exchangeAgent;
 
-    @Inject
-    DraftReviewer.Drafter drafter;
 
-    @Inject
-    DraftReviewer.Reviewer reviewer;
 
     @BeforeAll
     static void declarativeSystems() throws Exception {
@@ -101,8 +83,9 @@ class BuilderTopologyTest {
         return (AgentInstance) (agent instanceof ClientProxy ? ClientProxy.unwrap(agent) : agent);
     }
 
-    private static Object bean(Object agent) {
-        return agent instanceof ClientProxy ? ClientProxy.unwrap(agent) : agent;
+    /** A new agent: the app's agent beans belong to its declarative systems (an agent has one parent). */
+    private Object fresh(Class<?> agentInterface) {
+        return AgenticServices.agentBuilder(agentInterface).chatModel(chatModel).build();
     }
 
     private static AgenticSystem system(Object root) {
@@ -172,8 +155,8 @@ class BuilderTopologyTest {
     @Test
     void lambdaGuardsAreLabelledLambda() {
         UntypedAgent experts = AgenticServices.conditionalBuilder().name("askExpert")
-                .subAgents("category is medical", scope -> true, bean(medicalExpert))
-                .subAgents(scope -> false, bean(technicalExpert))
+                .subAgents("category is medical", scope -> true, fresh(ExpertRouter.MedicalExpert.class))
+                .subAgents(scope -> false, fresh(ExpertRouter.TechnicalExpert.class))
                 .outputKey("response").build();
 
         AgentNode node = system(experts).root();
@@ -186,16 +169,16 @@ class BuilderTopologyTest {
     @Test
     void everyBuilderNodeKind() {
         UntypedAgent parallel = AgenticServices.parallelBuilder().name("search")
-                .subAgents(bean(webSearcher), bean(databaseSearcher)).build();
+                .subAgents(fresh(ResearchGatherer.WebSearcher.class), fresh(ResearchGatherer.DatabaseSearcher.class)).build();
         UntypedAgent mapper = AgenticServices.parallelMapperBuilder().name("translateAll")
-                .subAgents(bean(translator)).itemsProvider("phrases").outputKey("translations").build();
-        UntypedAgent loop = AgenticServices.loopBuilder().name("loop").subAgents(bean(introWriter)).maxIterations(2).build();
+                .subAgents(fresh(PhraseTranslator.Translator.class)).itemsProvider("phrases").outputKey("translations").build();
+        UntypedAgent loop = AgenticServices.loopBuilder().name("loop").subAgents(fresh(StoryWriter.IntroWriter.class)).maxIterations(2).build();
         UntypedAgent conditional = AgenticServices.conditionalBuilder().name("route")
-                .subAgents(scope -> true, bean(medicalExpert)).build();
+                .subAgents(scope -> true, fresh(ExpertRouter.MedicalExpert.class)).build();
         var supervisor = AgenticServices.supervisorBuilder().name("transact").chatModel(chatModel)
-                .subAgents(bean(exchangeAgent)).build();
+                .subAgents(fresh(BankSupervisor.ExchangeAgent.class)).build();
         UntypedAgent planner = AgenticServices.plannerBuilder().name("write")
-                .subAgents(bean(drafter), bean(reviewer)).planner(DraftReviewer.DraftReviewPlanner::new).build();
+                .subAgents(fresh(DraftReviewer.Drafter.class), fresh(DraftReviewer.Reviewer.class)).planner(DraftReviewer.DraftReviewPlanner::new).build();
         var human = AgenticServices.humanInTheLoopBuilder().description("Asks for approval")
                 .inputKey(String.class, "draft").outputKey("approval").responseProvider(scope -> "yes").build();
         var action = AgenticServices.agentAction(scope -> scope.writeState("done", true));

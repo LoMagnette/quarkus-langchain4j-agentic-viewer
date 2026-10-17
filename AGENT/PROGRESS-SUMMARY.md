@@ -686,3 +686,14 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   does the declarative StoryCreator read at runtime. Planner class names added to LangChain4jInternals.
 - Limits: a builder mapper's items key is private (its inputs are its agent's), A2A builder agents not covered (module
   and server needed).
+
+### TASK-52 T5.1 CDI discovery of builder systems — done (Oct 17, 2026)
+
+- `builder-discovery` build config (`cdi` default, `none`). Build time: `BuilderSystemBeans` picks producer beans typed
+  as agents or whose producer calls an agentic `build()`, keeps them unremovable, records bean ids. Runtime:
+  `BuilderSystems` creates them on the first listing (registry loads lazily; startup attaches listeners to the
+  build-time systems only), keeps those without a parent, builds their topology (BuilderTopology). The Dev UI lists
+  them (origin builder) with their graph; Run is disabled and `startRun` refused until T5.6.
+- Finding: an agent has one parent; Quarkus shares the agent beans with its declarative systems, so builder systems
+  must build their own agents (`agentBuilder(Interface.class).chatModel(..)`); samples and tests changed, regression
+  test added. Docs: builder systems section and config reference.

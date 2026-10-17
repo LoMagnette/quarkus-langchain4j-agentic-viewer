@@ -13,7 +13,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import dev.langchain4j.agentic.UntypedAgent;
+import dev.langchain4j.agentic.planner.AgentInstance;
 import io.quarkiverse.langchain4j.agentic.viewer.it.fake.ScriptedChatModel;
+import io.quarkiverse.langchain4j.agentic.viewer.it.samples.StoryCreator;
+import io.quarkus.arc.ClientProxy;
 import io.quarkus.test.junit.QuarkusTest;
 
 /**
@@ -38,6 +41,12 @@ class BuilderSamplesTest {
 
     @Inject
     BlurbedStory blurbedStory;
+
+    @Inject
+    StoryCreator storyCreator;
+
+    @Inject
+    StoryCreator.Drafter drafter;
 
     @BeforeEach
     void reset() {
@@ -81,6 +90,21 @@ class BuilderSamplesTest {
                 .then().statusCode(200).body(equalTo("Restart it, then update the drivers."));
         assertEquals(1, requestsContaining("As a medical expert"));
         assertEquals(1, requestsContaining("As a technical expert"));
+    }
+
+    /**
+     * An agent has one parent: the builder samples build their own agents, so the agent beans of the declarative
+     * systems keep theirs (a builder given the beans would re-parent and rename them, breaking the declarative runs).
+     */
+    @Test
+    void builderSystemsLeaveTheDeclarativeAgentsAlone() {
+        builderStoryCreator.invoke(Map.of("topic", "a lighthouse"));
+        ClientProxy.unwrap(storyCreator); // the declarative system is built
+
+        AgentInstance agent = (AgentInstance) ClientProxy.unwrap(drafter);
+        assertEquals("create", agent.parent().name());
+        assertEquals(StoryCreator.class, agent.parent().type());
+        assertEquals("draft$0", agent.agentId());
     }
 
     /** Declarative workflow whose first step delegates to the builder StoryCreator. */

@@ -45,9 +45,10 @@ mvn install -pl docs
 
 Samples run on a scripted fake chat model (`integration-tests/.../it/fake/ScriptedChatModel`): declarative samples in
 `src/main/java/.../it/samples`, builder (`AgenticServices.*Builder()`) and mixed samples in `src/main/java/.../it/builder`
-(not discovered by the viewer yet, Phase 5), patterns samples in `src/patterns/java` (profile `patterns`). Under Quarkus,
-builder sub-agents are the agent beans of annotated interfaces, unwrapped from their client proxies (`AgentBeans`); a
-non-AI agent class (`@Agent` method on a class) must be an unremovable bean. To try a real model, use
+(the produced ones are listed), patterns samples in `src/patterns/java` (profile `patterns`). Under Quarkus, a builder
+system needs its own agents, built from annotated interfaces with the app's chat model (`it.builder.Agents`): a
+langchain4j agent has one parent, so a builder given the agent beans of declarative systems re-parents and renames them
+and breaks those systems; a non-AI agent class (`@Agent` method on a class) must be an unremovable bean. To try a real model, use
 the `ollama` profile: the fake is not produced and the OpenAI extension calls any OpenAI-compatible endpoint:
 
 ```bash
@@ -91,14 +92,18 @@ application configures for each agent.
 4. Dev mode only: the systems are recorded into runtime-dev (`AgenticViewerRecorder`), where the `AgenticSystemRegistry`
    bean holds them by id; the application's topology contributors are recorded by class name too.
 
-Builder (`AgenticServices.*Builder()`) systems are not discovered yet (Phase 5). Their topology comes from the live
-agent tree: `runtime-dev/.../builder/BuilderTopology` builds the same model from the public `AgentInstance` API (loops
+Builder (`AgenticServices.*Builder()`) systems produced as CDI beans are listed too (T5.1, `builder-discovery=cdi`):
+`deployment/.../builder/BuilderSystemBeans` picks the producer beans whose type is an agent or whose body calls an
+agentic `build()` (ASM), keeps them unremovable and records their bean ids; `runtime-dev/.../builder/BuilderSystems`
+creates them when the Dev UI first lists the systems (`AgenticSystemRegistry` loads them lazily; startup code uses
+`buildTimeSystems()` so no bean is created early) and keeps those without a parent. They cannot be run yet (T5.6).
+Their topology comes from the live agent tree: `runtime-dev/.../builder/BuilderTopology` builds the same model from the public `AgentInstance` API (loops
 and conditions through `as()`, AI details from the annotations of `type()`), with the node id rule of the run events
 (simple name of each agent's type); findings in Backlog doc-5 (tree) and doc-6 (discovery).
 
 ### Configuration
 
-Config roots under `quarkus.langchain4j.agentic.dev-ui`: `enabled` (build time, `deployment/.../AgenticViewerBuildConfig`,
+Config roots under `quarkus.langchain4j.agentic.dev-ui`: `enabled` and `builder-discovery` (build time, `deployment/.../AgenticViewerBuildConfig`,
 checked by every dev-only build step through `AgenticViewerEnabled`), `history-size` and `max-payload-size` (run time,
 `runtime/.../config/AgenticViewerRuntimeConfig`, read by `RunManager`). The extension processor runs on runtime and
 deployment so they are registered and documented.

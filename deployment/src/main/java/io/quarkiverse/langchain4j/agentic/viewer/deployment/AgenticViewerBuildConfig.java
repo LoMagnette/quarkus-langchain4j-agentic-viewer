@@ -18,4 +18,20 @@ public interface AgenticViewerBuildConfig {
      */
     @WithDefault("true")
     boolean enabled();
+
+    /**
+     * How the systems built with the {@code AgenticServices} builders are found, in dev mode. {@code cdi}: the beans
+     * the application produces whose type is an agent ({@code UntypedAgent}, {@code SupervisorAgent}) or whose producer
+     * calls a builder's {@code build()}; they are created when the Dev UI first lists the systems, not at startup.
+     * Systems kept in a field or built per call are not found. {@code none}: declarative systems only.
+     */
+    @WithDefault("cdi")
+    BuilderDiscovery builderDiscovery();
+
+    enum BuilderDiscovery {
+        /** Builder systems produced as CDI beans. */
+        CDI,
+        /** No builder system. */
+        NONE
+    }
 }

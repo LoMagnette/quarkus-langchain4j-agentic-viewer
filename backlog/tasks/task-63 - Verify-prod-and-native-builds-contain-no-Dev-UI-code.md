@@ -3,9 +3,9 @@ id: TASK-63
 title: Verify prod and native builds contain no Dev UI code
 status: In Progress
 assignee:
-  - '@claude'
+  - Loic
 created_date: '2026-10-06 06:16'
-updated_date: '2026-10-16 21:41'
+updated_date: '2026-10-17 06:14'
 labels:
   - build
   - testing

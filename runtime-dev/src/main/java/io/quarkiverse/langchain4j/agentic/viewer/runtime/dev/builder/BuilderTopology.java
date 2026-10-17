@@ -397,7 +397,10 @@ public final class BuilderTopology {
     }
 
     static String simpleName(Class<?> type) {
-        String name = type == null ? "?" : type.getName();
-        return name.substring(Math.max(name.lastIndexOf('.'), name.lastIndexOf('$')) + 1);
+        return simpleName(type == null ? "?" : type.getName());
+    }
+
+    static String simpleName(String className) {
+        return className.substring(Math.max(className.lastIndexOf('.'), className.lastIndexOf('$')) + 1);
     }
 }

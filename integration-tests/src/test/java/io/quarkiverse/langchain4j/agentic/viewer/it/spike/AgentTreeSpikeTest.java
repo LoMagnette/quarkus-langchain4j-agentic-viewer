@@ -65,14 +65,8 @@ class AgentTreeSpikeTest {
     @Inject
     ExpertRouter expertRouter;
 
-    @Inject
-    ExpertRouter.CategoryRouter categoryRouter;
 
-    @Inject
-    ExpertRouter.MedicalExpert medicalExpert;
 
-    @Inject
-    ExpertRouter.TechnicalExpert technicalExpert;
 
     @Inject
     ResearchGatherer researchGatherer;
@@ -89,17 +83,9 @@ class AgentTreeSpikeTest {
     @Inject
     TripPlanner tripPlanner;
 
-    @Inject
-    DraftReviewer.Drafter drafter;
 
-    @Inject
-    DraftReviewer.Reviewer reviewer;
 
-    @Inject
-    BankSupervisor.ExchangeAgent exchangeAgent;
 
-    @Inject
-    BankSupervisor.WithdrawAgent withdrawAgent;
 
     @Inject
     ChatModel chatModel;
@@ -110,6 +96,11 @@ class AgentTreeSpikeTest {
                 .collect(Collectors.joining("\n"));
         System.out.println(all);
         Files.writeString(Path.of("target", "agent-trees.txt"), all);
+    }
+
+    /** A new agent: the app's agent beans belong to its declarative systems (an agent has one parent). */
+    private Object fresh(Class<?> agentInterface) {
+        return AgenticServices.agentBuilder(agentInterface).chatModel(chatModel).build();
     }
 
     /** Both beans are AgentInstances once unwrapped from their client proxies. */
@@ -222,12 +213,12 @@ class AgentTreeSpikeTest {
         print("ExpertRouter (declarative)", expertRouter);
         UntypedAgent experts = AgenticServices.conditionalBuilder()
                 .name("askExpert")
-                .subAgents("category is medical", scope -> true, ClientProxy.unwrap(medicalExpert))
-                .subAgents(scope -> false, ClientProxy.unwrap(technicalExpert))
+                .subAgents("category is medical", scope -> true, fresh(ExpertRouter.MedicalExpert.class))
+                .subAgents(scope -> false, fresh(ExpertRouter.TechnicalExpert.class))
                 .outputKey("response")
                 .build();
         UntypedAgent router = AgenticServices.sequenceBuilder().name("ask")
-                .subAgents(ClientProxy.unwrap(categoryRouter), experts).outputKey("response").build();
+                .subAgents(fresh(ExpertRouter.CategoryRouter.class), experts).outputKey("response").build();
         String tree = print("ExpertRouter twin (builder, built per request)", router);
         assertTrue(tree.contains("when \"category is medical\""), tree);
         // a lambda without description: nothing to show but that it is one
@@ -238,9 +229,9 @@ class AgentTreeSpikeTest {
     @Test
     void builderSupervisorPlannerAndHumanStep() {
         SupervisorAgent supervisor = AgenticServices.supervisorBuilder().name("transact").chatModel(chatModel)
-                .subAgents(ClientProxy.unwrap(exchangeAgent), ClientProxy.unwrap(withdrawAgent)).build();
+                .subAgents(fresh(BankSupervisor.ExchangeAgent.class), fresh(BankSupervisor.WithdrawAgent.class)).build();
         UntypedAgent planned = AgenticServices.plannerBuilder().name("write")
-                .subAgents(ClientProxy.unwrap(drafter), ClientProxy.unwrap(reviewer))
+                .subAgents(fresh(DraftReviewer.Drafter.class), fresh(DraftReviewer.Reviewer.class))
                 .planner(DraftReviewer.DraftReviewPlanner::new).outputKey("draft").build();
         HumanInTheLoop approval = AgenticServices.humanInTheLoopBuilder().description("Asks the traveler to approve")
                 .inputKey(String.class, "draft").outputKey("approval").responseProvider(scope -> "yes").build();

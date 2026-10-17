@@ -145,9 +145,9 @@ class BuilderDiscoverySpikeTest {
         assertTrue(methods.containsAll(Set.of("BuilderStoryCreator#storyCreator", "BuilderStoryWriter$Producer#storyWriter",
                 "ResearchService#build", "ExpertResource#ask")), methods::toString);
         // a nested system is built too (the loop of BuilderStoryCreator): the registry must keep roots only
-        assertEquals(2, sites.stream().filter(site -> site.method().equals("storyCreator")).count());
+        assertEquals(2, sites.stream().filter(site -> site.className().endsWith("/BuilderStoryCreator")).count());
         // producers are recognisable: a build-time scan of producer bodies would let CDI find typed beans too
         assertTrue(sites.stream().filter(CallSite::producer).map(CallSite::method).toList()
-                .containsAll(List.of("storyCreator", "storyWriter")));
+                .containsAll(List.of("storyCreator", "styleReviewLoop", "storyWriter")));
     }
 }

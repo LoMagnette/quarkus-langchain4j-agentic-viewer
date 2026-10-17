@@ -1,12 +1,14 @@
 package io.quarkiverse.langchain4j.agentic.viewer.deployment;
 
 import java.lang.reflect.Modifier;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
 
 import org.jboss.jandex.DotName;
 
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.builder.BuilderSystemBeans;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotationScanner;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticDescriptorsBuildItem;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticRootsBuildItem;
@@ -16,13 +18,17 @@ import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.PlannerType
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.TopologyBuilder;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticSystemRegistry;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerJsonRpcService;
-import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
-import io.quarkus.bootstrap.classloading.QuarkusClassLoader;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerRecorder;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.builder.BuilderCandidate;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.builder.BuilderSystems;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.PatternAdapters;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunManager;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunObservation;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.spi.AgenticTopologyContributor;
+import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
+import io.quarkus.arc.deployment.SynthesisFinishedBuildItem;
+import io.quarkus.arc.deployment.UnremovableBeanBuildItem;
+import io.quarkus.bootstrap.classloading.QuarkusClassLoader;
 import io.quarkus.deployment.IsDevelopment;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.annotations.ExecutionTime;
@@ -95,8 +101,30 @@ public class AgenticViewerProcessor {
      */
     @BuildStep(onlyIf = { IsDevelopment.class, AgenticViewerEnabled.class })
     AdditionalBeanBuildItem registerRuntimeDevBeans() {
-        return AdditionalBeanBuildItem.builder().addBeanClasses(AgenticSystemRegistry.class, RunManager.class, RunObservation.class)
-                .setUnremovable().build();
+        return AdditionalBeanBuildItem.builder().addBeanClasses(AgenticSystemRegistry.class, RunManager.class, RunObservation.class,
+                BuilderSystems.class).setUnremovable().build();
+    }
+
+    /**
+     * Keeps the beans that are builder systems (T5.1) even when the application does not inject them: the Dev UI lists
+     * them. Nothing creates them before the Dev UI asks.
+     */
+    @BuildStep(onlyIf = { IsDevelopment.class, AgenticViewerEnabled.class, BuilderDiscoveryCdi.class })
+    UnremovableBeanBuildItem keepBuilderSystemBeans() {
+        return new UnremovableBeanBuildItem(BuilderSystemBeans.of(Thread.currentThread().getContextClassLoader())::isBuilderSystem);
+    }
+
+    /**
+     * Hands the beans that may be builder systems to runtime-dev, by bean identifier.
+     */
+    @BuildStep(onlyIf = { IsDevelopment.class, AgenticViewerEnabled.class, BuilderDiscoveryCdi.class })
+    @Record(ExecutionTime.STATIC_INIT)
+    void recordBuilderSystemBeans(SynthesisFinishedBuildItem synthesis, AgenticViewerRecorder recorder) {
+        BuilderSystemBeans beans = BuilderSystemBeans.of(Thread.currentThread().getContextClassLoader());
+        recorder.setBuilderCandidates(synthesis.getBeans().stream().filter(beans::isBuilderSystem)
+                .map(beans::candidate).sorted(Comparator.comparing(BuilderCandidate::declaringClass)
+                        .thenComparing(BuilderCandidate::member))
+                .toList());
     }
 
     /**

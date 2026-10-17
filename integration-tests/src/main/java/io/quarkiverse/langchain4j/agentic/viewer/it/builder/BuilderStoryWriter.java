@@ -4,6 +4,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
 
 import dev.langchain4j.agentic.AgenticServices;
+import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.service.V;
 import io.quarkiverse.langchain4j.agentic.viewer.it.samples.StoryWriter;
 
@@ -21,11 +22,12 @@ public interface BuilderStoryWriter {
 
         @Produces
         @ApplicationScoped
-        BuilderStoryWriter storyWriter(StoryWriter.IntroWriter introWriter, StoryWriter.AdventureWriter adventureWriter) {
+        BuilderStoryWriter storyWriter(ChatModel chatModel) {
             return AgenticServices.sequenceBuilder(BuilderStoryWriter.class)
                     .name("write")
                     .description("Writes a short story about a person, built with the builder API")
-                    .subAgents(AgentBeans.unwrap(introWriter, adventureWriter))
+                    .subAgents(Agents.fresh(chatModel, StoryWriter.IntroWriter.class),
+                            Agents.fresh(chatModel, StoryWriter.AdventureWriter.class))
                     .output(scope -> scope.readState("intro", "") + "\n\n" + scope.readState("adventure", ""))
                     .build();
         }

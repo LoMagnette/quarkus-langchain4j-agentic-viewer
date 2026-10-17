@@ -35,7 +35,34 @@ agent lists as a sub-agent. The page lists them with the patterns they use.
 
 image::list.png[The list of agentic systems]
 
-NOTE: Systems built programmatically with `AgenticServices.*Builder()` are not listed yet.
+=== Systems built with the builders
+
+Systems built with `AgenticServices.*Builder()` only exist at runtime. The page also lists those the application
+produces as CDI beans: a producer whose type is an agent (`UntypedAgent`, `SupervisorAgent`), or whose body calls a
+builder's `build()` (a typed agent interface):
+
+[source,java]
+----
+@Produces
+@ApplicationScoped
+@Named("storyCreator")
+UntypedAgent storyCreator(ChatModel chatModel) {
+    return AgenticServices.sequenceBuilder()
+            .subAgents(AgenticServices.agentBuilder(Drafter.class).chatModel(chatModel).build(), ...)
+            .outputKey("story")
+            .build();
+}
+----
+
+Their beans are created when the page first lists the systems, not at startup. A produced system used as a sub-agent of
+another one is shown inside it, not as a system of its own. Their graph is read from the live agents: a loop exit
+condition or an activation condition given as a lambda without description is shown as "lambda", and tools or models
+given to a builder directly are not shown. `quarkus.langchain4j.agentic.dev-ui.builder-discovery=none` lists the
+declarative systems only.
+
+TIP: Give each builder system its own agents (`AgenticServices.agentBuilder(MyAgent.class).chatModel(...)`), not the
+agent beans Quarkus creates for the agent interfaces: a langchain4j agent has one parent, and a declarative system using
+the same bean would then be broken.
 
 === Structure
 
@@ -165,7 +192,8 @@ image::contributor.png[A custom planner drawn by its topology contributor]
 
 == Limitations
 
-* Only declarative systems are discovered; builder systems will follow.
+* Builder systems are listed when they are CDI beans; systems kept in a field or built per call are not. They cannot be
+  run from the page yet.
 * Runs, human-in-the-loop answers, planner decisions and the pattern views rely on internal parts of
   `langchain4j-agentic` and `langchain4j-agentic-patterns` (there is no public API for them yet). A version of these
   libraries that changes them may disable some of the live information; the structure views do not depend on them.

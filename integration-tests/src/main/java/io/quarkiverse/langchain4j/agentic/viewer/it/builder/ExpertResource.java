@@ -11,6 +11,7 @@ import jakarta.ws.rs.core.MediaType;
 
 import dev.langchain4j.agentic.AgenticServices;
 import dev.langchain4j.agentic.UntypedAgent;
+import dev.langchain4j.model.chat.ChatModel;
 import io.quarkiverse.langchain4j.agentic.viewer.it.samples.ExpertRouter;
 import io.quarkiverse.langchain4j.agentic.viewer.it.samples.ExpertRouter.RequestCategory;
 
@@ -22,13 +23,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.it.samples.ExpertRouter.Request
 public class ExpertResource {
 
     @Inject
-    ExpertRouter.CategoryRouter categoryRouter;
-
-    @Inject
-    ExpertRouter.MedicalExpert medicalExpert;
-
-    @Inject
-    ExpertRouter.TechnicalExpert technicalExpert;
+    ChatModel chatModel;
 
     @GET
     @Produces(MediaType.TEXT_PLAIN)
@@ -37,15 +32,15 @@ public class ExpertResource {
                 .name("askExpert")
                 .description("Asks the expert matching the category")
                 .subAgents("category is medical", scope -> category(scope.readState("category")) == RequestCategory.MEDICAL,
-                        AgentBeans.unwrap(medicalExpert))
+                        Agents.fresh(chatModel, ExpertRouter.MedicalExpert.class))
                 .subAgents(scope -> category(scope.readState("category")) == RequestCategory.TECHNICAL,
-                        AgentBeans.unwrap(technicalExpert))
+                        Agents.fresh(chatModel, ExpertRouter.TechnicalExpert.class))
                 .outputKey("response")
                 .build();
         UntypedAgent router = AgenticServices.sequenceBuilder()
                 .name("ask")
                 .description("Routes a request to the right expert, rebuilt per request")
-                .subAgents(AgentBeans.unwrap(categoryRouter, experts))
+                .subAgents(Agents.fresh(chatModel, ExpertRouter.CategoryRouter.class), experts)
                 .outputKey("response")
                 .build();
         return String.valueOf(router.invoke(Map.of("request", request)));

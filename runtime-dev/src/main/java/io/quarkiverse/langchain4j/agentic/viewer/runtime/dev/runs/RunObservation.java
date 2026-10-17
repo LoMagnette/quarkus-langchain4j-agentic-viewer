@@ -30,6 +30,7 @@ public class RunObservation {
                     + " quarkus-langchain4j-agentic) lacks internal parts the Dev UI runs rely on; the live information"
                     + " named for each is missing:%n  %s", String.join("%n  ".formatted(), missing));
         }
-        RootListeners.attach(registry.systems(), new DevUiAgentListener(runManager, patternAdapters));
+        // declarative systems only: builder system beans are created when the Dev UI asks for them
+        RootListeners.attach(registry.buildTimeSystems(), new DevUiAgentListener(runManager, patternAdapters));
     }
 }

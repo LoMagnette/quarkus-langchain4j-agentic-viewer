@@ -8,6 +8,7 @@ import jakarta.inject.Inject;
 
 import dev.langchain4j.agentic.AgenticServices;
 import dev.langchain4j.agentic.UntypedAgent;
+import dev.langchain4j.model.chat.ChatModel;
 import io.quarkiverse.langchain4j.agentic.viewer.it.samples.ResearchGatherer;
 
 /**
@@ -18,10 +19,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.it.samples.ResearchGatherer;
 public class ResearchService {
 
     @Inject
-    ResearchGatherer.WebSearcher webSearcher;
-
-    @Inject
-    ResearchGatherer.DatabaseSearcher databaseSearcher;
+    ChatModel chatModel;
 
     private UntypedAgent quickResearch;
 
@@ -30,7 +28,8 @@ public class ResearchService {
         quickResearch = AgenticServices.parallelBuilder()
                 .name("quickResearch")
                 .description("Searches the web and the database in parallel")
-                .subAgents(AgentBeans.unwrap(webSearcher, databaseSearcher))
+                .subAgents(Agents.fresh(chatModel, ResearchGatherer.WebSearcher.class),
+                        Agents.fresh(chatModel, ResearchGatherer.DatabaseSearcher.class))
                 .output(scope -> "Web: " + scope.readState("webResults", "") + "\nDatabase: "
                         + scope.readState("dbResults", ""))
                 .build();
