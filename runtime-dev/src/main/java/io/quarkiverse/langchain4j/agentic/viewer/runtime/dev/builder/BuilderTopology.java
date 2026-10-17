@@ -17,6 +17,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 import dev.langchain4j.agentic.planner.AgentArgument;
 import dev.langchain4j.agentic.planner.AgentInstance;
@@ -99,18 +100,28 @@ public final class BuilderTopology {
      * @param root the root agent, unwrapped from any CDI client proxy
      */
     public static AgenticSystem system(String id, String name, SourceRef sourceRef, AgentInstance root) {
-        AgentNode rootNode = node(id, root, null);
-        return new AgenticSystem(id, name, id, origin(root), sourceRef, inputs(root, rootNode), rootNode);
+        return system(id, name, sourceRef, root, agentClass -> null);
     }
 
-    /** BUILDER, or MIXED when a workflow under the root is a declarative one (agent beans as leaves are the norm). */
-    private static SystemOrigin origin(AgentInstance root) {
-        for (AgentInstance sub : root.subagents()) {
-            if (declarativeWorkflow(sub.type()) || origin(sub) == SystemOrigin.MIXED) {
-                return SystemOrigin.MIXED;
-            }
-        }
-        return SystemOrigin.BUILDER;
+    /**
+     * @param declarativeNodes the node of an agent class in a declarative system of the application, null for none:
+     *        such an agent takes its build-time details (T5.5b) and makes the system MIXED
+     */
+    public static AgenticSystem system(String id, String name, SourceRef sourceRef, AgentInstance root,
+            Function<String, AgentNode> declarativeNodes) {
+        boolean[] shared = { false };
+        AgentNode rootNode = node(id, root, null, agentClass -> {
+            AgentNode node = declarativeNodes.apply(agentClass);
+            shared[0] |= node != null;
+            return node;
+        });
+        SystemOrigin origin = shared[0] || usesDeclarativeWorkflow(root) ? SystemOrigin.MIXED : SystemOrigin.BUILDER;
+        return new AgenticSystem(id, name, id, origin, sourceRef, inputs(root, rootNode), rootNode);
+    }
+
+    /** Whether a workflow under the root is a declarative one. */
+    private static boolean usesDeclarativeWorkflow(AgentInstance root) {
+        return root.subagents().stream().anyMatch(sub -> declarativeWorkflow(sub.type()) || usesDeclarativeWorkflow(sub));
     }
 
     private static boolean declarativeWorkflow(Class<?> type) {
@@ -118,7 +129,7 @@ public final class BuilderTopology {
                 .anyMatch(method -> annotations(method).stream().anyMatch(a -> DECLARATIVE_WORKFLOWS.contains(a.annotationType().getName())));
     }
 
-    static AgentNode node(String id, AgentInstance agent, Guard guard) {
+    static AgentNode node(String id, AgentInstance agent, Guard guard, Function<String, AgentNode> declarativeNodes) {
         NodeKind kind = kind(agent);
         List<AgentNode> children = new ArrayList<>();
         Map<String, Guard> branchGuards = branchGuards(agent);
@@ -126,8 +137,11 @@ public final class BuilderTopology {
         for (AgentInstance sub : agent.subagents()) {
             String segment = simpleName(sub.type());
             int occurrence = occurrences.merge(segment, 1, Integer::sum);
-            children.add(node(id + "/" + segment + (occurrence > 1 ? "~" + occurrence : ""), sub, branchGuards.get(sub.agentId())));
+            children.add(node(id + "/" + segment + (occurrence > 1 ? "~" + occurrence : ""), sub,
+                    branchGuards.get(sub.agentId()), declarativeNodes));
         }
+        // an agent of a declarative system: its build-time details (prompt resources, tools of superclasses...)
+        AgentNode declared = agent.parent() == null || agent.type() == null ? null : declarativeNodes.apply(agent.type().getName());
         return new AgentNode(
                 id,
                 agent.name(),
@@ -140,8 +154,9 @@ public final class BuilderTopology {
                 children,
                 kind == NodeKind.LOOP ? loopGuard(agent) : guard,
                 kind == NodeKind.PLANNER ? plannerInfo(agent.plannerType()) : null,
-                kind == NodeKind.AI_AGENT ? aiDetails(agent.type()) : null,
-                remoteDetails(kind, agent.type()));
+                kind != NodeKind.AI_AGENT ? null : declared != null && declared.aiDetails() != null ? declared.aiDetails()
+                        : aiDetails(agent.type()),
+                declared != null && declared.remoteDetails() != null ? declared.remoteDetails() : remoteDetails(kind, agent.type()));
     }
 
     /**

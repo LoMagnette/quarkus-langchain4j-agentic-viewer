@@ -1,10 +1,10 @@
 ---
 id: TASK-57
 title: 'T5.5: Deduplication and mixed-system merge'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-06 06:16'
-updated_date: '2026-10-06 06:26'
+updated_date: '2026-10-17 13:56'
 labels:
   - runtime-dev
   - builder
@@ -28,7 +28,7 @@ Spec: T5.5 (F1.4). Split into deduplication and mixed-system merge.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A per-request builder appears once
+- [x] #1 A per-request builder appears once
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -36,3 +36,9 @@ Spec: T5.5 (F1.4). Split into deduplication and mixed-system merge.
 <!-- SECTION:NOTES:BEGIN -->
 Deferred 2026-10-06 (decision-2): the project owner chose to support declarative agentic systems first; builder API support comes later, as it is more complex.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Split into TASK-57.1 (deduplication by call site and shape) and TASK-57.2 (mixed systems), both done; a per-request builder appears once.
+<!-- SECTION:FINAL_SUMMARY:END -->

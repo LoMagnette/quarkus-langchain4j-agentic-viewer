@@ -2,14 +2,17 @@ package io.quarkiverse.langchain4j.agentic.viewer.deployment;
 
 import java.lang.reflect.Modifier;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Predicate;
 
 import org.jboss.jandex.DotName;
 
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.builder.BuildCallTransformer;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.builder.BuilderSystemBeans;
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.builder.MixedSystems;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotationScanner;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticDescriptorsBuildItem;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticRootsBuildItem;
@@ -26,6 +29,8 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.PatternAda
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunManager;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunObservation;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.spi.AgenticTopologyContributor;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemOrigin;
 import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
 import io.quarkus.arc.deployment.SynthesisFinishedBuildItem;
 import io.quarkus.arc.deployment.UnremovableBeanBuildItem;
@@ -90,8 +95,20 @@ public class AgenticViewerProcessor {
      */
     @BuildStep(onlyIf = { IsDevelopment.class, AgenticViewerEnabled.class })
     @Record(ExecutionTime.STATIC_INIT)
-    void recordSystems(AgenticSystemsBuildItem systems, CombinedIndexBuildItem index, AgenticViewerRecorder recorder) {
-        recorder.setSystems(systems.getSystems());
+    void recordSystems(AgenticSystemsBuildItem systems, AgenticRootsBuildItem roots, CombinedIndexBuildItem index,
+            SynthesisFinishedBuildItem beans, AgenticViewerRecorder recorder) {
+        // a declarative system whose agent injects a builder system is MIXED (T5.5b); builder systems sharing agents
+        // with the declarative ones are told at runtime, from the node of each agent class
+        Map<String, String> agentClasses = TopologyBuilder.agentClasses(roots.getRoots());
+        Set<String> mixed = MixedSystems.declarativeUsingBuilders(agentClasses, beans,
+                BuilderSystemBeans.of(Thread.currentThread().getContextClassLoader()));
+        recorder.setSystems(systems.getSystems().stream().map(system -> mixed.contains(system.id())
+                ? new AgenticSystem(system.id(), system.name(), system.rootNodeId(), SystemOrigin.MIXED,
+                        system.sourceRef(), system.inputs(), system.root())
+                : system).toList());
+        Map<String, String> declarativeAgents = new LinkedHashMap<>();
+        agentClasses.forEach((nodeId, agentClass) -> declarativeAgents.putIfAbsent(agentClass, nodeId));
+        recorder.setDeclarativeAgents(declarativeAgents);
         // the application's topology contributors, created and applied in dev mode only (runtime-dev)
         recorder.setTopologyContributors(index.getIndex()
                 .getAllKnownImplementors(DotName.createSimple(AgenticTopologyContributor.class.getName())).stream()

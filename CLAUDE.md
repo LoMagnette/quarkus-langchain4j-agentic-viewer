@@ -106,7 +106,10 @@ planner decorator); the builder node ids follow the listener's id rule.
 rewrites the application classes calling an agentic `build()` (dev mode only, `BytecodeTransformerBuildItem`) to hand
 each result to `runtime-dev/.../builder/BuiltSystems.register(result, "Class#method:line")`, which keeps the latest
 instance per call site; the registry picks new or rebuilt ones up on each listing (`BuilderSystems.built()`: roots
-only, not the CDI producers' own builds). Their topology comes from the live agent tree: `runtime-dev/.../builder/BuilderTopology` builds the same model from the public `AgentInstance` API (loops
+only, not the CDI producers' own builds), latest instance per call site and shape, held strongly (T5.5a). Origin MIXED
+(T5.5b, owner's rule): a builder system using an agent class of a declarative system (`AgenticViewerRecorder`
+`getDeclarativeAgents`, its node gives the build-time details), or a declarative system whose agent bean injects a
+builder system (`deployment/.../builder/MixedSystems`). Their topology comes from the live agent tree: `runtime-dev/.../builder/BuilderTopology` builds the same model from the public `AgentInstance` API (loops
 and conditions through `as()`, AI details from the annotations of `type()`), with the node id rule of the run events
 (simple name of each agent's type); findings in Backlog doc-5 (tree) and doc-6 (discovery).
 

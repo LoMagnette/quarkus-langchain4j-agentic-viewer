@@ -18,6 +18,7 @@ import org.jboss.logging.Logger;
 import dev.langchain4j.agentic.planner.AgentInstance;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerRecorder;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunObservation;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgentNode;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SourceRef;
 import io.quarkus.arc.Arc;
@@ -64,7 +65,7 @@ public class BuilderSystems {
             if (agent.parent() == null) {
                 String id = candidate.declaringClass() + "#" + candidate.member();
                 systems.add(BuilderTopology.system(id, name(candidate), new SourceRef(candidate.declaringClass(),
-                        candidate.member(), null), agent));
+                        candidate.member(), null), agent, BuilderSystems::declarativeNode));
                 roots.put(id, agent);
                 observation.observe(id, agent);
             }
@@ -94,7 +95,8 @@ public class BuilderSystems {
             String method = producer.substring(producer.indexOf('#') + 1);
             String name = agent.name() != null && !agent.name().isBlank() ? agent.name()
                     : BuilderTopology.simpleName(className) + "." + method;
-            systems.add(BuilderTopology.system(id, name, new SourceRef(className, method, callSite), agent));
+            systems.add(BuilderTopology.system(id, name, new SourceRef(className, method, callSite), agent,
+                    BuilderSystems::declarativeNode));
             roots.put(id, built);
             observation.observe(id, built);
         });
@@ -121,6 +123,34 @@ public class BuilderSystems {
         Object instance = Arc.container().instance(bean).get();
         Object agent = instance instanceof ClientProxy proxy ? ClientProxy.unwrap(proxy) : instance;
         return agent instanceof AgentInstance agentInstance ? agentInstance : null;
+    }
+
+    /** The node of an agent class in the declarative systems (build time), null when none uses it. */
+    static AgentNode declarativeNode(String agentClass) {
+        String nodeId = AgenticViewerRecorder.getDeclarativeAgents().get(agentClass);
+        if (nodeId == null) {
+            return null;
+        }
+        for (AgenticSystem system : AgenticViewerRecorder.getSystems()) {
+            AgentNode node = find(system.root(), nodeId);
+            if (node != null) {
+                return node;
+            }
+        }
+        return null;
+    }
+
+    private static AgentNode find(AgentNode node, String id) {
+        if (node.id().equals(id)) {
+            return node;
+        }
+        for (AgentNode child : node.children()) {
+            AgentNode found = find(child, id);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
     }
 
     /** The bean name, else the produced interface, else the producer. */

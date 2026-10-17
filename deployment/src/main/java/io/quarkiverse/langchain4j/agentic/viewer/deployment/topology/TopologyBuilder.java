@@ -2,6 +2,7 @@ package io.quarkiverse.langchain4j.agentic.viewer.deployment.topology;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -73,13 +74,8 @@ public class TopologyBuilder {
                     null, null, null);
         }
         List<AgentNode> children = new ArrayList<>();
-        Map<String, Integer> occurrences = new HashMap<>();
-        for (AgentTree child : tree.children()) {
-            String segment = simpleName(child.agentClass());
-            int occurrence = occurrences.merge(segment, 1, Integer::sum);
-            String childId = id + SEGMENT_SEPARATOR + segment + (occurrence > 1 ? REPEAT_SEPARATOR + occurrence : "");
-            children.add(node(childId, child, descriptor.branchGuards().get(child.agentClass())));
-        }
+        childIds(id, tree).forEach((childId, child) -> children.add(node(childId, child,
+                descriptor.branchGuards().get(child.agentClass()))));
         return new AgentNode(
                 id,
                 descriptor.name(),
@@ -94,6 +90,32 @@ public class TopologyBuilder {
                 plannerInfo(descriptor),
                 descriptor.aiDetails(),
                 descriptor.remoteDetails());
+    }
+
+    /** The sub-agents of a node by their node id: {@code /<simple class name>}, {@code ~n} for a repeated sibling. */
+    private static Map<String, AgentTree> childIds(String id, AgentTree tree) {
+        Map<String, AgentTree> children = new LinkedHashMap<>();
+        Map<String, Integer> occurrences = new HashMap<>();
+        for (AgentTree child : tree.children()) {
+            String segment = simpleName(child.agentClass());
+            int occurrence = occurrences.merge(segment, 1, Integer::sum);
+            children.put(id + SEGMENT_SEPARATOR + segment + (occurrence > 1 ? REPEAT_SEPARATOR + occurrence : ""), child);
+        }
+        return children;
+    }
+
+    /**
+     * @return the agent class of every node of the systems, by node id (the ids {@link #build} gives)
+     */
+    public static Map<String, String> agentClasses(List<AgentTree> roots) {
+        Map<String, String> classes = new LinkedHashMap<>();
+        roots.forEach(root -> agentClasses(root.descriptor().id(), root, classes));
+        return classes;
+    }
+
+    private static void agentClasses(String id, AgentTree tree, Map<String, String> classes) {
+        classes.put(id, tree.agentClass());
+        childIds(id, tree).forEach((childId, child) -> agentClasses(childId, child, classes));
     }
 
     /**

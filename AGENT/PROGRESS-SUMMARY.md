@@ -737,3 +737,12 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
 - `BuiltSystems` keys entries by call site and shape (fingerprint of kinds, names, types; at most 10 shapes per call
   site): a system rebuilt per request is one entry, a call site building different shapes gets `~2`, `~3`.
 - HotReloadDevModeTest: the old applications get 30 s (was 5 s) to stop their threads; it failed once on a loaded run.
+
+### TASK-57.2 T5.5b mixed systems — done (Oct 17, 2026); T5.5 complete
+
+- Owner's rule: a builder system is MIXED when it uses an agent class that a declarative system also uses (those
+  agents take their build-time details from that node); a declarative system is MIXED when one of its agent beans
+  injects a builder system (build time, Arc injection points). Samples: the three builder samples and BlurbedStory are
+  MIXED, the page shows "mixed system".
+- Fix of T5.4: `BuiltSystems` held instances weakly, so a system built per request vanished at the next GC; now held
+  strongly (bounded by call sites and shapes), the transform test forces a GC.

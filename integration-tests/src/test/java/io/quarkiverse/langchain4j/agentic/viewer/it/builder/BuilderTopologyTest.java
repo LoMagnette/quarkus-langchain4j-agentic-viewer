@@ -22,6 +22,7 @@ import dev.langchain4j.agentic.AgenticServices;
 import dev.langchain4j.agentic.UntypedAgent;
 import dev.langchain4j.agentic.planner.AgentInstance;
 import dev.langchain4j.model.chat.ChatModel;
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentTree;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotationScanner;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.RootSystemDetector;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.TopologyBuilder;
@@ -50,6 +51,8 @@ import io.quarkus.test.junit.QuarkusTest;
 class BuilderTopologyTest {
 
     private static Map<String, AgenticSystem> declarative;
+    // the node of each agent class in the declarative systems, as recorded at build time
+    private static Map<String, AgentNode> declarativeNodes;
 
     @Inject
     @Named(BuilderStoryCreator.NAME)
@@ -73,9 +76,19 @@ class BuilderTopologyTest {
     @BeforeAll
     static void declarativeSystems() throws Exception {
         File samples = new File(StoryWriter.class.getResource("StoryWriter.class").toURI()).getParentFile();
-        declarative = new TopologyBuilder().build(new RootSystemDetector()
-                .detect(new AgenticAnnotationScanner().scan(Index.of(samples)))).stream()
+        List<AgentTree> roots = new RootSystemDetector().detect(new AgenticAnnotationScanner().scan(Index.of(samples)));
+        declarative = new TopologyBuilder().build(roots).stream()
                 .collect(Collectors.toMap(AgenticSystem::name, Function.identity()));
+        Map<String, AgentNode> nodes = new LinkedHashMap<>();
+        declarative.values().forEach(system -> collect(system.root(), nodes));
+        declarativeNodes = new LinkedHashMap<>();
+        TopologyBuilder.agentClasses(roots).forEach((nodeId, agentClass) -> declarativeNodes.putIfAbsent(agentClass,
+                nodes.get(nodeId)));
+    }
+
+    private static void collect(AgentNode node, Map<String, AgentNode> nodes) {
+        nodes.put(node.id(), node);
+        node.children().forEach(child -> collect(child, nodes));
     }
 
     private static AgentInstance instance(Object agent) {
@@ -130,6 +143,25 @@ class BuilderTopologyTest {
         // only the guard label differs: the builder's exit condition is a lambda
         assertEquals("goodEnough", child(twin.root(), 1).guard().label());
         assertEquals(Guard.loopExit(BuilderTopology.LAMBDA, 5, true), child(builder.root(), 1).guard());
+    }
+
+    /**
+     * T5.5b: a builder system using agents of the declarative systems is MIXED, and those agents carry their build-time
+     * details; the same system without that knowledge is BUILDER.
+     */
+    @Test
+    void sharedDeclarativeAgentsMakeTheSystemMixed() {
+        AgenticSystem mixed = BuilderTopology.system("id", "name", null, instance(builderStoryCreator), declarativeNodes::get);
+
+        assertEquals(SystemOrigin.MIXED, mixed.origin());
+        AgentNode declaredDrafter = child(declarative.get("StoryCreator").root(), 0);
+        assertEquals(declaredDrafter.aiDetails(), child(mixed.root(), 0).aiDetails());
+        assertEquals(SystemOrigin.BUILDER, system(builderStoryCreator).origin());
+        // agents used by builders only: BUILDER
+        UntypedAgent builderOnly = AgenticServices.sequenceBuilder().name("only")
+                .subAgents(AgenticServices.agentAction(scope -> scope.writeState("x", 1))).build();
+        assertEquals(SystemOrigin.BUILDER,
+                BuilderTopology.system("id", "name", null, instance(builderOnly), declarativeNodes::get).origin());
     }
 
     /** Node ids follow the rule run events are correlated with: the simple name of each agent's type. */

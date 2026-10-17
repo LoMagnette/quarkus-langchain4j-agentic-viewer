@@ -36,6 +36,8 @@ public class BuilderTransformDevModeTest extends DevUIJsonRPCTest {
 
     @Test
     void builtSystemsListed() throws Exception {
+        // systems built per call are garbage once used: they must stay listed
+        System.gc();
         List<String> names = new ArrayList<>();
         List<String> ids = new ArrayList<>();
         for (JsonNode system : executeJsonRPCMethod("listSystems")) {

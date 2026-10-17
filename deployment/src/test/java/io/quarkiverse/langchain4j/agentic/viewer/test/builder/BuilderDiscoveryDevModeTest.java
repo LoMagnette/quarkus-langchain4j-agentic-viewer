@@ -24,11 +24,13 @@ public class BuilderDiscoveryDevModeTest extends DevUIJsonRPCTest {
     @RegisterExtension
     static final QuarkusDevModeTest config = new QuarkusDevModeTest()
             .withApplicationRoot(jar -> jar.addClasses(PipelineSystems.class, PipelineSystems.Greeter.class,
-                    PipelineSystems.FixtureChatModel.class, FieldSystems.class))
+                    PipelineSystems.FixtureChatModel.class, FieldSystems.class, DelegatingWorkflow.class,
+                    DelegatingWorkflow.Step.class, DelegatingWorkflow.EntryPoint.class))
             .setLogRecordPredicate(record -> true);
 
     private static final String PIPELINE = PipelineSystems.class.getName() + "#pipeline";
     private static final String GREETER = PipelineSystems.class.getName() + "#greeter";
+    private static final String DELEGATING = DelegatingWorkflow.class.getName() + "#run";
 
     public BuilderDiscoveryDevModeTest() {
         super("quarkus-langchain4j-agentic-viewer");
@@ -47,7 +49,7 @@ public class BuilderDiscoveryDevModeTest extends DevUIJsonRPCTest {
         List<String> ids = new ArrayList<>();
         systems.forEach(system -> ids.add(system.get("id").asText()));
         // cleanup is a sub-agent of pipeline; the systems of FieldSystems are no beans (builder-discovery=transform only)
-        assertEquals(List.of(GREETER, PIPELINE), ids.stream().sorted().toList());
+        assertEquals(List.of(DELEGATING, GREETER, PIPELINE), ids.stream().sorted().toList());
         assertTrue(produced("pipeline") && produced("greeter"));
 
         JsonNode pipeline = null;
@@ -60,6 +62,12 @@ public class BuilderDiscoveryDevModeTest extends DevUIJsonRPCTest {
         assertEquals("BUILDER", pipeline.get("origin").asText());
         assertEquals("SEQUENCE", pipeline.get("rootKind").asText());
         assertEquals("pipeline", pipeline.get("sourceRef").get("methodName").asText());
+        // T5.5b: a declarative workflow whose step injects a builder system is MIXED
+        for (JsonNode system : systems) {
+            if (system.get("id").asText().equals(DELEGATING)) {
+                assertEquals("MIXED", system.get("origin").asText());
+            }
+        }
 
         JsonNode topology = executeJsonRPCMethod("getTopology", Map.of("systemId", PIPELINE));
         List<String> kinds = new ArrayList<>();

@@ -66,6 +66,9 @@ builder's `build()` are rewritten to report what they build. Such a system appea
 first request, for one built per request), once per place in the code (its latest instance), named after the
 `name(...)` given to the builder.
 
+A builder system using agents that a declarative system of the application also uses is shown as _mixed_ (those
+agents show their build-time details), as is a declarative system whose agent injects a builder system.
+
 They run from the page like the others, with the same live view (agents, timeline, human steps, planner decisions).
 The form asks for the inputs their agents need from the caller (the parameters of the method, for a typed agent
 interface): an `UntypedAgent` is invoked with a map of these values.
