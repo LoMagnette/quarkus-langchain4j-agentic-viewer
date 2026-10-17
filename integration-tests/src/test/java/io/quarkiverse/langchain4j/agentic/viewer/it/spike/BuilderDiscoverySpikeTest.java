@@ -130,7 +130,8 @@ class BuilderDiscoverySpikeTest {
 
         // the UntypedAgent bean is found by its type; the typed interface bean (BuilderStoryWriter) is not: nothing in
         // its types tells an agent before the bean is created; the field and per-request systems are no beans at all
-        assertEquals(Set.of("PRODUCER_METHOD BuilderStoryCreator [AgenticScopeAccess, UntypedAgent]"), found);
+        assertEquals(Set.of("PRODUCER_METHOD BuilderDraftReviewer [AgenticScopeAccess, UntypedAgent]",
+                "PRODUCER_METHOD BuilderStoryCreator [AgenticScopeAccess, UntypedAgent]"), found);
     }
 
     @Test

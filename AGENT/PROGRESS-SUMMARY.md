@@ -706,3 +706,12 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
 - Runs: `CdiRunInvoker` invokes an UntypedAgent with a map of converted values, a typed interface through its method;
   `BuilderSystems` keeps the root agents. Verified in tests (dev-mode fixture, integration samples) and from the Dev UI
   (builder StoryCreator: "A story about a lighthouse (draft 4)"). The graph is not lit during builder runs (T5.3).
+
+### TASK-54 T5.3 live view of builder systems — done (Oct 17, 2026), without upstream U2
+
+- Builder systems found through CDI are already built: the post-build hooks of the declarative roots apply.
+  `BuilderSystems` hands each root to `RunObservation.observe` (one Dev UI listener for all roots): agent events on the
+  builder node ids, loop iterations, human steps, planner decisions (new sample `BuilderDraftReviewer`, plannerBuilder).
+- Builder workflow inputs: in order for sequences and loops, "read and written by no agent" for the others (a planner's
+  agents run in any order): the builder DraftReviewer gets the declarative form (topic only).
+- Non-bean systems still need U2 (or the transform, T5.4) to be observed.

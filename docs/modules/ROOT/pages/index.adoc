@@ -60,8 +60,9 @@ condition or an activation condition given as a lambda without description is sh
 given to a builder directly are not shown. `quarkus.langchain4j.agentic.dev-ui.builder-discovery=none` lists the
 declarative systems only.
 
-They run from the page like the others. The form asks for the inputs their agents read before any of them writes them
-(the parameters of the method, for a typed agent interface): an `UntypedAgent` is invoked with a map of these values.
+They run from the page like the others, with the same live view (agents, timeline, human steps, planner decisions).
+The form asks for the inputs their agents need from the caller (the parameters of the method, for a typed agent
+interface): an `UntypedAgent` is invoked with a map of these values.
 
 TIP: Give each builder system its own agents (`AgenticServices.agentBuilder(MyAgent.class).chatModel(...)`), not the
 agent beans Quarkus creates for the agent interfaces: a langchain4j agent has one parent, and a declarative system using
@@ -195,8 +196,7 @@ image::contributor.png[A custom planner drawn by its topology contributor]
 
 == Limitations
 
-* Builder systems are listed when they are CDI beans; systems kept in a field or built per call are not. Their runs do
-  not highlight the graph yet.
+* Builder systems are listed when they are CDI beans; systems kept in a field or built per call are not.
 * Runs, human-in-the-loop answers, planner decisions and the pattern views rely on internal parts of
   `langchain4j-agentic` and `langchain4j-agentic-patterns` (there is no public API for them yet). A version of these
   libraries that changes them may disable some of the live information; the structure views do not depend on them.

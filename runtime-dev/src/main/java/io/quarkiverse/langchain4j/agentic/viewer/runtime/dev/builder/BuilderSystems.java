@@ -9,11 +9,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.Set;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 
 import org.jboss.logging.Logger;
 
 import dev.langchain4j.agentic.planner.AgentInstance;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerRecorder;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunObservation;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SourceRef;
 import io.quarkus.arc.Arc;
@@ -23,7 +25,7 @@ import io.quarkus.arc.InjectableBean;
 /**
  * The builder systems the application produces as CDI beans (T5.1, {@code builder-discovery=cdi}): the candidates
  * found at build time, created when asked (the Dev UI listing them), kept when they are an agent with no parent (a
- * sub-agent of another system is part of that system).
+ * sub-agent of another system is part of that system), and observed for the live view of their runs.
  */
 @ApplicationScoped
 public class BuilderSystems {
@@ -32,6 +34,9 @@ public class BuilderSystems {
 
     // the root agent of each system found, by system id: what a run invokes
     private final Map<String, Object> roots = new ConcurrentHashMap<>();
+
+    @Inject
+    RunObservation observation;
     private static final Set<String> UNTYPED = Set.of("dev.langchain4j.agentic.UntypedAgent",
             "dev.langchain4j.agentic.supervisor.SupervisorAgent", "dev.langchain4j.agentic.planner.AgentInstance");
 
@@ -59,6 +64,7 @@ public class BuilderSystems {
                 systems.add(BuilderTopology.system(id, name(candidate), new SourceRef(candidate.declaringClass(),
                         candidate.member(), null), agent));
                 roots.put(id, agent);
+                observation.observe(id, agent);
             }
         });
         return systems;

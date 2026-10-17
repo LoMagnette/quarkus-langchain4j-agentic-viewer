@@ -4,6 +4,7 @@ import java.util.List;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
+import jakarta.inject.Inject;
 
 import org.jboss.logging.Logger;
 
@@ -20,9 +21,35 @@ public class RunObservation {
 
     private static final Logger LOG = Logger.getLogger(RunObservation.class);
 
+    @Inject
+    RunManager runManager;
 
-    void attach(@Observes StartupEvent startup, AgenticSystemRegistry registry, RunManager runManager,
-            PatternAdapters patternAdapters) {
+    @Inject
+    PatternAdapters patternAdapters;
+
+    // one listener for the declarative roots and the builder ones
+    private DevUiAgentListener listener;
+
+    private synchronized DevUiAgentListener listener() {
+        if (listener == null) {
+            listener = new DevUiAgentListener(runManager, patternAdapters);
+        }
+        return listener;
+    }
+
+    /**
+     * Observes the root of a builder system when it is found (T5.3): its runs then report their agent events, human
+     * steps and planner decisions like the declarative ones.
+     */
+    public void observe(String systemId, Object root) {
+        try {
+            RootListeners.attach(systemId, root, listener());
+        } catch (RuntimeException e) {
+            LOG.warnf(e, "Agentic viewer: cannot observe %s, its runs will show no agent events", systemId);
+        }
+    }
+
+    void attach(@Observes StartupEvent startup, AgenticSystemRegistry registry) {
         // the live view relies on internal parts of langchain4j-agentic: tell at once what a library upgrade broke
         List<String> missing = LangChain4jInternals.problems(Thread.currentThread().getContextClassLoader());
         if (!missing.isEmpty()) {
@@ -31,6 +58,6 @@ public class RunObservation {
                     + " named for each is missing:%n  %s", String.join("%n  ".formatted(), missing));
         }
         // declarative systems only: builder system beans are created when the Dev UI asks for them
-        RootListeners.attach(registry.buildTimeSystems(), new DevUiAgentListener(runManager, patternAdapters));
+        RootListeners.attach(registry.buildTimeSystems(), listener());
     }
 }

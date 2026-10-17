@@ -133,7 +133,7 @@ public final class BuilderTopology {
                 agent.name(),
                 kind,
                 agent.description(),
-                inputKeys(agent, children),
+                inputKeys(agent, kind, children),
                 agent.outputKey(),
                 agent.optional(),
                 agent.async(),
@@ -170,17 +170,20 @@ public final class BuilderTopology {
     }
 
     /**
-     * Declared arguments; a builder workflow declares none: the keys its agents read before any of them writes them
-     * (in order for sequences and loops, which is also right for the others: a parallel branch does not see its
-     * siblings' outputs, a condition's keys are unknown).
+     * Declared arguments; a builder workflow declares none: the keys its agents read before any of them writes them,
+     * in order for sequences and loops; for the others, whose agents run in any order (planners, supervisors) or apart
+     * (parallel, conditional branches), the keys no agent writes. A condition's keys are unknown.
      */
-    private static List<String> inputKeys(AgentInstance agent, List<AgentNode> children) {
+    private static List<String> inputKeys(AgentInstance agent, NodeKind kind, List<AgentNode> children) {
         List<AgentArgument> declared = declaredArguments(agent);
         if (!declared.isEmpty() || children.isEmpty()) {
             return declared.stream().map(AgentArgument::name).toList();
         }
         Set<String> inputs = new LinkedHashSet<>();
         Set<String> written = new LinkedHashSet<>();
+        if (kind != NodeKind.SEQUENCE && kind != NodeKind.LOOP) {
+            children.stream().map(AgentNode::outputKey).filter(key -> key != null).forEach(written::add);
+        }
         for (AgentNode child : children) {
             child.inputKeys().stream().filter(key -> !written.contains(key)).forEach(inputs::add);
             if (child.outputKey() != null) {

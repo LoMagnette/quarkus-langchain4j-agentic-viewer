@@ -193,6 +193,8 @@ class BuilderTopologyTest {
         assertEquals("Search the web for: {{topic}}", child(node, 0, 0).aiDetails().userMessage());
         assertEquals(DraftReviewer.DraftReviewPlanner.class.getName(), child(node, 5).plannerInfo().plannerClass());
         assertEquals(PatternType.CUSTOM, child(node, 5).plannerInfo().patternType());
+        // agents of a planner run in any order: the verdict the drafter reads comes from the reviewer
+        assertEquals(List.of("topic"), child(node, 5).inputKeys());
         assertNull(child(node, 4).plannerInfo(), "a supervisor has no planner info, as at build time");
         assertEquals(List.of("draft"), child(node, 6).inputKeys());
         assertEquals("approval", child(node, 6).outputKey());

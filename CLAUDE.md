@@ -99,6 +99,9 @@ creates them when the Dev UI first lists the systems (`AgenticSystemRegistry` lo
 `buildTimeSystems()` so no bean is created early) and keeps those without a parent. Runs (T5.6): `CdiRunInvoker` invokes an `UntypedAgent` root with a map of the form values
 (converted to the input types), a typed builder interface through its one method; the form schema comes from
 `RuntimeInputSchema` (same rules as the build-time `InputSchemaGenerator`, `RuntimeInputSchemaTest` checks parity).
+Live view (T5.3): `BuilderSystems` hands each root found to `RunObservation.observe`, which attaches the same Dev UI
+listener as for the declarative roots (`RootListeners.attach(systemId, root, listener)`: listener, human steps,
+planner decorator); the builder node ids follow the listener's id rule.
 Their topology comes from the live agent tree: `runtime-dev/.../builder/BuilderTopology` builds the same model from the public `AgentInstance` API (loops
 and conditions through `as()`, AI details from the annotations of `type()`), with the node id rule of the run events
 (simple name of each agent's type); findings in Backlog doc-5 (tree) and doc-6 (discovery).
@@ -123,7 +126,8 @@ strings, numbers): the Dev UI serializer writes a Jackson `JsonNode` as a bean.
 `RunManager.shutdown` (@PreDestroy, also on hot reload) ends open runs CANCELLED, completes their streams, releases
 waiting human steps and stops its threads; the registry is rebuilt by the restart.
 
-At dev-mode startup `RunObservation` calls `RootListeners.attach`, which installs on each root agent bean:
+At dev-mode startup `RunObservation` calls `RootListeners.attach`, which installs on each root agent bean (builder
+roots: when found, T5.3):
 - `DevUiAgentListener` through the internal `InternalAgent.registerInheritedParentListener` (CDI listeners only reach AI
   agents): turns callbacks into events, correlating them to node ids (parent invocation + topology, loop counter,
   mapper item suffix) and observing `@ErrorHandler`s (`ErrorHandlers`, wraps the scope's handler).
