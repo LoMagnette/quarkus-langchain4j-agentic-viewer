@@ -159,6 +159,7 @@ export class QwcAgenticSystems extends LitElement {
         cancelRun: params => this.jsonRpc.cancelRun(params),
         provideHumanInput: params => this.jsonRpc.provideHumanInput(params),
         previewGoalPath: params => this.jsonRpc.previewGoalPath(params),
+        getNodeSources: params => this.jsonRpc.getNodeSources(params),
     };
 
     connectedCallback() {
@@ -315,6 +316,7 @@ export class QwcAgenticSystems extends LitElement {
                             .jsonRpc=${this.rpc} .graph=${this.renderRoot.querySelector('qwc-agentic-graph')}>
                         </qwc-agentic-run-panel>` : ''}
                     ${this._node ? html`<qwc-agentic-node-details ?hidden=${this._side !== 'details'} .node=${this._node}
+                            .systemId=${this._summary?.id} .rpc=${this.rpc}
                             @close=${this._closeDetails}></qwc-agentic-node-details>` : ''}
                 </div>
             </div>`;

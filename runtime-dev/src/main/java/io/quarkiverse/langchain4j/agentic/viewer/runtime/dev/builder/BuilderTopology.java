@@ -29,6 +29,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.LangChain4jInt
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgentNode;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AiAgentDetails;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.CodeRef;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.Guard;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeIds;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
@@ -117,6 +118,7 @@ public final class BuilderTopology {
             return node;
         });
         SystemOrigin origin = shared[0] || usesDeclarativeWorkflow(root) ? SystemOrigin.MIXED : SystemOrigin.BUILDER;
+        rootNode = withCallSite(rootNode, sourceRef);
         return new AgenticSystem(id, name, id, origin, sourceRef, inputs(root, rootNode), rootNode);
     }
 
@@ -157,7 +159,46 @@ public final class BuilderTopology {
                 kind == NodeKind.PLANNER ? plannerInfo(agent.plannerType()) : null,
                 kind != NodeKind.AI_AGENT ? null : declared != null && declared.aiDetails() != null ? declared.aiDetails()
                         : aiDetails(agent.type()),
-                declared != null && declared.remoteDetails() != null ? declared.remoteDetails() : remoteDetails(kind, agent.type()));
+                declared != null && declared.remoteDetails() != null ? declared.remoteDetails() : remoteDetails(kind, agent.type()),
+                declared != null && !declared.code().isEmpty() ? declared.code() : agentCode(agent.type()));
+    }
+
+    /**
+     * The application class of an agent (its agent method when it declares one), none for the library's own types (an
+     * UntypedAgent, an agentAction).
+     */
+    private static List<CodeRef> agentCode(Class<?> type) {
+        if (type == null || type.getName().startsWith(LIBRARY)) {
+            return List.of();
+        }
+        String member = agentMethods(type).stream()
+                .filter(method -> annotations(method).stream().anyMatch(a -> a.annotationType().getName().equals(AGENT)
+                        || a.annotationType().getName().startsWith(DECLARATIVE)))
+                .map(Method::getName).findFirst()
+                .orElseGet(() -> type.isInterface() && agentMethods(type).size() == 1 ? agentMethods(type).get(0).getName() : null);
+        return List.of(CodeRef.method(CodeRef.Role.AGENT, type.getName(), member));
+    }
+
+    /** Where the system is built: the call site the transform reported ({@code Class#method:line}), else the producer. */
+    private static AgentNode withCallSite(AgentNode root, SourceRef sourceRef) {
+        if (sourceRef == null || sourceRef.className() == null) {
+            return root;
+        }
+        Integer line = null;
+        String callSite = sourceRef.callSite();
+        if (callSite != null && callSite.lastIndexOf(':') > 0) {
+            try {
+                line = Integer.valueOf(callSite.substring(callSite.lastIndexOf(':') + 1));
+            } catch (NumberFormatException e) {
+                // no line
+            }
+        }
+        List<CodeRef> code = new ArrayList<>();
+        code.add(new CodeRef(CodeRef.Role.CALL_SITE, sourceRef.className(), sourceRef.methodName(), null, line));
+        code.addAll(root.code());
+        return new AgentNode(root.id(), root.name(), root.kind(), root.description(), root.inputKeys(), root.outputKey(),
+                root.optional(), root.async(), root.children(), root.guard(), root.plannerInfo(), root.aiDetails(),
+                root.remoteDetails(), code);
     }
 
     /**

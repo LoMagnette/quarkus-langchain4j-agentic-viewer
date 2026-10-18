@@ -16,12 +16,13 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.PatternAda
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunManager;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunSummary;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunTrace;
-import io.smallrye.mutiny.Multi;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.spi.TopologyContribution;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgentNode;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.CodeRef;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.PatternType;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemInput;
+import io.smallrye.mutiny.Multi;
 
 /**
  * JSON-RPC service of the Agentic Viewer Dev UI (method names: {@code quarkus-langchain4j-agentic-viewer_<method>}).
@@ -33,6 +34,7 @@ public class AgenticViewerJsonRpcService {
     private final AgenticSystemRegistry registry;
     private final RunManager runManager;
     private final PatternAdapters patternAdapters;
+    private final SourceLocator sources;
 
     public AgenticViewerJsonRpcService(AgenticSystemRegistry registry, RunManager runManager) {
         this(registry, runManager, PatternAdapters.none());
@@ -41,9 +43,61 @@ public class AgenticViewerJsonRpcService {
     @Inject
     public AgenticViewerJsonRpcService(AgenticSystemRegistry registry, RunManager runManager,
             PatternAdapters patternAdapters) {
+        this(registry, runManager, patternAdapters, SourceLocator.ofDevMode());
+    }
+
+    public AgenticViewerJsonRpcService(AgenticSystemRegistry registry, RunManager runManager,
+            PatternAdapters patternAdapters, SourceLocator sources) {
         this.registry = registry;
         this.runManager = runManager;
         this.patternAdapters = patternAdapters;
+        this.sources = sources;
+    }
+
+    /**
+     * The application code behind a node, for the Dev UI to open in the IDE: its code references, then its tools.
+     *
+     * @return per piece of code: {@code role}, {@code className}, {@code member}, {@code resource}, and when found in
+     *         the application sources {@code fileName} ({@code file://} URI), {@code lang} and {@code lineNumber}
+     * @throws IllegalArgumentException for an unknown system or node
+     */
+    public List<Map<String, Object>> getNodeSources(String systemId, String nodeId) {
+        AgentNode node = find(system(systemId).root(), nodeId);
+        if (node == null) {
+            throw new IllegalArgumentException("Unknown node " + nodeId + " in " + systemId);
+        }
+        List<CodeRef> code = new ArrayList<>(node.code());
+        if (node.aiDetails() != null) {
+            node.aiDetails().tools().forEach(tool -> code.add(CodeRef.method(null, tool.declaringClass(), tool.methodName())));
+        }
+        List<Map<String, Object>> entries = new ArrayList<>();
+        for (CodeRef ref : code) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("role", ref.role() == null ? "TOOL" : ref.role().name());
+            entry.put("className", ref.className());
+            entry.put("member", ref.member());
+            entry.put("resource", ref.resource());
+            sources.locate(ref).ifPresent(location -> {
+                entry.put("fileName", location.fileName());
+                entry.put("lang", location.lang());
+                entry.put("lineNumber", location.lineNumber());
+            });
+            entries.add(entry);
+        }
+        return entries;
+    }
+
+    private static AgentNode find(AgentNode node, String id) {
+        if (node.id().equals(id)) {
+            return node;
+        }
+        for (AgentNode child : node.children()) {
+            AgentNode found = find(child, id);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
     }
 
     /**

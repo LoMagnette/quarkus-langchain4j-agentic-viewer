@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AiAgentDetails;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.CodeRef;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.Guard;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.RemoteAgentDetails;
@@ -36,6 +37,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemInput;
  * @param inputs the scope parameters (same names and order as {@code inputKeys}) with their JSON schemas
  * @param remoteDetails server or MCP tool of an A2A or MCP client agent, null otherwise
  * @param inheritedFrom the supertype declaring the method when the agent class inherits it, null otherwise
+ * @param code the application code behind the agent (method, @Output, conditions, planner supplier, prompt resources)
  */
 public record AgentDescriptor(
         String id,
@@ -57,7 +59,8 @@ public record AgentDescriptor(
         AiAgentDetails aiDetails,
         List<SystemInput> inputs,
         RemoteAgentDetails remoteDetails,
-        String inheritedFrom) {
+        String inheritedFrom,
+        List<CodeRef> code) {
 
     public AgentDescriptor(String id, String declaringClass, String methodName, NodeKind kind, String name,
             String description, String outputKey, List<String> inputKeys, List<String> subAgents, String itemsProvider,
@@ -65,7 +68,7 @@ public record AgentDescriptor(
             boolean async, AiAgentDetails aiDetails, List<SystemInput> inputs, RemoteAgentDetails remoteDetails) {
         this(id, declaringClass, methodName, kind, name, description, outputKey, inputKeys, subAgents, itemsProvider,
                 plannerSupplier, loopGuard, branchGuards, outputMethod, optional, async, aiDetails, inputs, remoteDetails,
-                null);
+                null, List.of());
     }
 
     /** The same agent, for a class that inherits its method (langchain4j reads {@code Class.getMethods()}). */
@@ -73,12 +76,13 @@ public record AgentDescriptor(
         String method = id.substring(id.indexOf('#') + 1);
         return new AgentDescriptor(agentClass + "#" + method, agentClass, methodName, kind, name, description, outputKey,
                 inputKeys, subAgents, itemsProvider, plannerSupplier, loopGuard, branchGuards, outputMethod, optional, async,
-                aiDetails, inputs, remoteDetails, inheritedFrom != null ? inheritedFrom : declaringClass);
+                aiDetails, inputs, remoteDetails, inheritedFrom != null ? inheritedFrom : declaringClass, code);
     }
 
     public AgentDescriptor {
         inputKeys = inputKeys == null ? List.of() : List.copyOf(inputKeys);
         inputs = inputs == null ? List.of() : List.copyOf(inputs);
+        code = code == null ? List.of() : List.copyOf(code);
         subAgents = subAgents == null ? List.of() : List.copyOf(subAgents);
         // keeps the sub-agent order of the scanner
         branchGuards = branchGuards == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(branchGuards));

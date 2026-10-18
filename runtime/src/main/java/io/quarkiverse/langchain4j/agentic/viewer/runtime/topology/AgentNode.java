@@ -2,6 +2,8 @@ package io.quarkiverse.langchain4j.agentic.viewer.runtime.topology;
 
 import java.util.List;
 
+import io.quarkus.runtime.annotations.RecordableConstructor;
+
 /**
  * A node of an agentic system topology: an agent or a workflow, with its sub-agents as children.
  *
@@ -18,6 +20,8 @@ import java.util.List;
  * @param plannerInfo planner of a {@link NodeKind#PLANNER} node, null otherwise
  * @param aiDetails prompts, model and tools of an {@link NodeKind#AI_AGENT} node, null otherwise or when unknown
  * @param remoteDetails server or MCP tool of an A2A or MCP client agent, null otherwise
+ * @param code the application code behind the node (agent method, @Output, conditions, prompt resources...), for the
+ *        Dev UI to open in the IDE
  */
 public record AgentNode(
         String id,
@@ -32,10 +36,23 @@ public record AgentNode(
         Guard guard,
         PlannerInfo plannerInfo,
         AiAgentDetails aiDetails,
-        RemoteAgentDetails remoteDetails) {
+        RemoteAgentDetails remoteDetails,
+        List<CodeRef> code) {
 
+    /** Without code references. */
+    public AgentNode(String id, String name, NodeKind kind, String description, List<String> inputKeys, String outputKey,
+            boolean optional, boolean async, List<AgentNode> children, Guard guard, PlannerInfo plannerInfo,
+            AiAgentDetails aiDetails, RemoteAgentDetails remoteDetails) {
+        this(id, name, kind, description, inputKeys, outputKey, optional, async, children, guard, plannerInfo, aiDetails,
+                remoteDetails, List.of());
+    }
+
+
+    /** The one the build-time recorder uses (a record with several constructors needs it told). */
+    @RecordableConstructor
     public AgentNode {
         inputKeys = inputKeys == null ? List.of() : List.copyOf(inputKeys);
         children = children == null ? List.of() : List.copyOf(children);
+        code = code == null ? List.of() : List.copyOf(code);
     }
 }

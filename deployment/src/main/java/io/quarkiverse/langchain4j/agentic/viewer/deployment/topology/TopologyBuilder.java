@@ -87,7 +87,8 @@ public class TopologyBuilder {
                         : guard,
                 plannerInfo(descriptor),
                 descriptor.aiDetails(),
-                descriptor.remoteDetails());
+                descriptor.remoteDetails(),
+                descriptor.code());
     }
 
     /** The sub-agents of a node by their node id: {@code /<simple class name>}, {@code ~n} for a repeated sibling. */

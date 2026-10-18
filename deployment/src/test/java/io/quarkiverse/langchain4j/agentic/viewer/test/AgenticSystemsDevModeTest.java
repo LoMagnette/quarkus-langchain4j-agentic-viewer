@@ -48,6 +48,16 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
         super("quarkus-langchain4j-agentic-viewer");
     }
 
+    /** The code behind a node is found in the application sources of dev mode, at the line declaring the method. */
+    @Test
+    void nodeSourcesInTheApplicationSources() throws Exception {
+        JsonNode code = executeJsonRPCMethod("getNodeSources", Map.of("systemId", ROOT, "nodeId", ROOT + "/Writer"));
+        assertEquals("AGENT", code.get(0).get("role").asText(), code::toString);
+        assertEquals(StoryWorkflow.Writer.class.getName(), code.get(0).get("className").asText());
+        assertTrue(code.get(0).get("fileName").asText().endsWith("StoryWorkflow.java"), code::toString);
+        assertEquals(23, code.get(0).get("lineNumber").asInt(), "the line declaring write(...) in StoryWorkflow.java");
+    }
+
     /** The internal parts of langchain4j-agentic the live view relies on are all there: no startup warning. */
     @Test
     void noInternalApiWarning() {

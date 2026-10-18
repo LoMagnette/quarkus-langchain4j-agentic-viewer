@@ -98,6 +98,11 @@ image::dataflow.png[The data flow of a supervisor]
 Clicking a node opens its details: description, input and output keys, flags, the exit or activation condition, and
 for an AI agent its system and user messages, model and tools.
 
+The *Code* section lists the application code behind the node: the agent method, a workflow's `@Output`, a planner's
+`@PlannerSupplier`, the exit and activation conditions, the prompt resources (`fromResource`), the tools, and where a
+builder system is built. Code found in the application sources shows its file and line; when the Dev UI detected your
+IDE, a click opens it there. Code of dependencies is listed without a link.
+
 image::details.png[The details of an AI agent]
 
 == Running a system

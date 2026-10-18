@@ -1,10 +1,18 @@
 import { LitElement, html, css, nothing } from 'lit';
 import '@vaadin/button';
 import '@vaadin/icon';
+import 'qui-ide-link';
+import { devuiState } from 'devui-state';
 import { KIND_LABELS, KIND_STYLES } from './qwc-agentic-graph.js';
 import { shortRef } from './qwc-agentic-run-model.js';
 
 /** Display names of the langchain4j-agentic-patterns planners. */
+/** What a piece of code is for its node. */
+const CODE_ROLES = {
+    AGENT: 'Agent', OUTPUT: '@Output', PLANNER_SUPPLIER: 'Planner supplier', EXIT_CONDITION: 'Exit condition',
+    ACTIVATION_CONDITION: 'Activation condition', SYSTEM_MESSAGE: 'System message', USER_MESSAGE: 'User message',
+    TOOL: 'Tool', CALL_SITE: 'Built at',
+};
 const PATTERN_LABELS = { GOAP: 'goal-oriented (GOAP)', P2P: 'peer-to-peer', BLACKBOARD: 'blackboard' };
 
 /**
@@ -110,11 +118,53 @@ export class QwcAgenticNodeDetails extends LitElement {
         .tool-ref, .tool-description {
             color: var(--lumo-secondary-text-color);
         }
+        ul.code {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: var(--lumo-space-xs);
+            font-size: var(--lumo-font-size-s);
+        }
+        .code-role {
+            color: var(--lumo-secondary-text-color);
+            margin-right: var(--lumo-space-xs);
+        }
+        .code-link, .code-ref {
+            font-family: var(--lumo-font-family-monospace, monospace);
+        }
+        .code-link {
+            color: var(--lumo-primary-text-color);
+        }
     `;
 
     static properties = {
         node: { type: Object },
+        /** id of the node's system, to ask for the node's code */
+        systemId: { type: String },
+        /** the page's plain JSON-RPC adapter (getNodeSources) */
+        rpc: { attribute: false },
+        _sources: { state: true },
     };
+
+    willUpdate(changed) {
+        if ((changed.has('node') || changed.has('systemId')) && this.node && this.systemId && this.rpc?.getNodeSources) {
+            const node = this.node;
+            this._sources = undefined;
+            this.rpc.getNodeSources({ systemId: this.systemId, nodeId: node.id })
+                .then(response => {
+                    if (this.node === node) {
+                        this._sources = response.result ?? [];
+                    }
+                })
+                .catch(() => {
+                    if (this.node === node) {
+                        this._sources = [];
+                    }
+                });
+        }
+    }
 
     render() {
         const node = this.node;
@@ -148,7 +198,34 @@ export class QwcAgenticNodeDetails extends LitElement {
                         ? html`<div class="muted">from ${shortRef(node.plannerInfo.extras.supplier)}</div>` : nothing}</dd>` : nothing}
             </dl>
             ${node.kind === 'AI_AGENT' ? this._renderAiDetails(node.aiDetails) : nothing}
-            ${node.remoteDetails ? this._renderRemoteDetails(node.kind, node.remoteDetails) : nothing}`;
+            ${node.remoteDetails ? this._renderRemoteDetails(node.kind, node.remoteDetails) : nothing}
+            ${this._renderCode()}`;
+    }
+
+    /**
+     * The application code behind the node: links opening it in the IDE when the Dev UI detected one and the code is in
+     * the application sources, plain references otherwise.
+     */
+    _renderCode() {
+        if (!this._sources?.length) {
+            return nothing;
+        }
+        const ide = !!devuiState.ideInfo?.ideName;
+        return html`
+            <h5>Code</h5>
+            <ul class="code" data-field="code">${this._sources.map(source => {
+                const label = source.resource ?? shortRef(source.member ? `${source.className}#${source.member}` : source.className);
+                const where = source.fileName
+                    ? `${source.fileName.substring(source.fileName.lastIndexOf('/') + 1)}:${source.lineNumber}` : undefined;
+                return html`<li data-code-role=${source.role}>
+                    <span class="code-role">${CODE_ROLES[source.role] ?? source.role}</span>
+                    ${source.fileName && ide
+                        ? html`<qui-ide-link class="code-link" fileName=${source.fileName} lang=${source.lang}
+                                lineNumber=${String(source.lineNumber)} noCheck title="Open in the IDE">${label}</qui-ide-link>`
+                        : html`<span class="code-ref">${label}</span>`}
+                    <span class="muted" data-code-where>${where ?? 'not in the application sources'}</span>
+                </li>`;
+            })}</ul>`;
     }
 
     _renderRemoteDetails(kind, remote) {

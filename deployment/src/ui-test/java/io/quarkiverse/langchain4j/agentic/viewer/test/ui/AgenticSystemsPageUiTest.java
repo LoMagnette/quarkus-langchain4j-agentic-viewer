@@ -131,6 +131,33 @@ public class AgenticSystemsPageUiTest {
     }
 
     @Test
+    void nodeDetailsListTheCodeBehindTheNode() {
+        openSystem();
+        graph().evaluate("(g, id) => g._cy.getElementById(id).emit('tap')", RESEARCHER);
+
+        Locator details = page.locator("qwc-agentic-node-details");
+        Locator agent = details.locator("[data-code-role=\"AGENT\"]");
+        assertThat(agent).containsText("Researcher#research");
+        // the fixture app of this test has no source directory in dev mode (QuarkusDevModeTest copies src/test only):
+        // AgenticSystemsDevModeTest checks the location of real sources
+        assertThat(agent.locator("[data-code-where]")).hasText("not in the application sources");
+        assertThat(agent.locator("qui-ide-link")).hasCount(0);
+
+        // code found in the sources, with an IDE detected: the reference opens the IDE at its line
+        page.locator("qwc-agentic-systems").evaluate("el => { el.rpc.getNodeSources = () => Promise.resolve({ result: ["
+                + "{ role: 'AGENT', className: 'com.example.Researcher', member: 'research', "
+                + "fileName: 'file:///work/src/main/java/com/example/Researcher.java', lang: 'java', lineNumber: 12 }] }); }");
+        page.evaluate("async () => { const { devuiState } = await import('devui-state'); "
+                + "devuiState.ideInfo = { ...devuiState.ideInfo, ideName: 'Test IDE' }; }");
+        graph().evaluate("(g, id) => g._cy.getElementById(id).emit('tap')", WRITER);
+        assertThat(details.locator("[data-code-where]")).hasText("Researcher.java:12");
+        Locator link = details.locator("[data-code-role=\"AGENT\"] qui-ide-link");
+        assertThat(link).hasCount(1);
+        assertEquals("file:///work/src/main/java/com/example/Researcher.java", link.getAttribute("fileName"));
+        assertEquals("12", link.getAttribute("lineNumber"));
+    }
+
+    @Test
     void runFormValidation() {
         openRunForm();
         Locator sources = form().locator("vaadin-text-area[data-input=\"sources\"]");

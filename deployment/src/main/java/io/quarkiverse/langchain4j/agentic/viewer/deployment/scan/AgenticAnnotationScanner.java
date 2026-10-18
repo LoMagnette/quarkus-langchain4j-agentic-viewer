@@ -23,6 +23,7 @@ import org.jboss.jandex.MethodParameterInfo;
 import org.jboss.jandex.Type;
 
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AiAgentDetails;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.CodeRef;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.Guard;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.RemoteAgentDetails;
@@ -196,7 +197,58 @@ public class AgenticAnnotationScanner {
                 booleanValue(annotation, "async"),
                 kind == NodeKind.AI_AGENT ? aiDetails(index, method) : null,
                 inputs(index, method),
-                remoteDetails(method, annotation, kind));
+                remoteDetails(method, annotation, kind),
+                null,
+                code(method, annotation, kind));
+    }
+
+    /**
+     * The application code behind an agent, as langchain4j finds it: the agent method, and next to it the workflow's
+     * {@code @Output}, a planner's {@code @PlannerSupplier}, a loop's {@code @ExitCondition}, a conditional's
+     * {@code @ActivationCondition} methods, and the prompt resources of an AI agent.
+     */
+    private static List<CodeRef> code(MethodInfo method, AnnotationInstance annotation, NodeKind kind) {
+        ClassInfo type = method.declaringClass();
+        List<CodeRef> code = new ArrayList<>();
+        code.add(CodeRef.method(CodeRef.Role.AGENT, type.name().toString(), method.name()));
+        if (isWorkflow(kind)) {
+            addMethod(code, CodeRef.Role.OUTPUT, annotatedMethod(type, OUTPUT));
+        }
+        if (kind == NodeKind.PLANNER) {
+            addMethod(code, CodeRef.Role.PLANNER_SUPPLIER, annotatedMethod(type, PLANNER_SUPPLIER));
+        }
+        if (kind == NodeKind.LOOP) {
+            addMethod(code, CodeRef.Role.EXIT_CONDITION, annotatedMethod(type, EXIT_CONDITION));
+        }
+        if (kind == NodeKind.CONDITIONAL) {
+            // in the order of the branches they guard (Jandex keeps no method order)
+            for (String subAgent : subAgents(annotation)) {
+                type.methods().stream().filter(m -> activates(m, subAgent)).findFirst()
+                        .filter(m -> code.stream().noneMatch(ref -> m.name().equals(ref.member())
+                                && ref.role() == CodeRef.Role.ACTIVATION_CONDITION))
+                        .ifPresent(m -> addMethod(code, CodeRef.Role.ACTIVATION_CONDITION, m));
+            }
+        }
+        if (kind == NodeKind.AI_AGENT) {
+            AnnotationInstance systemMessage = method.declaredAnnotation(SYSTEM_MESSAGE);
+            addResource(code, CodeRef.Role.SYSTEM_MESSAGE, type,
+                    systemMessage != null ? systemMessage : type.declaredAnnotation(SYSTEM_MESSAGE));
+            addResource(code, CodeRef.Role.USER_MESSAGE, type, method.declaredAnnotation(USER_MESSAGE));
+        }
+        return code;
+    }
+
+    private static void addMethod(List<CodeRef> code, CodeRef.Role role, MethodInfo method) {
+        if (method != null) {
+            code.add(CodeRef.method(role, method.declaringClass().name().toString(), method.name()));
+        }
+    }
+
+    private static void addResource(List<CodeRef> code, CodeRef.Role role, ClassInfo type, AnnotationInstance message) {
+        String resource = message == null ? null : nonBlank(stringValue(message, "fromResource"));
+        if (resource != null) {
+            code.add(new CodeRef(role, type.name().toString(), null, resource, null));
+        }
     }
 
     /**
