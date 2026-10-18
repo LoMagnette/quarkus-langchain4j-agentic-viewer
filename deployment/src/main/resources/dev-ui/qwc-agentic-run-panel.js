@@ -12,6 +12,9 @@ const LAST_INPUTS = 'agentic-viewer:last-inputs:';
 /** Answer types the server takes as typed: anything else is parsed as JSON (RunManager.provideHumanInput). */
 const TEXT_ANSWERS = ['java.lang.String', 'java.lang.Object', 'java.lang.CharSequence'];
 const CONFIRMED = 'agentic-viewer:tools-confirmed:';
+const WATCH = 'agentic-viewer:rerun-after-reload:';
+/** Attempts (500 ms apart) to find the system again after a reload before giving up. */
+const RELOAD_ATTEMPTS = 40;
 
 /** Browser session storage, which may be unavailable (private mode, blocked site data). */
 const session = {
@@ -93,6 +96,10 @@ export class QwcAgenticRunPanel extends LitElement {
         }
         .status.cancelled, .status.lost {
             color: var(--lumo-secondary-text-color);
+        }
+        .watch {
+            margin-top: var(--lumo-space-m);
+            font-size: var(--lumo-font-size-s);
         }
         .history {
             display: flex;
@@ -189,6 +196,10 @@ export class QwcAgenticRunPanel extends LitElement {
         _preview: { state: true },
         /** run ids selected in the history to compare (two at most) */
         _compare: { state: true },
+        /** whether the last inputs are run again after each hot reload (opt-in, per system) */
+        _watch: { state: true },
+        /** what the re-run after a reload did or why it did not run */
+        _watchMessage: { state: true },
     };
 
     constructor() {
@@ -207,6 +218,9 @@ export class QwcAgenticRunPanel extends LitElement {
             this._history = undefined;
             this._preview = undefined;
             this._compare = [];
+            this._watch = !!session.get(WATCH + this.system.id);
+            this._watchMessage = undefined;
+            this._beforeReload = undefined;
             // parsed once: the form resets its fields when given other values
             this._lastInputs = session.get(LAST_INPUTS + this.system.id);
             const systemId = this.system.id;
@@ -229,6 +243,10 @@ export class QwcAgenticRunPanel extends LitElement {
             if ((connection?.isDisconnected || connection?.isHotreloading) && this._observer) {
                 this._lost(connection.isHotreloading ? 'The application reloaded: its runs were stopped'
                     : 'Disconnected from the application: the run may go on, open it again from the history');
+            }
+            if (connection?.isHotreloading) {
+                // the client sets 'connected' right after: re-run once the reload is over
+                setTimeout(() => this._afterReload(), 0);
             }
         };
         connectionState.addObserver(this._connectionObserver, ['current']);
@@ -259,6 +277,7 @@ export class QwcAgenticRunPanel extends LitElement {
     render() {
         return html`
             ${this._mode === 'live' && this._run ? this._renderLive() : this._renderForm()}
+            ${this._renderWatch()}
             ${this._renderHistory()}
             <vaadin-dialog header-title="Run ${this.system?.name ?? ''}?" .opened=${!!this._pending}
                     @opened-changed=${e => { if (!e.detail.value) { this._pending = undefined; } }}
@@ -552,7 +571,8 @@ export class QwcAgenticRunPanel extends LitElement {
         }
     }
 
-    _start(inputs) {
+    /** @param started told the run id once the run started */
+    _start(inputs, started) {
         const action = this._newAction();
         this._stopStream();
         this._waiting = undefined;
@@ -572,6 +592,7 @@ export class QwcAgenticRunPanel extends LitElement {
                 }
                 const runId = response.result;
                 this._run = { ...this._run, runId };
+                started?.(runId);
                 this._follow(system, runId);
                 this._loadHistory();
             })
@@ -614,7 +635,94 @@ export class QwcAgenticRunPanel extends LitElement {
             this._run = this._ended(this._run, event);
             this._stopStream();
             this._loadHistory();
+            this._keepForReload(system, runId);
         });
+    }
+
+    /**
+     * With re-run after reload on, the trace of each ended run is kept in the page (runs do not survive a reload); a
+     * run started by a reload is then compared with the one kept before it.
+     */
+    _keepForReload(system, runId) {
+        if (!this._watch) {
+            return;
+        }
+        const compareWith = this._rerunOf === runId ? this._beforeReload : undefined;
+        this._rerunOf = undefined;
+        this.jsonRpc.getRun({ runId }).then(response => {
+            if (this.system !== system || !response.result) {
+                return;
+            }
+            this._beforeReload = response.result;
+            if (compareWith) {
+                this.dispatchEvent(new CustomEvent('compare-runs', { detail: { runIds: [compareWith.summary.runId, runId],
+                    traceA: compareWith }, bubbles: true, composed: true }));
+            }
+        }).catch(() => {});
+    }
+
+    _toggleWatch(on) {
+        this._watch = on;
+        session.set(WATCH + this.system.id, on);
+        this._watchMessage = on ? 'The last inputs run again after each reload of the application' : undefined;
+    }
+
+    /** After a hot reload: runs the last inputs again (opt-in), once the system is known again. */
+    async _afterReload() {
+        const system = this.system;
+        if (!this._watch || !system || this._reloading) {
+            return;
+        }
+        const inputs = this._lastInputs;
+        if (!inputs) {
+            this._watchMessage = 'Not re-run after the reload: no run yet';
+            return;
+        }
+        if (!session.get(CONFIRMED + system.id)) {
+            this._watchMessage = 'Not re-run after the reload: run it once yourself to confirm the tools it can reach';
+            return;
+        }
+        this._reloading = true; // once per reload
+        try {
+            let known = false;
+            for (let attempt = 0; attempt < (this.reloadAttempts ?? RELOAD_ATTEMPTS) && !known && this.system === system; attempt++) {
+                known = await this.jsonRpc.getTopology({ systemId: system.id }).then(() => true, () => false);
+                if (!known) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+            }
+            if (this.system !== system) {
+                return;
+            }
+            if (!known) {
+                this._watchMessage = 'Not re-run after the reload: the system no longer exists';
+                return;
+            }
+            const schema = await this.jsonRpc.getInputSchema({ systemId: system.id }).then(r => r.result, () => undefined);
+            const properties = Object.keys(schema?.properties ?? {});
+            const changed = Object.keys(inputs).some(name => !properties.includes(name))
+                || (schema?.required ?? []).some(name => !(name in inputs));
+            if (changed) {
+                this._watchMessage = 'Not re-run after the reload: the inputs of the system changed';
+                return;
+            }
+            this._schema = schema;
+            this._watchMessage = 'Re-run after the reload';
+            this._start(inputs, runId => this._rerunOf = runId);
+        } finally {
+            this._reloading = false;
+        }
+    }
+
+    _renderWatch() {
+        if (!this._schema) {
+            return nothing;
+        }
+        return html`<div class="watch">
+            <label><input type="checkbox" data-action="watch" .checked=${!!this._watch}
+                    @change=${e => this._toggleWatch(e.target.checked)}> Re-run after a reload</label>
+            ${this._watchMessage ? html`<div class="muted" data-watch-message>${this._watchMessage}</div>` : nothing}
+        </div>`;
     }
 
     /**

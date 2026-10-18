@@ -27,8 +27,12 @@ public class RunObservation {
     @Inject
     PatternAdapters patternAdapters;
 
+    @Inject
+    AgenticSystemRegistry registry;
+
     // one listener for the declarative roots and the builder ones
     private DevUiAgentListener listener;
+    private boolean attached;
 
     private synchronized DevUiAgentListener listener() {
         if (listener == null) {
@@ -49,7 +53,19 @@ public class RunObservation {
         }
     }
 
-    void attach(@Observes StartupEvent startup, AgenticSystemRegistry registry) {
+    void attach(@Observes StartupEvent startup) {
+        ensureObserved();
+    }
+
+    /**
+     * Attaches the Dev UI listener to the declarative roots, once: at startup, or before a run asked for earlier (the
+     * Dev UI may start a run right after a hot reload, before the startup observers of the new application ran).
+     */
+    public synchronized void ensureObserved() {
+        if (attached) {
+            return;
+        }
+        attached = true;
         // the live view relies on internal parts of langchain4j-agentic: tell at once what a library upgrade broke
         List<String> missing = LangChain4jInternals.problems(Thread.currentThread().getContextClassLoader());
         if (!missing.isEmpty()) {

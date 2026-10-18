@@ -11,7 +11,8 @@ const GRAPH_STATES = { same: 'diff-same', maybe: 'diff-same', changed: 'diff-cha
 
 /**
  * Comparison of two runs of a system (A, the older, and B): inputs, totals, and each agent invocation matched across
- * them with what changed; the graph is colored by node. Properties: system, runIds ([a, b]), rpc (getRun), graph.
+ * them with what changed; the graph is colored by node. Properties: system, runIds ([a, b]), traceA (optional), rpc
+ * (getRun), graph.
  * Fires 'close'.
  */
 export class QwcAgenticRunCompare extends LitElement {
@@ -74,6 +75,8 @@ export class QwcAgenticRunCompare extends LitElement {
     static properties = {
         system: { type: Object },
         runIds: { type: Array },
+        /** run A's trace when the server no longer has it (a run kept in the page across a reload) */
+        traceA: { attribute: false },
         rpc: { attribute: false },
         graph: { attribute: false },
         _result: { state: true },
@@ -85,7 +88,9 @@ export class QwcAgenticRunCompare extends LitElement {
             const runIds = this.runIds;
             this._result = undefined;
             this._error = undefined;
-            Promise.all(runIds.map(runId => this.rpc.getRun({ runId }).then(response => response.result)))
+            const traceA = this.traceA;
+            Promise.all(runIds.map((runId, i) => i === 0 && traceA ? Promise.resolve(traceA)
+                    : this.rpc.getRun({ runId }).then(response => response.result)))
                 .then(([a, b]) => {
                     if (this.runIds === runIds) {
                         this._result = compareRuns(a, b);

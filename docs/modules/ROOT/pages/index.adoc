@@ -179,6 +179,11 @@ branch, another supervisor path) are listed as such, and the graph is colored: s
 Values cut by the payload limit (`max-payload-size`) that agree up to the cut show as possibly different. Runs are kept
 by the application: a hot reload starts a new history.
 
+*Re-run after a reload* (off by default, per system) runs the last inputs again each time the application reloads
+(a reload happens on the next request after a code change, e.g. a browser refresh), and compares the new run with the
+one before the reload, kept in the page. It does not run when the system is gone, its inputs changed, or its tools
+were never confirmed by a run of yours: each run calls the real models and tools.
+
 == Pattern views
 
 When `dev.langchain4j:langchain4j-agentic-patterns` is on the class path (there is no Quarkus extension for it: add it

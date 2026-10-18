@@ -153,6 +153,8 @@ export class QwcAgenticSystems extends LitElement {
         _side: { state: true },
         /** the two run ids being compared (Compare tab), undefined when none */
         _compareRuns: { state: true },
+        /** run A's trace when it no longer exists on the server (kept across a reload) */
+        _compareTraceA: { state: true },
         /** events of the current run, from the run panel */
         _runEvents: { state: true },
         _runRunning: { state: true },
@@ -174,6 +176,7 @@ export class QwcAgenticSystems extends LitElement {
         provideHumanInput: params => this.jsonRpc.provideHumanInput(params),
         previewGoalPath: params => this.jsonRpc.previewGoalPath(params),
         getNodeSources: params => this.jsonRpc.getNodeSources(params),
+        getTopology: params => this.jsonRpc.getTopology(params),
     };
 
     connectedCallback() {
@@ -256,6 +259,7 @@ export class QwcAgenticSystems extends LitElement {
         this._runOpened = false;
         this._runEvents = undefined;
         this._compareRuns = undefined;
+        this._compareTraceA = undefined;
         this._systemError = undefined;
         // the topology, with what the application's topology contributors draw in its planner nodes
         Promise.all([
@@ -282,6 +286,7 @@ export class QwcAgenticSystems extends LitElement {
         this._runOpened = false;
         this._runEvents = undefined;
         this._compareRuns = undefined;
+        this._compareTraceA = undefined;
     }
 
     _renderSystem(summary, system) {
@@ -347,11 +352,12 @@ export class QwcAgenticSystems extends LitElement {
                     ${this._runOpened ? html`<qwc-agentic-run-panel ?hidden=${this._side !== 'run'} .system=${system}
                             @run-updated=${e => { this._runEvents = e.detail.events; this._runRunning = e.detail.running; }}
                             @show-output=${() => this._side = 'output'}
-                            @compare-runs=${e => { this._compareRuns = e.detail.runIds; this._side = 'compare'; }}
+                            @compare-runs=${e => { this._compareTraceA = e.detail.traceA; this._compareRuns = e.detail.runIds;
+                                this._side = 'compare'; }}
                             .jsonRpc=${this.rpc} .graph=${this.renderRoot.querySelector('qwc-agentic-graph')}>
                         </qwc-agentic-run-panel>` : ''}
                     ${this._compareRuns ? html`<qwc-agentic-run-compare ?hidden=${this._side !== 'compare'} .system=${system}
-                            .runIds=${this._compareRuns} .rpc=${this.rpc} .graph=${this.renderRoot.querySelector('qwc-agentic-graph')}
+                            .runIds=${this._compareRuns} .traceA=${this._compareTraceA} .rpc=${this.rpc} .graph=${this.renderRoot.querySelector('qwc-agentic-graph')}
                             @close=${() => { this._compareRuns = undefined; this._side = this._runOpened ? 'run' : undefined; }}>
                         </qwc-agentic-run-compare>` : ''}
                     ${this._node ? html`<qwc-agentic-node-details ?hidden=${this._side !== 'details'} .node=${this._node}

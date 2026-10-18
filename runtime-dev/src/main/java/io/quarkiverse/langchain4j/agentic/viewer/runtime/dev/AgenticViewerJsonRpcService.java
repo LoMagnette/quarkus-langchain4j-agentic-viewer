@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ExecutionEvent;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.PatternAdapters;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunManager;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunObservation;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunSummary;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunTrace;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.spi.TopologyContribution;
@@ -35,23 +36,38 @@ public class AgenticViewerJsonRpcService {
     private final RunManager runManager;
     private final PatternAdapters patternAdapters;
     private final SourceLocator sources;
+    private final RunObservation observation;
 
     public AgenticViewerJsonRpcService(AgenticSystemRegistry registry, RunManager runManager) {
         this(registry, runManager, PatternAdapters.none());
     }
 
-    @Inject
     public AgenticViewerJsonRpcService(AgenticSystemRegistry registry, RunManager runManager,
             PatternAdapters patternAdapters) {
-        this(registry, runManager, patternAdapters, SourceLocator.ofDevMode());
+        this(registry, runManager, patternAdapters, SourceLocator.ofDevMode(), null);
+    }
+
+    @Inject
+    public AgenticViewerJsonRpcService(AgenticSystemRegistry registry, RunManager runManager,
+            PatternAdapters patternAdapters, RunObservation observation) {
+        this(registry, runManager, patternAdapters, SourceLocator.ofDevMode(), observation);
     }
 
     public AgenticViewerJsonRpcService(AgenticSystemRegistry registry, RunManager runManager,
             PatternAdapters patternAdapters, SourceLocator sources) {
+        this(registry, runManager, patternAdapters, sources, null);
+    }
+
+    /**
+     * @param observation attaches the Dev UI listener before a run if the startup did not yet (null in tests)
+     */
+    public AgenticViewerJsonRpcService(AgenticSystemRegistry registry, RunManager runManager,
+            PatternAdapters patternAdapters, SourceLocator sources, RunObservation observation) {
         this.registry = registry;
         this.runManager = runManager;
         this.patternAdapters = patternAdapters;
         this.sources = sources;
+        this.observation = observation;
     }
 
     /**
@@ -177,6 +193,9 @@ public class AgenticViewerJsonRpcService {
      * @throws IllegalArgumentException for an unknown id
      */
     public String startRun(String systemId, Map<String, Object> inputs) {
+        if (observation != null) {
+            observation.ensureObserved(); // e.g. a run asked for right after a hot reload
+        }
         return runManager.startRun(systemId, inputs);
     }
 

@@ -183,6 +183,56 @@ public class AgenticSystemsPageUiTest {
     }
 
     @Test
+    void theLastInputsRunAgainAfterAReload() {
+        openRunForm();
+        fill("a mill");
+        Locator watch = panel().locator("input[data-action=\"watch\"]");
+        watch.evaluate("box => box.click()");
+        clickRun();
+        confirmIfAsked();
+        assertThat(status()).hasAttribute("data-run-status", "succeeded");
+        Locator history = panel().locator("[data-history-run]");
+        waitFor(() -> history.count() == 1, "one run");
+
+        // the application reloads (the Dev UI client sets these states on a hot reload message)
+        simulateReload();
+
+        waitFor(() -> history.count() == 2, "run again after the reload");
+        assertThat(status()).hasAttribute("data-run-status", "succeeded");
+        Locator compare = page.locator("qwc-agentic-run-compare");
+        compare.locator("[data-compare-rows]").waitFor();
+        assertThat(compare.locator("h5", new Locator.LocatorOptions().setHasText("Agents"))).containsText("no difference");
+
+        // off: nothing runs
+        page.locator("vaadin-tab[data-tab=\"run\"]").click();
+        watch.evaluate("box => box.click()");
+        simulateReload();
+        page.waitForTimeout(1500);
+        assertEquals(2, history.count());
+
+        // on, but the inputs of the system changed: nothing runs, the panel says why
+        watch.evaluate("box => box.click()");
+        page.locator("qwc-agentic-systems").evaluate("el => { el.rpc.getInputSchema = () => Promise.resolve({ result: "
+                + "{ type: 'object', properties: { subject: { type: 'string' } }, required: ['subject'] } }); }");
+        simulateReload();
+        assertThat(panel().locator("[data-watch-message]")).containsText("the inputs of the system changed");
+        assertEquals(2, history.count());
+        // the system is gone after the reload (its topology is unknown): nothing runs either
+        page.locator("qwc-agentic-systems").evaluate("el => { el.rpc.getTopology = () => Promise.reject({ error: "
+                + "{ message: 'Unknown agentic system' } }); }");
+        panel().evaluate("p => p.reloadAttempts = 2");
+        simulateReload();
+        assertThat(panel().locator("[data-watch-message]")).containsText("the system no longer exists");
+        assertEquals(2, history.count());
+    }
+
+    private void simulateReload() {
+        page.evaluate("async () => { const { connectionState } = await import('connection-state'); "
+                + "const uri = connectionState.current.serverUri; connectionState.hotreload(uri); "
+                + "connectionState.connected(uri); }");
+    }
+
+    @Test
     void runFormValidation() {
         openRunForm();
         Locator sources = form().locator("vaadin-text-area[data-input=\"sources\"]");
