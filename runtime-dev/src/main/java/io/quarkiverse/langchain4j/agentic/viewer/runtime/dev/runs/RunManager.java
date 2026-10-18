@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -139,7 +140,9 @@ public class RunManager {
     public String startRun(String systemId, Map<String, Object> inputs) {
         AgenticSystem system = systems.apply(systemId)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown agentic system: " + systemId));
-        Map<String, Object> runInputs = inputs == null ? Map.of() : inputs;
+        // a copy: the run executes and its events are written later, the caller's map may change meanwhile (null values
+        // stay: an optional input left empty)
+        Map<String, Object> runInputs = inputs == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(inputs));
         Run run = new Run(UUID.randomUUID().toString(), systemId, runInputs, System.currentTimeMillis());
         runs.put(run.id(), run);
         remember(run);
@@ -151,15 +154,32 @@ public class RunManager {
         return run.id();
     }
 
-    /** Adds the run to its system's history and drops the oldest ended runs beyond the limit. */
+    /** Adds the run to its system's history. */
     private void remember(Run run) {
         synchronized (history) {
-            Deque<String> ids = history.computeIfAbsent(run.systemId(), id -> new ArrayDeque<>());
-            ids.addLast(run.id());
-            for (var it = ids.iterator(); ids.size() > historySize && it.hasNext();) {
+            history.computeIfAbsent(run.systemId(), id -> new ArrayDeque<>()).addLast(run.id());
+            prune(run.systemId(), null);
+        }
+    }
+
+    /**
+     * Keeps the newest {@code historySize} ended runs of a system and every run still running (they are only dropped
+     * once ended, oldest first): when a run starts and when one ends.
+     *
+     * @param ending a run ending now, counted as ended
+     */
+    private void prune(String systemId, Run ending) {
+        synchronized (history) {
+            Deque<String> ids = history.get(systemId);
+            if (ids == null) {
+                return;
+            }
+            long ended = ids.stream().map(runs::get).filter(r -> r == null || r == ending || r.ended()).count();
+            for (var it = ids.iterator(); ended > historySize && it.hasNext();) {
                 Run old = runs.get(it.next());
-                if (old == null || old.ended()) {
+                if (old == null || old == ending || old.ended()) {
                     it.remove();
+                    ended--;
                     if (old != null) {
                         runs.remove(old.id());
                     }
@@ -305,9 +325,12 @@ public class RunManager {
         }
     }
 
-    /** Ends the run once every event emitted before is delivered. */
+    /** Ends the run once every event emitted before is delivered, then bounds its system's history again. */
     private void end(Run run, RunStatus status, Object output) {
-        dispatcher.execute(() -> run.end(status, output));
+        dispatcher.execute(() -> {
+            prune(run.systemId(), run); // before the run completes: whoever waits on it sees the bounded history
+            run.end(status, output);
+        });
     }
 
     /**

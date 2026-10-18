@@ -231,7 +231,11 @@ export class QwcAgenticRunPanel extends LitElement {
                         this._schema = response.result;
                     }
                 })
-                .catch(error => this._schemaError = `Cannot load the inputs: ${error?.error?.message ?? error?.message ?? error}`);
+                .catch(error => {
+                    if (this.system?.id === systemId) {
+                        this._schemaError = `Cannot load the inputs: ${error?.error?.message ?? error?.message ?? error}`;
+                    }
+                });
         }
     }
 

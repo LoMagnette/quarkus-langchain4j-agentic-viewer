@@ -536,6 +536,23 @@ public class AgenticSystemsPageUiTest {
     }
 
     @Test
+    void aLateInputSchemaErrorIsNotShownOnTheNextSystem() {
+        openRunForm();
+        // the same run panel is given another system while the schema request of the first one fails, late
+        panel().evaluate("async p => { const rpc = p.jsonRpc; const get = rpc.getInputSchema; "
+                + "const compare = (await rpc.getTopology({ systemId: '" + CompareWorkflow.class.getName() + "#run' })).result; "
+                + "const options = (await rpc.getTopology({ systemId: '" + OptionsWorkflow.class.getName() + "#take' })).result; "
+                + "rpc.getInputSchema = params => params.systemId === compare.id "
+                + "? new Promise((resolve, reject) => setTimeout(() => reject({ error: { message: 'boom' } }), 800)) "
+                + ": get(params); "
+                + "p.system = compare; await p.updateComplete; p.system = options; }");
+        assertThat(form().locator("vaadin-text-field[data-input=\"subject\"]")).hasCount(1);
+        page.waitForTimeout(1200);
+        assertThat(panel().locator(".error")).hasCount(0);
+        assertThat(form().locator("vaadin-text-field[data-input=\"subject\"]")).hasCount(1);
+    }
+
+    @Test
     void aLateTopologyErrorIsNotShownOnTheNextSystem() {
         page.navigate(PAGE);
         page.locator("vaadin-grid-cell-content", new Page.LocatorOptions().setHasText(

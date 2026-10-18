@@ -117,4 +117,57 @@ class RunHistoryTest {
         assertFalse(manager.cancel(run.id()), "already ended");
         assertFalse(manager.cancel("nope"), "unknown");
     }
+
+    @Test
+    void runsStillRunningWhenTheHistoryIsFullAreDroppedOnceTheyEnd() throws Exception {
+        RunManager manager = manager(2);
+        try {
+            CountDownLatch block = new CountDownLatch(1);
+            List<Run> runs = new java.util.ArrayList<>();
+            for (int i = 0; i < 6; i++) {
+                runs.add(manager.run(manager.startRun("A", Map.of("block", block, "text", "t" + i))).orElseThrow());
+            }
+            assertEquals(6, manager.listRuns("A").size(), "running runs are kept");
+
+            block.countDown();
+            for (Run run : runs) {
+                run.completion().get(5, TimeUnit.SECONDS);
+            }
+
+            // no other run starts: the history is bounded again once they ended
+            for (int i = 0; i < 50 && manager.listRuns("A").size() > 2; i++) {
+                Thread.sleep(20);
+            }
+            assertEquals(2, manager.listRuns("A").size());
+            assertEquals(java.util.Optional.empty(), manager.run(runs.get(0).id()), "the oldest run is dropped");
+        } finally {
+            manager.shutdown();
+        }
+    }
+
+    @Test
+    void aRunKeepsItsInputsAsTheyWereWhenItStarted() throws Exception {
+        CountDownLatch release = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<Object> seen = new java.util.concurrent.atomic.AtomicReference<>();
+        RunManager manager = new RunManager(id -> Optional.of(system(id)), (system, inputs) -> {
+            release.await(5, TimeUnit.SECONDS);
+            seen.set(inputs.get("text"));
+            return null;
+        });
+        try {
+            Map<String, Object> inputs = new java.util.HashMap<>(Map.of("text", "before"));
+            Run run = manager.run(manager.startRun("A", inputs)).orElseThrow();
+            inputs.put("text", "after"); // the caller's map changes while the run waits
+            inputs.put("extra", 1);
+            release.countDown();
+            run.completion().get(5, TimeUnit.SECONDS);
+
+            assertEquals("before", seen.get());
+            assertEquals(Map.of("text", "before"), run.inputs());
+            assertEquals(Map.of("text", "before"),
+                    ((io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.RunStarted) run.events().get(0)).inputs());
+        } finally {
+            manager.shutdown();
+        }
+    }
 }

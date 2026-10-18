@@ -13,8 +13,9 @@ import io.smallrye.config.WithDefault;
 public interface AgenticViewerRuntimeConfig {
 
     /**
-     * Runs kept per agentic system in the run history of the Dev UI; when a run starts beyond this number, the oldest
-     * ended runs are dropped.
+     * Ended runs kept per agentic system in the run history of the Dev UI, with their events: beyond this number the
+     * oldest ended runs are dropped. Runs still running are always kept, and dropped once ended if the history is
+     * full.
      */
     @WithDefault("20")
     int historySize();
