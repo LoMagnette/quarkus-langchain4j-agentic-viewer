@@ -8,6 +8,7 @@ import { KIND_LABELS } from './qwc-agentic-graph.js';
 import { findNode } from './qwc-agentic-run-model.js';
 import './qwc-agentic-node-details.js';
 import './qwc-agentic-run-panel.js';
+import './qwc-agentic-run-compare.js';
 import './qwc-agentic-timeline.js';
 import './qwc-agentic-output.js';
 import './qwc-agentic-scope-state.js';
@@ -139,6 +140,8 @@ export class QwcAgenticSystems extends LitElement {
         _node: { state: true },
         /** side panel: undefined (closed), 'run' or 'details' */
         _side: { state: true },
+        /** the two run ids being compared (Compare tab), undefined when none */
+        _compareRuns: { state: true },
         /** events of the current run, from the run panel */
         _runEvents: { state: true },
         _runRunning: { state: true },
@@ -241,6 +244,7 @@ export class QwcAgenticSystems extends LitElement {
         this._side = undefined;
         this._runOpened = false;
         this._runEvents = undefined;
+        this._compareRuns = undefined;
         this._systemError = undefined;
         // the topology, with what the application's topology contributors draw in its planner nodes
         Promise.all([
@@ -266,6 +270,7 @@ export class QwcAgenticSystems extends LitElement {
         this._side = undefined;
         this._runOpened = false;
         this._runEvents = undefined;
+        this._compareRuns = undefined;
     }
 
     _renderSystem(summary, system) {
@@ -289,8 +294,8 @@ export class QwcAgenticSystems extends LitElement {
 
     _renderGraph(system) {
         const tabs = [...(this._runOpened ? ['run'] : []), ...(this._runEvents ? ['output', 'scope'] : []),
-            ...(this._node ? ['details'] : [])];
-        const labels = { run: 'Run', output: 'Output', scope: 'Scope', details: 'Details' };
+            ...(this._compareRuns ? ['compare'] : []), ...(this._node ? ['details'] : [])];
+        const labels = { run: 'Run', output: 'Output', scope: 'Scope', compare: 'Compare', details: 'Details' };
         return html`
             <div class="system-body">
                 <div class="graph-column">
@@ -313,8 +318,13 @@ export class QwcAgenticSystems extends LitElement {
                     ${this._runOpened ? html`<qwc-agentic-run-panel ?hidden=${this._side !== 'run'} .system=${system}
                             @run-updated=${e => { this._runEvents = e.detail.events; this._runRunning = e.detail.running; }}
                             @show-output=${() => this._side = 'output'}
+                            @compare-runs=${e => { this._compareRuns = e.detail.runIds; this._side = 'compare'; }}
                             .jsonRpc=${this.rpc} .graph=${this.renderRoot.querySelector('qwc-agentic-graph')}>
                         </qwc-agentic-run-panel>` : ''}
+                    ${this._compareRuns ? html`<qwc-agentic-run-compare ?hidden=${this._side !== 'compare'} .system=${system}
+                            .runIds=${this._compareRuns} .rpc=${this.rpc} .graph=${this.renderRoot.querySelector('qwc-agentic-graph')}
+                            @close=${() => { this._compareRuns = undefined; this._side = this._runOpened ? 'run' : undefined; }}>
+                        </qwc-agentic-run-compare>` : ''}
                     ${this._node ? html`<qwc-agentic-node-details ?hidden=${this._side !== 'details'} .node=${this._node}
                             .systemId=${this._summary?.id} .rpc=${this.rpc}
                             @close=${this._closeDetails}></qwc-agentic-node-details>` : ''}

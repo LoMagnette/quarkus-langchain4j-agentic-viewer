@@ -12,7 +12,9 @@ const LEAF_HEIGHT = 44;
 const TITLE_CHAR_WIDTH = 7;
 const COMPOUND_PADDING = 20;
 const TITLE_SPACE = 24;
-const STATES = ['planned', 'ready', 'running', 'waiting', 'done', 'failed', 'recovered', 'interrupted'];
+const STATES = ['planned', 'ready', 'running', 'waiting', 'done', 'failed', 'recovered', 'interrupted',
+    // the comparison of two runs
+    'diff-same', 'diff-changed', 'diff-only'];
 /** States that pulse: an agent running, a human step waiting for its answer (a running box pulses its border). */
 const ACTIVE_STATES = ['running', 'waiting'];
 /**
@@ -1119,6 +1121,10 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             { selector: 'node.recovered', style: { 'border-width': 4, 'border-color': '#f59e0b' } },
             // still running when the run ended (cancelled, failed elsewhere, or the events were lost)
             { selector: 'node.interrupted', style: { 'border-width': 3, 'border-color': secondary, 'border-style': 'dashed' } },
+            // comparing two runs: same output, changed, run by one of them only
+            { selector: 'node.diff-same', style: { 'border-width': 3, 'border-color': success } },
+            { selector: 'node.diff-changed', style: { 'border-width': 4, 'border-color': '#f59e0b' } },
+            { selector: 'node.diff-only', style: { 'border-width': 4, 'border-color': '#8b5cf6', 'border-style': 'dashed' } },
         ];
     }
 }

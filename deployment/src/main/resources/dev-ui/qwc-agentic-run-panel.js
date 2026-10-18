@@ -101,7 +101,7 @@ export class QwcAgenticRunPanel extends LitElement {
         }
         .history-row {
             display: grid;
-            grid-template-columns: 12px 1fr auto;
+            grid-template-columns: 12px 1fr auto auto;
             align-items: center;
             gap: var(--lumo-space-s);
             padding: 2px var(--lumo-space-xs);
@@ -187,11 +187,14 @@ export class QwcAgenticRunPanel extends LitElement {
         _answering: { state: true },
         /** goal-oriented planners' previewed paths for the inputs filled in the form: planner node id -> [node ids] */
         _preview: { state: true },
+        /** run ids selected in the history to compare (two at most) */
+        _compare: { state: true },
     };
 
     constructor() {
         super();
         this._mode = 'form';
+        this._compare = [];
     }
 
     willUpdate(changed) {
@@ -203,6 +206,7 @@ export class QwcAgenticRunPanel extends LitElement {
             this._schemaError = undefined;
             this._history = undefined;
             this._preview = undefined;
+            this._compare = [];
             // parsed once: the form resets its fields when given other values
             this._lastInputs = session.get(LAST_INPUTS + this.system.id);
             const systemId = this.system.id;
@@ -437,8 +441,27 @@ export class QwcAgenticRunPanel extends LitElement {
                         <span class="dot ${summary.status}"></span>
                         <span>${new Date(summary.startedAt).toLocaleTimeString()} · ${summary.status.toLowerCase()}</span>
                         <span class="muted">${summary.durationMillis != null ? formatDuration(summary.durationMillis) : '…'}</span>
+                        <input type="checkbox" data-compare-run=${summary.runId} title="Select to compare"
+                                ?disabled=${summary.status === 'RUNNING'} .checked=${this._compare.includes(summary.runId)}
+                                @click=${e => e.stopPropagation()} @change=${e => this._toggleCompare(summary.runId, e.target.checked)}>
                     </div>`)}
+                ${this._compare.length === 2 ? html`<div class="actions">
+                    <vaadin-button theme="tertiary" data-action="compare" @click=${this._requestCompare}>Compare the 2 runs</vaadin-button>
+                </div>` : this._compare.length === 1 ? html`<div class="muted">Select another run to compare</div>` : nothing}
             </div>`;
+    }
+
+    /** Two runs at most: a third one replaces the first chosen. */
+    _toggleCompare(runId, checked) {
+        const others = this._compare.filter(id => id !== runId);
+        this._compare = checked ? [...others.slice(-1), runId] : others;
+    }
+
+    /** Asks the page to compare the selected runs, the older as A. */
+    _requestCompare() {
+        const startedAt = runId => this._history.find(summary => summary.runId === runId)?.startedAt ?? 0;
+        const runIds = [...this._compare].sort((x, y) => startedAt(x) - startedAt(y));
+        this.dispatchEvent(new CustomEvent('compare-runs', { detail: { runIds }, bubbles: true, composed: true }));
     }
 
     _loadHistory() {

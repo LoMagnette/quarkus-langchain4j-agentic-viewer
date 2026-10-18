@@ -1,10 +1,11 @@
 ---
 id: TASK-73
 title: Compare two runs
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-10-17 21:49'
-updated_date: '2026-10-18 06:06'
+updated_date: '2026-10-18 10:43'
 labels:
   - idea
   - dev-ui
@@ -40,9 +41,30 @@ Within one application session (runs do not survive a hot reload today; see DRAF
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Two runs of a system can be selected from the history and compared
-- [ ] #2 The comparison shows the inputs and, per matched agent invocation, both outputs, durations, tokens and statuses, highlighting what differs; truncated values that agree up to the cut show as possibly different
-- [ ] #3 Invocations present in only one run are listed as such (different paths of supervisors, planners, conditionals, loops)
-- [ ] #4 The graph colors nodes as same, changed or only in one run, with total duration and tokens of both runs
-- [ ] #5 Browser tests cover a sequence with one changed output, a loop with a different number of iterations and a conditional taking another branch
+- [x] #1 Two runs of a system can be selected from the history and compared
+- [x] #2 The comparison shows the inputs and, per matched agent invocation, both outputs, durations, tokens and statuses, highlighting what differs; truncated values that agree up to the cut show as possibly different
+- [x] #3 Invocations present in only one run are listed as such (different paths of supervisors, planners, conditionals, loops)
+- [x] #4 The graph colors nodes as same, changed or only in one run, with total duration and tokens of both runs
+- [x] #5 Browser tests cover a sequence with one changed output, a loop with a different number of iterations and a conditional taking another branch
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. qwc-agentic-run-model.js compareRuns(traceA, traceB): invocations keyed by node, iteration and item index under the parents' keys (n-th call when neither), verdict per row (same, maybe when truncated, changed, onlyA, onlyB), per node (strongest), inputs and totals.
+2. Run panel history: a compare checkbox per ended run (two at most), 'Compare the 2 runs' fires compare-runs (older as A).
+3. qwc-agentic-run-compare.js in a Compare tab of the systems page: totals, inputs (differing ones marked), one row per invocation with both outputs, durations, tokens, statuses; graph colored with new states diff-same, diff-changed, diff-only; Close resets the graph.
+4. CompareWorkflow fixture (loop counting on the input, conditional on another) and a browser test; docs.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Decisions (draft open questions): a comparison shows both values with the changed ones highlighted (no word-level text diff); within one application session (DRAFT/TASK-75 may keep a run in the browser). Browser test twoRunsAreComparedInvocationByInvocation: identical runs (no difference, graph same), another loop count and branch (iteration 1 same, iterations 2-3 only in B, Fast only in A, Slow only in B, root changed, two differing inputs, graph colored), one changed output on the same path, totals, truncated values 'maybe' (compareRuns in the page), Close resets the graph. ui-tests 24/24; full builds after TASK-74.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Two runs of a system can be compared from the history: inputs, totals and every agent invocation matched across them (node, iteration, item, parents) with both outputs and what changed, invocations made by one run only, truncated values marked as possibly different, and the graph colored by difference. Verified with a browser test covering same runs, a different loop count, another conditional branch and one changed output.
+<!-- SECTION:FINAL_SUMMARY:END -->

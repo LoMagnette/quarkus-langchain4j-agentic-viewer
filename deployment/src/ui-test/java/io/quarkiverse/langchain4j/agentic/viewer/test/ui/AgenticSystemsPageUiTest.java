@@ -51,7 +51,9 @@ public class AgenticSystemsPageUiTest {
                             OptionsWorkflow.NoteTaker.class, OptionsWorkflow.EntryPoint.class, ApprovalWorkflow.class,
                             ApprovalWorkflow.Drafter.class, ApprovalWorkflow.Approval.class, ApprovalWorkflow.EntryPoint.class,
                             ToolPlanner.class, ToolPlanner.OneShot.class, ToolPlanner.Clerk.class, ToolPlanner.Clock.class,
-                            ToolPlanner.EntryPoint.class)
+                            ToolPlanner.EntryPoint.class, CompareWorkflow.class, CompareWorkflow.Polish.class,
+                            CompareWorkflow.Grow.class, CompareWorkflow.Route.class, CompareWorkflow.Fast.class,
+                            CompareWorkflow.Slow.class, CompareWorkflow.EntryPoint.class)
                     // the provider extension is only there to wire the fixture model into the AI agents
                     .addAsResource(new StringAsset("quarkus.langchain4j.openai.enable-integration=false\n"),
                             "application.properties"));
@@ -103,7 +105,7 @@ public class AgenticSystemsPageUiTest {
                 Pattern.compile("^NewsletterWorkflow$")));
         assertThat(row).hasCount(1);
         assertThat(page.locator("vaadin-grid-cell-content", new Page.LocatorOptions().setHasText("declarative")))
-                .hasCount(4); // and the other fixtures (OptionsWorkflow, ApprovalWorkflow, ToolPlanner)
+                .hasCount(5); // and the other fixtures (OptionsWorkflow, ApprovalWorkflow, ToolPlanner, CompareWorkflow)
         assertThat(page.locator("vaadin-grid-cell-content",
                 new Page.LocatorOptions().setHasText(NewsletterWorkflow.class.getName() + "#write"))).hasCount(1);
     }
@@ -574,6 +576,89 @@ public class AgenticSystemsPageUiTest {
         assertEquals("echo: the tool said noon", state.path("value").asText());
         assertEquals("what time is it?", firstByType.get("RunStarted").path("inputs").path("question").asText());
         assertTrue(firstByType.get("RunFinished").path("output").isTextual(), () -> firstByType.get("RunFinished").toString());
+    }
+
+    @Test
+    void twoRunsAreComparedInvocationByInvocation() {
+        page.navigate(PAGE);
+        page.locator("vaadin-grid-cell-content", new Page.LocatorOptions().setHasText(
+                Pattern.compile("^CompareWorkflow$"))).click();
+        waitFor(() -> Boolean.TRUE.equals(graph().evaluate("g => g.layoutDone === true")), "graph laid out");
+        page.locator("vaadin-button[data-action=\"open-run\"]").click();
+        compareRun("a", 10, true); // one loop iteration, the fast branch
+        compareRun("a", 10, true); // the same again
+        compareRun("a", 30, false); // three iterations, the slow branch
+        compareRun("b", 10, true); // one iteration, other text
+
+        String root = CompareWorkflow.class.getName() + "#run";
+        Locator compare = page.locator("qwc-agentic-run-compare");
+        // newest first in the history: the 4th, 3rd, 2nd and 1st runs
+        selectAndCompare(3, 2);
+        assertThat(compare.locator("h5", new Locator.LocatorOptions().setHasText("Agents"))).containsText("no difference");
+        waitFor(() -> "diff-same".equals(stateOf(root + "/Polish/Grow")), "graph colored as same");
+
+        selectAndCompare(3, 1);
+        assertEquals(List.of("same", "onlyB", "onlyB"), verdicts(compare, root + "/Polish/Grow"),
+                "first iteration in both, the next two only in B");
+        assertEquals(List.of("onlyA"), verdicts(compare, root + "/Route/Fast"));
+        assertEquals(List.of("onlyB"), verdicts(compare, root + "/Route/Slow"));
+        assertEquals(List.of("changed"), verdicts(compare, root));
+        assertThat(compare.locator("[data-compare-inputs] tr.differs")).hasCount(2); // limit and urgent
+        waitFor(() -> "diff-only".equals(stateOf(root + "/Route/Fast")) && "diff-changed".equals(stateOf(root)),
+                "graph colored by difference");
+
+        selectAndCompare(3, 0);
+        assertEquals(List.of("changed"), verdicts(compare, root + "/Polish/Grow"), "one changed output, same path");
+        assertEquals(List.of("changed"), verdicts(compare, root + "/Route/Fast"));
+
+        // totals of both runs
+        assertThat(compare.locator("[data-compare-totals] tr")).hasCount(4);
+        assertThat(compare.locator("[data-compare-totals]")).containsText("succeeded");
+        // equal values both cut by the server's truncation may still differ
+        assertEquals("maybe", page.evaluate("async () => { const { compareRuns } = await import("
+                + "location.pathname.replace(/[^/]*$/, '') + 'qwc-agentic-run-model.js'); "
+                + "const run = output => ({ events: [{ type: 'AgentStarted', invocationId: 'i', nodeId: 'n', agentName: 'n' }, "
+                + "{ type: 'AgentFinished', invocationId: 'i', output }] }); "
+                + "return compareRuns(run('x… [truncated, 5000 chars]'), run('x… [truncated, 5000 chars]')).rows[0].verdict; }"));
+
+        compare.locator("vaadin-button[data-action=\"close-compare\"]").click();
+        assertThat(compare).hasCount(0);
+        assertEquals(null, stateOf(root));
+    }
+
+    private void compareRun(String text, int limit, boolean urgent) {
+        if (panel().locator("vaadin-button[data-action=\"edit\"]").count() > 0) {
+            panel().locator("vaadin-button[data-action=\"edit\"]").click();
+        }
+        form().locator("vaadin-text-field[data-input=\"text\"] input").fill(text);
+        form().locator("vaadin-integer-field[data-input=\"limit\"] input").fill(String.valueOf(limit));
+        Locator checkbox = form().locator("vaadin-checkbox[data-input=\"urgent\"] input");
+        if (checkbox.isChecked() != urgent) {
+            checkbox.click();
+        }
+        clickRun();
+        confirmIfAsked();
+        assertThat(status()).hasAttribute("data-run-status", "succeeded",
+                new LocatorAssertions.HasAttributeOptions().setTimeout(30_000));
+    }
+
+    /** Checks the two history rows (by position, newest first) and compares them. */
+    private void selectAndCompare(int first, int second) {
+        page.locator("vaadin-tab[data-tab=\"run\"]").click(); // the history is in the Run tab
+        Locator boxes = panel().locator("input[data-compare-run]");
+        boxes.evaluateAll("boxes => boxes.forEach(b => { if (b.checked) { b.click(); } })");
+        boxes.nth(first).evaluate("b => b.click()");
+        boxes.nth(second).evaluate("b => b.click()");
+        Locator compareButton = panel().locator("vaadin-button[data-action=\"compare\"]");
+        assertThat(compareButton).hasCount(1);
+        compareButton.click();
+        page.locator("qwc-agentic-run-compare [data-compare-rows]").waitFor();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> verdicts(Locator compare, String nodeId) {
+        return (List<String>) compare.evaluate("(c, id) => [...c.shadowRoot.querySelectorAll('[data-compare-row]')]"
+                + ".filter(r => r.dataset.node === id).map(r => r.dataset.verdict)", nodeId);
     }
 
     private void assertReplayed(String topic) {

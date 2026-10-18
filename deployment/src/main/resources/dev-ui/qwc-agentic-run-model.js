@@ -352,3 +352,114 @@ export class LiveRun {
         };
     }
 }
+
+/** Whether a value carries a truncation marker of the server (PayloadTruncator): equal values may still differ. */
+export function isTruncated(value) {
+    if (typeof value === 'string') {
+        return value.includes('… [truncated') || value.startsWith('… [');
+    }
+    if (Array.isArray(value)) {
+        return value.some(isTruncated);
+    }
+    if (value && typeof value === 'object') {
+        return '…' in value || Object.values(value).some(isTruncated);
+    }
+    return false;
+}
+
+/** The agent invocations of a run, from its events, each with a key stable across runs of the same system. */
+function invocations(events) {
+    const byId = new Map();
+    const list = [];
+    for (const event of events ?? []) {
+        if (event.type === 'AgentStarted') {
+            const invocation = { id: event.invocationId, parentId: event.parentInvocationId, nodeId: event.nodeId,
+                name: event.agentName, iteration: event.iteration, itemIndex: event.itemIndex, status: 'running' };
+            byId.set(event.invocationId, invocation);
+            list.push(invocation);
+        } else if (event.type === 'AgentFinished' || event.type === 'AgentFailed') {
+            const invocation = byId.get(event.invocationId);
+            if (invocation) {
+                invocation.status = event.type === 'AgentFailed' ? 'failed' : 'done';
+                invocation.output = event.type === 'AgentFailed' ? event.error?.message : event.output;
+                invocation.duration = event.durationMillis;
+                invocation.tokens = event.tokens?.totalTokens;
+            }
+        }
+    }
+    // node, loop iteration and mapper item, under the parent's key; the n-th call of a node with neither (a supervisor
+    // calling an agent again) under the same parent
+    const keys = new Map();
+    const seen = new Map();
+    const keyOf = invocation => {
+        if (keys.has(invocation.id)) {
+            return keys.get(invocation.id);
+        }
+        const parent = byId.get(invocation.parentId);
+        const base = `${parent ? keyOf(parent) : ''}/${invocation.nodeId}[${invocation.iteration ?? ''},${invocation.itemIndex ?? ''}]`;
+        const occurrence = (seen.get(base) ?? 0) + 1;
+        seen.set(base, occurrence);
+        const key = occurrence > 1 ? `${base}#${occurrence}` : base;
+        keys.set(invocation.id, key);
+        return key;
+    };
+    list.forEach(invocation => invocation.key = keyOf(invocation));
+    const depthOf = invocation => byId.has(invocation.parentId) ? depthOf(byId.get(invocation.parentId)) + 1 : 0;
+    list.forEach(invocation => invocation.depth = depthOf(invocation));
+    return list;
+}
+
+/** Totals of a run: status, duration, tokens. */
+function totals(trace) {
+    const events = trace?.events ?? [];
+    const end = events.find(e => e.type === 'RunFinished' || e.type === 'RunFailed');
+    return {
+        status: trace?.summary?.status, duration: end?.durationMillis ?? trace?.summary?.durationMillis,
+        tokens: events.filter(e => e.type === 'AgentFinished').reduce((sum, e) => sum + (e.tokens?.totalTokens ?? 0), 0),
+        output: end?.type === 'RunFinished' ? end.output : undefined,
+    };
+}
+
+const VERDICT_RANK = { same: 0, maybe: 1, changed: 2, onlyA: 3, onlyB: 3 };
+
+/**
+ * Compares two runs of a system: their inputs, each agent invocation matched across them (node, loop iteration, mapper
+ * item, under the same parents), and their totals.
+ *
+ * @return {{inputs, rows, nodes, a, b}} rows in the order of run A, then what only B ran; per row and per node a
+ *         verdict: same, maybe (equal up to a truncation), changed, onlyA, onlyB
+ */
+export function compareRuns(traceA, traceB) {
+    const a = invocations(traceA?.events);
+    const b = invocations(traceB?.events);
+    const bByKey = new Map(b.map(invocation => [invocation.key, invocation]));
+    const verdict = (x, y) => {
+        if (!y) {
+            return 'onlyA';
+        }
+        if (!x) {
+            return 'onlyB';
+        }
+        if (x.status !== y.status || JSON.stringify(x.output) !== JSON.stringify(y.output)) {
+            return 'changed';
+        }
+        return isTruncated(x.output) || isTruncated(y.output) ? 'maybe' : 'same';
+    };
+    const rows = a.map(x => ({ key: x.key, nodeId: x.nodeId, name: x.name, depth: x.depth, a: x, b: bByKey.get(x.key),
+        verdict: verdict(x, bByKey.get(x.key)) }));
+    const aKeys = new Set(a.map(x => x.key));
+    b.filter(y => !aKeys.has(y.key)).forEach(y => rows.push({ key: y.key, nodeId: y.nodeId, name: y.name, depth: y.depth,
+        a: undefined, b: y, verdict: 'onlyB' }));
+    const nodes = new Map();
+    rows.forEach(row => {
+        const current = nodes.get(row.nodeId);
+        if (!current || VERDICT_RANK[row.verdict] > VERDICT_RANK[current]) {
+            nodes.set(row.nodeId, row.verdict);
+        }
+    });
+    const inputsA = traceA?.summary?.inputs ?? {};
+    const inputsB = traceB?.summary?.inputs ?? {};
+    const inputs = [...new Set([...Object.keys(inputsA), ...Object.keys(inputsB)])].map(name => ({ name,
+        a: inputsA[name], b: inputsB[name], same: JSON.stringify(inputsA[name]) === JSON.stringify(inputsB[name]) }));
+    return { inputs, rows, nodes, a: totals(traceA), b: totals(traceB) };
+}

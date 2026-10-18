@@ -154,6 +154,15 @@ Errors show the failing agent and the exception; an `@ErrorHandler` that retried
 in the timeline. Past runs stay in the *Recent runs* list (20 per system by default) and can be replayed on the graph,
 also after a page reload.
 
+=== Comparing two runs
+
+Tick two runs in *Recent runs* and click *Compare*: the *Compare* tab shows their inputs, totals (status, duration,
+tokens) and every agent invocation matched across them (same node, loop iteration and mapper item, under the same
+parents), with both outputs and what changed. Invocations only one run made (another loop count, another conditional
+branch, another supervisor path) are listed as such, and the graph is colored: same, changed, run by one run only.
+Values cut by the payload limit (`max-payload-size`) that agree up to the cut show as possibly different. Runs are kept
+by the application: a hot reload starts a new history.
+
 == Pattern views
 
 When `dev.langchain4j:langchain4j-agentic-patterns` is on the class path (there is no Quarkus extension for it: add it
