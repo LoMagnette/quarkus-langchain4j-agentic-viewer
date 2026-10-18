@@ -4,11 +4,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ExecutionEvent;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.RunFailed;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.RunFinished;
 import io.smallrye.mutiny.subscription.MultiEmitter;
 
 /**
@@ -20,11 +21,14 @@ public final class Run {
     private final String systemId;
     private final Map<String, Object> inputs;
     private final long startedAt;
-    private final List<ExecutionEvent> events = new CopyOnWriteArrayList<>();
+    /** Appended on the event thread, read from any thread: guarded by itself (no copy per event). */
+    private final List<ExecutionEvent> events = new ArrayList<>();
     private final CompletableFuture<Run> completion = new CompletableFuture<>();
     private volatile RunStatus status = RunStatus.RUNNING;
     private volatile Object output;
     private volatile boolean ended;
+    /** Whether its RunFinished or RunFailed was recorded; only touched on the event thread of the run manager. */
+    private boolean terminated;
     private volatile Long durationMillis;
     /** set by whoever ends the run first: its result, its failure or a cancellation */
     private final AtomicBoolean ending = new AtomicBoolean();
@@ -67,7 +71,9 @@ public final class Run {
 
     /** @return the events emitted so far, in order */
     public List<ExecutionEvent> events() {
-        return List.copyOf(events);
+        synchronized (events) {
+            return List.copyOf(events);
+        }
     }
 
     /** @return completes with this run when it ends, whatever the outcome */
@@ -89,6 +95,11 @@ public final class Run {
         return false;
     }
 
+    /** @return whether the end of the run was claimed (its terminal event may not be delivered yet) */
+    boolean endClaimed() {
+        return ending.get();
+    }
+
     void task(Future<?> future) {
         task = future;
     }
@@ -102,14 +113,22 @@ public final class Run {
         return ended;
     }
 
+    /** @return whether the terminal event of the run was recorded: nothing is recorded after it */
+    boolean terminated() {
+        return terminated;
+    }
+
     void add(ExecutionEvent event) {
-        events.add(event);
+        terminated |= event instanceof RunFinished || event instanceof RunFailed;
+        synchronized (events) {
+            events.add(event);
+        }
         subscribers.forEach(subscriber -> subscriber.emit(event));
     }
 
     /** Replays the events emitted so far, then follows the run (or completes at once if it ended). */
     void subscribe(MultiEmitter<? super ExecutionEvent> subscriber) {
-        events.forEach(subscriber::emit);
+        events().forEach(subscriber::emit);
         if (ended) {
             subscriber.complete();
         } else {

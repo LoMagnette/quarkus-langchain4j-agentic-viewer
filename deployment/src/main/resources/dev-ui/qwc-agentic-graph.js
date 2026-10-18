@@ -12,7 +12,7 @@ const LEAF_HEIGHT = 44;
 const TITLE_CHAR_WIDTH = 7;
 const COMPOUND_PADDING = 20;
 const TITLE_SPACE = 24;
-const STATES = ['planned', 'ready', 'running', 'waiting', 'done', 'failed', 'recovered'];
+const STATES = ['planned', 'ready', 'running', 'waiting', 'done', 'failed', 'recovered', 'interrupted'];
 /** States that pulse: an agent running, a human step waiting for its answer (a running box pulses its border). */
 const ACTIVE_STATES = ['running', 'waiting'];
 /**
@@ -38,6 +38,7 @@ export const KIND_LABELS = {
     HUMAN_IN_THE_LOOP: 'Human in the loop',
     A2A_CLIENT_AGENT: 'A2A agent',
     MCP_CLIENT_AGENT: 'MCP client agent',
+    REGISTRY_AGENT: 'Registry agent',
     INPUT_KEY: 'System input',
     CONTRIBUTED: 'Planner state',
     GOAL: 'Goal key',
@@ -56,6 +57,8 @@ export const KIND_STYLES = {
     // remote agents: the work happens on another server
     A2A_CLIENT_AGENT: { shape: 'ellipse', color: '#0284c7', border: 'solid' },
     MCP_CLIENT_AGENT: { shape: 'rhomboid', color: '#65a30d', border: 'solid' },
+    // resolved by name at runtime
+    REGISTRY_AGENT: { shape: 'round-rectangle', color: '#64748b', border: 'dashed' },
     SEQUENCE: { shape: 'round-rectangle', color: '#64748b', border: 'solid' },
     PARALLEL: { shape: 'round-rectangle', color: '#3b82f6', border: 'double' },
     PARALLEL_MAPPER: { shape: 'round-rectangle', color: '#06b6d4', border: 'double' },
@@ -91,8 +94,14 @@ const EDGE_LABEL_CHAR_WIDTH = 5;
 export function toGraph(system) {
     const nodes = [];
     const edges = [];
-    const edge = (source, target, kind, label) =>
-        edges.push({ id: `${source}->${target}:${kind}`, source, target, kind, label });
+    const edgeIds = new Map();
+    // ids are unique even for several edges between the same nodes (e.g. two transitions a contributor draws)
+    const edge = (source, target, kind, label) => {
+        const base = `${source}->${target}:${kind}`;
+        const count = (edgeIds.get(base) ?? 0) + 1;
+        edgeIds.set(base, count);
+        edges.push({ id: count === 1 ? base : `${base}#${count}`, source, target, kind, label });
+    };
     const helper = (parent, role) => {
         const id = parent.id + HELPER_SEPARATOR + role;
         nodes.push({ id, label: '', kind: role.toUpperCase(), parent: parent.id, parentKind: parent.kind, compound: false,
@@ -216,7 +225,8 @@ export function toGraph(system) {
                 const join = helper(node, 'join');
                 node.children.forEach(child => {
                     // a conditional branch shows its activation condition; a mapper runs its agent per item
-                    const label = node.kind === 'CONDITIONAL' ? child.guard?.label
+                    // (a loop branch keeps its exit condition in the guard, its activation apart)
+                    const label = node.kind === 'CONDITIONAL' ? (child.kind === 'LOOP' ? child.guard?.activation : child.guard?.label)
                             : node.kind === 'PARALLEL_MAPPER' ? 'each item' : undefined;
                     edge(fork, child.id, node.kind === 'CONDITIONAL' ? 'GUARD' : 'FORK', label);
                     edge(child.id, join, 'JOIN');
@@ -238,8 +248,10 @@ export function toGraph(system) {
                 const contribution = system.contributions?.[node.id];
                 if (contribution) {
                     node.children.forEach(child => visit(child, node.id));
-                    contribution.nodes?.forEach(extra => nodes.push({ id: extra.id, label: extra.label, kind: 'CONTRIBUTED',
-                        parent: node.id, compound: false, width: Math.max(70, extra.label.length * 7 + 24), height: 30 }));
+                    // a node id given twice is drawn once (Cytoscape refuses duplicate ids)
+                    contribution.nodes?.filter((extra, i, all) => all.findIndex(other => other.id === extra.id) === i)
+                        .forEach(extra => nodes.push({ id: extra.id, label: extra.label, kind: 'CONTRIBUTED',
+                            parent: node.id, compound: false, width: Math.max(70, extra.label.length * 7 + 24), height: 30 }));
                     contribution.edges?.forEach(extra => edge(extra.source, extra.target, 'CONTRIBUTED', extra.label ?? undefined));
                     break;
                 }
@@ -525,7 +537,10 @@ export class QwcAgenticGraph extends observeState(LitElement) {
         this._resizeObserver = new ResizeObserver(() => {
             if (this._cy) {
                 this._cy.resize();
-                this._fit();
+                // keeps what the user zoomed or panned to (the timeline grows during a run, side panels open)
+                if (!this._viewportMoved) {
+                    this._fit();
+                }
             }
         });
         this._resizeObserver.observe(this.renderRoot.querySelector('#graph'));
@@ -541,10 +556,15 @@ export class QwcAgenticGraph extends observeState(LitElement) {
 
     /** Fits the whole graph, without zooming small graphs above 100%. */
     _fit() {
-        this._cy.fit(undefined, 30);
-        if (this._cy.zoom() > 1) {
-            this._cy.zoom(1);
-            this._cy.center();
+        this._fitting = true;
+        try {
+            this._cy.fit(undefined, 30);
+            if (this._cy.zoom() > 1) {
+                this._cy.zoom(1);
+                this._cy.center();
+            }
+        } finally {
+            this._fitting = false;
         }
     }
 
@@ -570,7 +590,14 @@ export class QwcAgenticGraph extends observeState(LitElement) {
                 autoungrabify: true,
                 wheelSensitivity: 0.2,
             });
+            this._viewportMoved = false;
             this._fit();
+            // any other viewport change is the user's (wheel, drag, pinch)
+            this._cy.on('viewport', () => {
+                if (!this._fitting) {
+                    this._viewportMoved = true;
+                }
+            });
             this._applyOverlay();
             // a click on a node selects it, a click on the background clears the selection (nodeId null)
             this._cy.on('tap', event => {
@@ -1090,6 +1117,8 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             { selector: 'node.failed', style: { 'border-width': 4, 'border-color': error } },
             // an error handled by an @ErrorHandler (retry or replacement result)
             { selector: 'node.recovered', style: { 'border-width': 4, 'border-color': '#f59e0b' } },
+            // still running when the run ended (cancelled, failed elsewhere, or the events were lost)
+            { selector: 'node.interrupted', style: { 'border-width': 3, 'border-color': secondary, 'border-style': 'dashed' } },
         ];
     }
 }

@@ -113,6 +113,10 @@ public final class LangChain4jInternals {
                     LISTENER, SCOPE_INTERFACE, AGENT_INSTANCE, "java.util.Map", "java.lang.Throwable"),
             // planner decisions (PlannerDecisions, DevUiAgentListener)
             field(Library.AGENTIC, PLANNER_HANDLER, PLANNER_HANDLER_PLANNER_SUPPLIER, DECISIONS),
+            // the constructor takes the default planner from the supplier: left undecorated (seen on the stack)
+            method(Library.AGENTIC, PLANNER_HANDLER, "<init>", DECISIONS + " (original planner type kept)",
+                    "dev.langchain4j.agentic.internal.AbstractServiceBuilder", "dev.langchain4j.agentic.internal.InternalAgent",
+                    "java.lang.String", "java.util.function.Supplier", SCOPE),
             cls(Library.AGENTIC, SEQUENTIAL_PLANNER, DECISIONS + " (built-in planners left alone)"),
             cls(Library.AGENTIC, ACTION + "$" + NO_OP_ACTION, DECISIONS),
             cls(Library.AGENTIC, ACTION + "$" + DONE_WITH_RESULT_ACTION, DECISIONS),

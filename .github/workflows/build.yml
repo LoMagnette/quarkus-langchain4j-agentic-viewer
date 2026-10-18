@@ -13,6 +13,8 @@ jobs:
   build:
     name: Build and test (${{ matrix.configuration }})
     runs-on: ubuntu-latest
+    # a hung dev-mode or browser test must not hold a runner for hours
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -33,7 +35,17 @@ jobs:
       # samples and tests run on a scripted fake chat model: no API key needed
       - name: Build and test
         run: mvn -B clean install ${{ matrix.profiles }}
+      # the config reference of the docs is generated from the config roots by the build: it must be committed as built
+      - name: Generated docs are up to date
+        if: matrix.configuration == 'without-patterns'
+        run: git diff --exit-code -- docs/modules/ROOT/pages/includes
       # Dev UI pages in a browser (Playwright, deployment profile ui-tests): once, they do not depend on the patterns
+      - name: Cache Chromium
+        if: matrix.configuration == 'without-patterns'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ hashFiles('pom.xml') }}
       - name: Install Chromium for the UI tests
         if: matrix.configuration == 'without-patterns'
         run: >-
@@ -42,3 +54,12 @@ jobs:
       - name: UI tests
         if: matrix.configuration == 'without-patterns'
         run: mvn -B test -pl deployment -Pui-tests '-Dtest=AgenticSystemsPageUiTest,LargeSystemUiTest'
+      - name: Test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ matrix.configuration }}
+          path: |
+            **/target/surefire-reports/
+            **/target/failsafe-reports/
+          retention-days: 7

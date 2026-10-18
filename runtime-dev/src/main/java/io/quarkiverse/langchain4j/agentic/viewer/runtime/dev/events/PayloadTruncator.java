@@ -19,7 +19,8 @@ import com.fasterxml.jackson.databind.node.TextNode;
  * <p>
  * A value becomes a Jackson tree; when its JSON text is longer than the limit, strings are cut with a marker, and arrays
  * and objects keep their first entries within the budget followed by a marker. Streaming outputs and values Jackson
- * cannot convert are replaced by a marker, never by their {@code toString()} (a streaming response would block).
+ * cannot convert (failing getters, cycles, a map or list containing itself) are replaced by a marker, never by their
+ * {@code toString()} (a streaming response would block). It never throws: an event must not be lost for its payload.
  */
 public final class PayloadTruncator {
 
@@ -65,7 +66,11 @@ public final class PayloadTruncator {
             return Map.of();
         }
         Map<String, Object> result = new LinkedHashMap<>();
-        values.forEach((key, value) -> result.put(key, truncate(value).value()));
+        try {
+            values.forEach((key, value) -> result.put(key, truncate(value).value()));
+        } catch (RuntimeException e) { // e.g. a map of the application changed meanwhile
+            result.put("…", "<" + e.getClass().getName() + " while reading the values>");
+        }
         return result;
     }
 
@@ -90,7 +95,8 @@ public final class PayloadTruncator {
         }
         try {
             return MAPPER.valueToTree(value);
-        } catch (IllegalArgumentException e) {
+        } catch (RuntimeException | StackOverflowError e) {
+            // Jackson reports bean cycles, but recurses without end into a map or list containing itself
             return TextNode.valueOf("<" + value.getClass().getName() + ", not serializable to JSON>");
         }
     }
@@ -167,7 +173,10 @@ public final class PayloadTruncator {
 
     private static String cut(String text, int budget) {
         String marker = "… [truncated, " + text.length() + " chars]";
-        int keep = Math.max(0, budget - marker.length() - 2);
-        return text.substring(0, Math.min(keep, text.length())) + marker;
+        int keep = Math.min(Math.max(0, budget - marker.length() - 2), text.length());
+        if (keep > 0 && Character.isHighSurrogate(text.charAt(keep - 1))) {
+            keep--; // never half of a character (an emoji is two UTF-16 chars)
+        }
+        return text.substring(0, keep) + marker;
     }
 }

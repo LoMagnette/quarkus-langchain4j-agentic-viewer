@@ -4,7 +4,8 @@ A Quarkus extension adding an **Agentic Systems** page to the Dev UI for
 [LangChain4j agentic](https://docs.langchain4j.dev/tutorials/agents) systems built with
 [quarkus-langchain4j](https://github.com/quarkiverse/quarkus-langchain4j).
 
-- **See** every declarative agentic system of the application as a graph: its structure (sequences, parallel
+- **See** every agentic system of the application as a graph, declarative or built with the `AgenticServices`
+  builders (produced as CDI beans, or anywhere with `builder-discovery=transform`): its structure (sequences, parallel
   branches, loops, conditions, supervisors, planners, human-in-the-loop steps, A2A and MCP agents) and its data flow
   (the AgenticScope keys the agents share), with the prompts, models and tools of each agent.
 - **Run** a system from a form generated from its inputs, and follow it live: agents highlighted as they run, with
@@ -54,6 +55,6 @@ mvn quarkus:dev -pl integration-tests -Dquarkus.profile=dev,ollama
 
 ## Status
 
-Experimental. Systems built with the `AgenticServices` builders are not discovered yet. The live views rely on
-internal parts of `langchain4j-agentic` for which there is no public API yet; an incompatible version of the library
-disables some live information, never the application.
+Experimental. Builder systems are found among the CDI beans by default; `builder-discovery=transform` also finds the
+ones that are no beans. The live views rely on internal parts of `langchain4j-agentic` for which there is no public API
+yet; an incompatible version of the library disables some live information, never the application.

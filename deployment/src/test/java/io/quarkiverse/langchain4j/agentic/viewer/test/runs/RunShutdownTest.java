@@ -1,11 +1,14 @@
 package io.quarkiverse.langchain4j.agentic.viewer.test.runs;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -34,19 +37,18 @@ class RunShutdownTest {
             new AgentNode(SYSTEM, "run", NodeKind.AI_AGENT, null, List.of(), null, false, false, List.of(), null, null, null,
                     null));
 
-    private static long viewerThreads() {
-        return Thread.getAllStackTraces().keySet().stream().filter(t -> t.getName().startsWith("agentic-viewer-")).count();
-    }
-
     @Test
     void openRunsEndCancelledAndTheirStreamsComplete() throws Exception {
-        long before = viewerThreads();
+        // the threads of this manager: its run thread and its event thread (other tests' idle threads do not count)
+        Set<Thread> threads = ConcurrentHashMap.newKeySet();
         CountDownLatch running = new CountDownLatch(1);
         RunManager manager = new RunManager(id -> SYSTEM.equals(id) ? Optional.of(SLOW) : Optional.empty(), (system, inputs) -> {
+            threads.add(Thread.currentThread());
             running.countDown();
             Thread.sleep(60_000); // a model call that would take long: interrupted by the shutdown
             return "late";
         });
+        manager.addListener(event -> threads.add(Thread.currentThread()));
         String runId = manager.startRun(SYSTEM, null);
         Run run = manager.run(runId).orElseThrow();
         assertTrue(running.await(5, TimeUnit.SECONDS));
@@ -61,9 +63,10 @@ class RunShutdownTest {
         assertTrue(last instanceof RunFailed, () -> stream.getItems().toString());
         assertEquals("Application stopped or reloaded", ((RunFailed) last).error().message());
         assertEquals(RunStatus.CANCELLED, run.status());
-        for (int i = 0; i < 50 && viewerThreads() > before; i++) {
-            Thread.sleep(100);
+        assertEquals(2, threads.size(), threads::toString);
+        for (Thread thread : threads) {
+            thread.join(5_000);
+            assertFalse(thread.isAlive(), () -> thread.getName() + " stopped");
         }
-        assertEquals(before, viewerThreads(), "run and event threads stopped");
     }
 }

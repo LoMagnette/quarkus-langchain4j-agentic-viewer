@@ -5,10 +5,12 @@ import java.util.List;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agentic.Agent;
 import dev.langchain4j.agentic.declarative.SequenceAgent;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
@@ -50,6 +52,8 @@ public interface NewsletterWorkflow {
     class SlowEchoChatModel implements ChatModel {
 
         static final long PAUSE_MILLIS = 1200;
+        /** A prompt with this topic fails: the model is down. */
+        static final String FAILING_TOPIC = "an explosion";
 
         @Override
         public ChatResponse doChat(ChatRequest chatRequest) {
@@ -59,7 +63,19 @@ public interface NewsletterWorkflow {
                 Thread.currentThread().interrupt();
             }
             List<ChatMessage> messages = chatRequest.messages();
-            String prompt = messages.get(messages.size() - 1) instanceof UserMessage user ? user.singleText() : "";
+            ChatMessage last = messages.get(messages.size() - 1);
+            // an agent with tools calls the first one, then answers with its result
+            if (last instanceof ToolExecutionResultMessage result) {
+                return ChatResponse.builder().aiMessage(AiMessage.from("echo: the tool said " + result.text())).build();
+            }
+            if (chatRequest.toolSpecifications() != null && !chatRequest.toolSpecifications().isEmpty()) {
+                return ChatResponse.builder().aiMessage(AiMessage.from(ToolExecutionRequest.builder().id("call-1")
+                        .name(chatRequest.toolSpecifications().get(0).name()).arguments("{}").build())).build();
+            }
+            String prompt = last instanceof UserMessage user ? user.singleText() : "";
+            if (prompt.contains(FAILING_TOPIC)) {
+                throw new IllegalStateException("the model is down");
+            }
             return ChatResponse.builder().aiMessage(AiMessage.from("echo: " + prompt)).build();
         }
     }

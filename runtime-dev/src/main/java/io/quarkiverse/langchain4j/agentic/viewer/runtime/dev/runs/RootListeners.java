@@ -1,6 +1,9 @@
 package io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 import org.jboss.logging.Logger;
 
@@ -16,12 +19,14 @@ import io.quarkus.arc.ClientProxy;
  * ({@link PlannerDecisions}).
  * <p>
  * Uses the internal {@link InternalAgent#registerInheritedParentListener} (T0.4 finding, Backlog doc-3): CDI
- * AgentListener beans only reach AI agents. A listener cannot be removed: attach it once per root instance (a hot
- * reload creates new ones).
+ * AgentListener beans only reach AI agents. A listener cannot be removed: the Dev UI hooks are installed once per root
+ * instance ({@link DevUiListeners}), further Dev UI listeners join them (a hot reload creates new roots).
  */
 public final class RootListeners {
 
     private static final Logger LOG = Logger.getLogger(RootListeners.class);
+    /** The Dev UI hooks of each root, weakly: a root of a previous application (hot reload) goes away. */
+    private static final Map<Object, DevUiListeners> HOOKS = Collections.synchronizedMap(new WeakHashMap<>());
 
     private RootListeners() {
     }
@@ -57,11 +62,22 @@ public final class RootListeners {
             LOG.debugf("Agentic viewer: no agent bean to observe for %s", systemId);
             return false;
         }
-        agent.registerInheritedParentListener(listener);
-        if (listener instanceof DevUiAgentListener devUiListener) {
-            HumanInTheLoopSteps.intercept(root, devUiListener);
-            PlannerDecisions.decorate(root, devUiListener);
+        if (!(listener instanceof DevUiAgentListener devUiListener)) {
+            agent.registerInheritedParentListener(listener);
+            return true;
         }
+        DevUiListeners hooks;
+        synchronized (HOOKS) {
+            hooks = HOOKS.get(root);
+            if (hooks == null) {
+                hooks = new DevUiListeners();
+                agent.registerInheritedParentListener(hooks);
+                HumanInTheLoopSteps.intercept(root, hooks);
+                PlannerDecisions.decorate(root, hooks);
+                HOOKS.put(root, hooks);
+            }
+        }
+        hooks.add(devUiListener);
         return true;
     }
 }

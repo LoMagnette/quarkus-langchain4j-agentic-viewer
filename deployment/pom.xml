@@ -28,9 +28,11 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-arc-deployment</artifactId>
         </dependency>
+        <!-- the Dev UI page and JSON-RPC: only the SPI, so that the runtime artifact brings no HTTP server to an
+             application without one (the Dev UI exists only where the application has HTTP) -->
         <dependency>
             <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-vertx-http-deployment</artifactId>
+            <artifactId>quarkus-devui-deployment-spi</artifactId>
         </dependency>
         <dependency>
             <groupId>io.quarkiverse.langchain4j</groupId>
@@ -55,6 +57,12 @@
             <artifactId>jandex</artifactId>
         </dependency>
         <!-- Test dependencies -->
+        <!-- the fixture applications of the dev-mode tests need HTTP for the Dev UI (the extension brings none) -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-vertx-http-deployment</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-junit-internal</artifactId>

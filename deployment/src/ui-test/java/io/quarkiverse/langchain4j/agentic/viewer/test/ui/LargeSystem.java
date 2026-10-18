@@ -12,13 +12,17 @@ import dev.langchain4j.agentic.UntypedAgent;
 
 /**
  * Fixture app of the performance check (T6.3): a generated builder system of 50 nodes, a sequence of 3 agents, 4
- * parallel groups of 6, 2 loops of 5 (2 iterations) and a conditional of 5; every agent takes 10 ms.
+ * parallel groups of 6, 2 loops of 5 (2 iterations) and a conditional of 5; every agent takes 10 ms. And a long run: a
+ * loop of one instant agent, {@value #CHATTY_ITERATIONS} iterations (thousands of events within a moment).
  */
 @ApplicationScoped
 public class LargeSystem {
 
     static final String NAME = "large";
     static final int NODES = 50;
+    static final String CHATTY = "chatty";
+    /** Iterations of the chatty loop: two events each (agent started and finished). */
+    static final int CHATTY_ITERATIONS = 5000;
 
     private static Object agent(String key) {
         return AgenticServices.agentAction(scope -> {
@@ -49,5 +53,14 @@ public class LargeSystem {
         }
         steps.add(AgenticServices.conditionalBuilder().name("choice").subAgents(scope -> true, agents("c", 5).toArray()).build());
         return AgenticServices.sequenceBuilder().name(NAME).subAgents(steps).build();
+    }
+
+    @Produces
+    @ApplicationScoped
+    @Named(CHATTY)
+    UntypedAgent chatty() {
+        return AgenticServices.loopBuilder().name(CHATTY)
+                .subAgents(AgenticServices.agentAction(scope -> scope.writeState("tick", true)))
+                .maxIterations(CHATTY_ITERATIONS).build();
     }
 }

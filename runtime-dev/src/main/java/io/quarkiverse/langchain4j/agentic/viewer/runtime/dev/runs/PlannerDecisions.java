@@ -23,7 +23,9 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.PatternAda
  * <p>
  * Every workflow takes a fresh planner from its {@code plannerSupplier} per invocation; the supplier is replaced by one
  * wrapping each planner in a {@link ReportingPlanner}, except the built-in workflow planners (sequence, loop, parallel,
- * parallel mapper, conditional), whose decisions the agent events already tell.
+ * parallel mapper, conditional), whose decisions the agent events already tell. The planner a workflow handler keeps
+ * for itself ({@code defaultPlannerInstance}, taken from the supplier by its constructor, also for the per-scope copies
+ * langchain4j makes) stays the original one: {@code plannerType()} and a supervisor's chat memory access depend on it.
  * <p>
  * Internal API (the private final {@code PlannerBasedInvocationHandler.plannerSupplier}, set by reflection: fine on
  * JDK 25, JEP 500 may warn on later JDKs), isolated here: if it fails, decisions are simply not reported.
@@ -31,6 +33,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.PatternAda
 final class PlannerDecisions {
 
     private static final Logger LOG = Logger.getLogger(PlannerDecisions.class);
+    private static final StackWalker STACK = StackWalker.getInstance();
     private static volatile boolean warned;
 
     private PlannerDecisions() {
@@ -42,14 +45,17 @@ final class PlannerDecisions {
      * @return the number of workflows whose planner supplier was decorated
      */
     @SuppressWarnings("unchecked")
-    static int decorate(Object root, DevUiAgentListener listener) {
+    static int decorate(Object root, DevUiListeners listeners) {
         try {
             int decorated = 0;
             for (Object handler : AgentTrees.handlers(root)) {
                 Field field = AgentTrees.field(handler.getClass(), LangChain4jInternals.PLANNER_HANDLER_PLANNER_SUPPLIER);
                 Supplier<Planner> original = (Supplier<Planner>) field.get(handler);
                 if (original != null) {
-                    field.set(handler, (Supplier<Planner>) () -> report(original.get(), listener));
+                    field.set(handler, (Supplier<Planner>) () -> {
+                        Planner planner = original.get();
+                        return forHandlerConstructor() ? planner : report(planner, listeners);
+                    });
                     decorated++;
                 }
             }
@@ -64,33 +70,40 @@ final class PlannerDecisions {
         }
     }
 
-    private static Planner report(Planner planner, DevUiAgentListener listener) {
+    /** Whether the supplier is called by a workflow handler's constructor, for its default planner instance. */
+    private static boolean forHandlerConstructor() {
+        return STACK.walk(frames -> frames.limit(6).anyMatch(frame -> frame.getMethodName().equals("<init>")
+                && frame.getClassName().equals(LangChain4jInternals.PLANNER_HANDLER)));
+    }
+
+    private static Planner report(Planner planner, DevUiListeners listeners) {
         return planner == null || planner.getClass().getName().startsWith(LangChain4jInternals.BUILT_IN_PLANNERS_PACKAGE) ? planner
-                : new ReportingPlanner(planner, listener);
+                : new ReportingPlanner(planner, listeners);
     }
 
     /**
-     * Delegates everything to the planner and reports each Action it returns for a Dev UI run of the listener's manager.
+     * Delegates everything to the planner and reports each Action it returns for a Dev UI run of one of the listeners'
+     * managers: the one running the scope the planner is initialized with (a planner serves one invocation).
      */
     static final class ReportingPlanner implements Planner {
 
         private final Planner delegate;
-        private final DevUiAgentListener listener;
+        private final DevUiListeners listeners;
+        /** the listener whose run this planner plans for, null outside Dev UI runs */
+        private volatile DevUiAgentListener listener;
         /** what is known about the planner's pattern, null for a planner of no known pattern */
-        private final PatternAdapter adapter;
+        private volatile PatternAdapter adapter;
         private volatile AgentInstance plannerAgent;
         private volatile List<AgentInstance> subagents = List.of();
         private volatile boolean decided;
 
-        ReportingPlanner(Planner delegate, DevUiAgentListener listener) {
+        ReportingPlanner(Planner delegate, DevUiListeners listeners) {
             this.delegate = delegate;
-            this.listener = listener;
-            this.adapter = listener.patternAdapters().adapterFor(planner()).orElse(null);
+            this.listeners = listeners;
         }
 
-        /** The planner itself: reporting planners stack when several Dev UI listeners are attached (tests). */
         Planner planner() {
-            return delegate instanceof ReportingPlanner reporting ? reporting.planner() : delegate;
+            return delegate;
         }
 
         @Override
@@ -98,6 +111,15 @@ final class PlannerDecisions {
             plannerAgent = context.plannerAgent();
             subagents = context.subagents() == null ? List.of() : List.copyOf(context.subagents());
             delegate.init(context);
+            listener = listeners.owner(context.agenticScope());
+            adapter = listener == null ? null : listener.patternAdapters().adapterFor(delegate).orElse(null);
+            if (adapter != null) {
+                try {
+                    adapter.observe(planner());
+                } catch (RuntimeException e) {
+                    LOG.debugf(e, "Agentic viewer: the %s adapter cannot observe a planner", adapter.patternType());
+                }
+            }
         }
 
         @Override
@@ -112,7 +134,8 @@ final class PlannerDecisions {
 
         private Action reported(PlanningContext context, Action action) {
             AgenticScope scope = context == null ? null : context.agenticScope();
-            Run run = listener.run(scope);
+            DevUiAgentListener listener = this.listener;
+            Run run = listener == null ? null : listener.run(scope);
             if (run != null && action != null && plannerAgent != null) {
                 try {
                     boolean first = !decided;

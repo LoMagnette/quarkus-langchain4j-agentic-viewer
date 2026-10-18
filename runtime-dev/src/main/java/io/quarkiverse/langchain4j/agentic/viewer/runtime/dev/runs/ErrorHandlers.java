@@ -12,7 +12,8 @@ import dev.langchain4j.agentic.scope.AgenticScope;
 /**
  * Observes the error handling of a run. langchain4j applies the {@code errorHandler} of the AgenticScope
  * ({@code DefaultAgenticScope.handleError}) when an agent fails, including before the agent is invoked (a missing
- * argument), which listeners never see; every workflow sets that handler on the scope when it starts.
+ * argument), which listeners never see; the root call sets that handler on the scope (withErrorHandler), and a scope
+ * reused by a later run (a memory id) keeps the wrapper of the previous one, re-pointed to the new observer.
  * <p>
  * Internal API (a private field of DefaultAgenticScope), isolated here: if it changes, errors are simply not observed.
  */
@@ -43,11 +44,20 @@ final class ErrorHandlers {
             try {
                 result = delegate.apply(context);
             } catch (RuntimeException e) {
-                observer.handled(context, ErrorRecoveryResult.throwException(), e);
+                report(context, ErrorRecoveryResult.throwException(), e);
                 throw e;
             }
-            observer.handled(context, result, null);
+            report(context, result, null);
             return result;
+        }
+
+        /** Never changes what the application's handler decided. */
+        private void report(ErrorContext context, ErrorRecoveryResult result, Throwable handlerFailure) {
+            try {
+                observer.handled(context, result, handlerFailure);
+            } catch (RuntimeException e) {
+                LOG.debugf(e, "Agentic viewer: cannot report a handled error");
+            }
         }
     }
 
@@ -66,7 +76,8 @@ final class ErrorHandlers {
     }
 
     /**
-     * Makes sure the scope's error handler reports to the observer (a workflow may have set its own since).
+     * Makes sure the scope's error handler reports to the observer (a workflow may have set its own since), and to it
+     * only: a scope reused by a later run (a memory id) reports to that run.
      */
     @SuppressWarnings("unchecked")
     static void observe(AgenticScope scope, Observer observer) {
@@ -77,6 +88,9 @@ final class ErrorHandlers {
             Object current = HANDLER.get(scope);
             if (current instanceof Observed observed && observed.observer == observer) {
                 return;
+            }
+            if (current instanceof Observed observed) {
+                current = observed.delegate;
             }
             if (current instanceof Function<?, ?> handler) {
                 HANDLER.set(scope, new Observed((Function<ErrorContext, ErrorRecoveryResult>) handler, observer));

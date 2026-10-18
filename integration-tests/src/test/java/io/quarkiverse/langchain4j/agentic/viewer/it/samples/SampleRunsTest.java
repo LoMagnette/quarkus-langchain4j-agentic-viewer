@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 import jakarta.inject.Inject;
 
 import org.jboss.jandex.Index;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -56,6 +57,11 @@ class SampleRunsTest {
         byName = systems.stream().collect(Collectors.toMap(AgenticSystem::name, Function.identity()));
         runManager = new RunManager(id -> systems.stream().filter(s -> s.id().equals(id)).findFirst(),
                 new CdiRunInvoker());
+    }
+
+    @AfterAll
+    static void shutDown() {
+        runManager.shutdown();
     }
 
     @BeforeEach

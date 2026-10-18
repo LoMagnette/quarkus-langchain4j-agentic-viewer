@@ -15,6 +15,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.Locator;
+import com.microsoft.playwright.assertions.LocatorAssertions;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.options.WaitForSelectorState;
@@ -94,9 +95,52 @@ public class LargeSystemUiTest {
 
         assertEquals(LargeSystem.NODES, nodes);
         assertEquals(LargeSystem.NODES, done, "every node lit as done at the end");
-        assertTrue(renderMillis < 10_000, "render under 10 s: " + renderMillis);
-        assertTrue(runLongest < 1_000, "the page stays responsive during the run: " + runLongest);
+        assertTrue(renderMillis < budget("render", 10_000), "render under the budget: " + renderMillis);
+        assertTrue(runLongest < budget("task", 1_000), "the page stays responsive during the run: " + runLongest);
         assertEquals(List.of(), errors);
+    }
+
+    @Test
+    void longRun() {
+        Page page = browser.newContext(new Browser.NewContextOptions().setViewportSize(1500, 1000)).newPage();
+        page.setDefaultTimeout(60_000);
+        List<String> errors = new java.util.ArrayList<>();
+        page.onPageError(errors::add);
+        page.navigate(PAGE);
+        page.evaluate("() => { window.__longTasks = []; new PerformanceObserver(list => list.getEntries()"
+                + ".forEach(e => window.__longTasks.push(e.duration))).observe({ type: 'longtask', buffered: true }); }");
+        page.locator("vaadin-grid-cell-content", new Page.LocatorOptions().setHasText(Pattern.compile("^chatty$"))).click();
+        page.locator("vaadin-button[data-action=\"open-run\"]").click();
+        page.evaluate("() => window.__longTasks = []");
+
+        long runStart = System.nanoTime();
+        page.locator("qwc-agentic-run-form vaadin-button", new Page.LocatorOptions().setHasText("Run")).click();
+        page.locator("vaadin-dialog[opened], qwc-agentic-run-panel [data-run-status]").first()
+                .waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.ATTACHED));
+        if (page.locator("vaadin-dialog[opened]").count() > 0) {
+            page.locator("vaadin-button[data-confirm=\"run\"]").click();
+        }
+        assertThat(page.locator("qwc-agentic-run-panel [data-run-status]")).hasAttribute("data-run-status", "succeeded",
+                new LocatorAssertions.HasAttributeOptions().setTimeout(60_000));
+        page.waitForFunction("n => { const find = root => root.querySelector('qwc-agentic-timeline') ?? "
+                + "[...root.querySelectorAll('*')].map(e => e.shadowRoot && find(e.shadowRoot)).find(Boolean);"
+                + " return find(document)?.shadowRoot.querySelectorAll('.row.agent').length > n; }", LargeSystem.CHATTY_ITERATIONS);
+        long runMillis = (System.nanoTime() - runStart) / 1_000_000;
+        double runLongest = longest(page);
+        System.out.printf("%nLONG RUN (%d iterations, %d events)%n  %d ms from Run to every row shown (longest main-thread "
+                + "task %.0f ms)%n", LargeSystem.CHATTY_ITERATIONS, 2 * LargeSystem.CHATTY_ITERATIONS + 4, runMillis, runLongest);
+
+        assertTrue(runMillis < budget("long-run", 20_000), "followed within the budget: " + runMillis);
+        assertTrue(runLongest < budget("task", 1_000), "the page stays responsive during the run: " + runLongest);
+        assertEquals(List.of(), errors);
+    }
+
+    /**
+     * A time budget in ms, generous for shared CI runners (measured locally: render 0.5 s, long run 3 s, longest
+     * main-thread task under 100 ms); {@code -Dui-budget.<name>=<ms>} overrides it on a slower machine.
+     */
+    private static long budget(String name, long millis) {
+        return Long.getLong("ui-budget." + name, millis);
     }
 
     private static double longest(Page page) {

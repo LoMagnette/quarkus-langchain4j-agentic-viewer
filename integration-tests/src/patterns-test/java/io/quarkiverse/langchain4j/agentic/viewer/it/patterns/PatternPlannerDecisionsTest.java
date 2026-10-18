@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import org.jboss.jandex.Index;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -51,6 +52,11 @@ class PatternPlannerDecisionsTest {
                 new CdiRunInvoker());
         RootListeners.attach(systems, new DevUiAgentListener(runManager,
                 new PatternAdapters(List.of(new GoapAdapter(), new P2PAdapter(), new BlackboardAdapter()))));
+    }
+
+    @AfterAll
+    static void shutDown() {
+        runManager.shutdown();
     }
 
     private static Set<String> nodeIds(AgentNode node) {

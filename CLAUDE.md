@@ -24,6 +24,7 @@ mvn clean install
 mvn clean install -Ppatterns
 
 # Browser tests of the Dev UI page (Playwright, downloads Chromium on first use); LargeSystemUiTest measures a 50-node system
+# and a 10000-event run (budgets overridable on a slow machine: -Dui-budget.render|long-run|task=<ms>)
 mvn test -pl deployment -Pui-tests '-Dtest=AgenticSystemsPageUiTest,LargeSystemUiTest'
 
 # Versions: root pom properties quarkus.version, quarkus-langchain4j.version and langchain4j.version (the langchain4j
@@ -65,7 +66,8 @@ the `ollama` profile: the fake is not produced and the OpenAI extension calls an
 ```bash
 mvn quarkus:dev -pl integration-tests -Dquarkus.profile=dev,ollama
 # overrides: OLLAMA_BASE_URL (default http://localhost:11434/v1; http://host.docker.internal:11434/v1 from the sandbox),
-#            OLLAMA_MODEL (default qwen2.5:14b, needs tool support), OPENAI_API_KEY (for a real OpenAI endpoint)
+#            OLLAMA_MODEL (default gemma4:e4b-mlx in application.properties, needs tool support),
+#            OPENAI_API_KEY (for a real OpenAI endpoint)
 ```
 
 The extension never picks a model: a Dev UI run calls the application's agent beans, which use the model the
@@ -98,7 +100,8 @@ application configures for each agent.
    as a sub-agent.
 3. `deployment/.../topology/TopologyBuilder` turns each root into an `AgenticSystem` (`AgenticSystemsBuildItem`). Node ids:
    `Class#method` for the root, then `/<SubAgentSimpleClassName>` per level (`~2` for a repeated sibling); run events
-   are correlated with them. `PlannerTypeDetector` reads the `@PlannerSupplier` bytecode (ASM) to fill
+   are correlated with them. The rule is `runtime/.../topology/NodeIds`, shared by the build-time topology,
+   `BuilderTopology` and the listener (keep it the only one). `PlannerTypeDetector` reads the `@PlannerSupplier` bytecode (ASM) to fill
    `PlannerInfo.plannerClass` / `patternType` (GOAP, P2P, BLACKBOARD, CUSTOM).
 4. Dev mode only: the systems are recorded into runtime-dev (`AgenticViewerRecorder`), where the `AgenticSystemRegistry`
    bean holds them by id; the application's topology contributors are recorded by class name too.
@@ -109,7 +112,8 @@ agentic `build()` (ASM), keeps them unremovable and records their bean ids; `run
 creates them when the Dev UI first lists the systems (`AgenticSystemRegistry` loads them lazily; startup code uses
 `buildTimeSystems()` so no bean is created early) and keeps those without a parent. Runs (T5.6): `CdiRunInvoker` invokes an `UntypedAgent` root with a map of the form values
 (converted to the input types), a typed builder interface through its one method; the form schema comes from
-`RuntimeInputSchema` (same rules as the build-time `InputSchemaGenerator`, `RuntimeInputSchemaTest` checks parity).
+`RuntimeInputSchema` (same rules as the build-time `InputSchemaGenerator`, type tables shared in
+`runtime/.../topology/InputTypes`, `RuntimeInputSchemaTest` and `NullableParityTest` check parity).
 Live view (T5.3): `BuilderSystems` hands each root found to `RunObservation.observe`, which attaches the same Dev UI
 listener as for the declarative roots (`RootListeners.attach(systemId, root, listener)`: listener, human steps,
 planner decorator); the builder node ids follow the listener's id rule.
@@ -144,8 +148,9 @@ strings, numbers): the Dev UI serializer writes a Jackson `JsonNode` as a bean.
 `RunManager.shutdown` (@PreDestroy, also on hot reload) ends open runs CANCELLED, completes their streams, releases
 waiting human steps and stops its threads; the registry is rebuilt by the restart.
 
-At dev-mode startup `RunObservation` calls `RootListeners.attach`, which installs on each root agent bean (builder
-roots: when found, T5.3):
+At dev-mode startup `RunObservation` calls `RootListeners.attach`, which installs once per root agent instance (a
+`runs/DevUiListeners` group serves every Dev UI listener attached to it, each handling the runs of its own manager;
+a listener of a shut down manager leaves) on each root agent bean (builder roots: when found, T5.3):
 - `DevUiAgentListener` through the internal `InternalAgent.registerInheritedParentListener` (CDI listeners only reach AI
   agents): turns callbacks into events, correlating them to node ids (parent invocation + topology, loop counter,
   mapper item suffix) and observing `@ErrorHandler`s (`ErrorHandlers`, wraps the scope's handler).
@@ -179,14 +184,16 @@ Sample: `integration-tests/.../samples/DraftReviewTopology`.
 `AgenticViewerProcessor.registerDevUI()` registers the card with one page, "Agentic Systems" (`qwc-agentic-systems.js`),
 whose link shows the number of systems known at build time. Everything comes over JSON-RPC
 (`AgenticViewerJsonRpcService`: `listSystems`, `getTopology`, `getContributions`, `getInputSchema`, `previewGoalPath`,
-`startRun`, `streamRun`, `listRuns`, `getRun`, `cancelRun`, `provideHumanInput`; unknown ids are JSON-RPC errors);
+`startRun`, `streamRun`, `listRuns`, `getRun`, `cancelRun`, `provideHumanInput`; an unknown system or run id is a
+JSON-RPC error, except `listRuns` (empty list: no run kept) and `cancelRun` (false: nothing running to cancel));
 method names are `quarkus-langchain4j-agentic-viewer_<method>`. Components (Lit + Vaadin, served by the Dev UI):
 - `qwc-agentic-graph.js`: Cytoscape.js + elkjs (mvnpm). `toGraph()` / `toDataFlowGraph()` map a topology to
   nodes/edges (pattern planners: `goalGraph`, `peerGraph`, `boardGraph`; contributions replace the candidates); each
   compound is laid out separately by ELK to keep declaration order. The live view goes through `highlight`,
   `setNodeInfo` and `setPath`, kept in a run overlay re-applied after a redraw (view or theme switch).
-- `qwc-agentic-run-panel.js` (form `qwc-agentic-run-form.js`, tools confirmation, `LiveRun` turning events into graph
-  states, human input box, history and replay), `qwc-agentic-timeline.js` (rows tagged with their node kind, agent
+- `qwc-agentic-run-panel.js` (form `qwc-agentic-run-form.js`, tools confirmation, human input box, history and
+  replay; publishes the run's events to the tabs at most once per frame), `qwc-agentic-run-model.js` (`LiveRun` turning
+  events into graph states, and the helpers shared by the components), `qwc-agentic-timeline.js` (rows tagged with their node kind, agent
   rows expand to inputs/output), `qwc-agentic-output.js` (Output tab), `qwc-agentic-scope-state.js`,
   `qwc-agentic-node-details.js`; `qwc-agentic-value.js` renders run values for reading (text as text, records as
   key/value lists).

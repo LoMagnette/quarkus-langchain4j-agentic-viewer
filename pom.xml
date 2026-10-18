@@ -35,6 +35,8 @@
         <!-- Dev UI browser tests (deployment, profile ui-tests) -->
         <playwright.version>1.63.0</playwright.version>
         <compiler-plugin.version>3.13.0</compiler-plugin.version>
+        <enforcer-plugin.version>3.5.0</enforcer-plugin.version>
+        <exec-plugin.version>3.6.4</exec-plugin.version>
         <surefire-plugin.version>3.5.2</surefire-plugin.version>
     </properties>
 
@@ -85,6 +87,17 @@
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-enforcer-plugin</artifactId>
+                    <version>${enforcer-plugin.version}</version>
+                </plugin>
+                <!-- CI installs the Playwright browser with exec:java (deployment, profile ui-tests) -->
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>exec-maven-plugin</artifactId>
+                    <version>${exec-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>${surefire-plugin.version}</version>
                     <configuration>
@@ -98,7 +111,8 @@
     </build>
     <profiles>
         <!-- Compatibility check against the next langchain4j (nightly CI, .github/workflows/snapshots.yml): the
-             langchain4j BOM, imported first, at its snapshot version. -->
+             langchain4j BOM, imported first, at its snapshot version. CI passes the newest snapshot of the BOM
+             (-Dlangchain4j.version); the version below is only the default for a local run. -->
         <profile>
             <id>langchain4j-snapshots</id>
             <properties>

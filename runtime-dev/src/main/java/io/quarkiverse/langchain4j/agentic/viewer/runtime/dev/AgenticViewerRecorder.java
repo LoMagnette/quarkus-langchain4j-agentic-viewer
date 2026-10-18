@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.builder.BuilderCandidate;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.builder.BuiltSystems;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
 import io.quarkus.runtime.annotations.Recorder;
 
@@ -19,9 +20,13 @@ public class AgenticViewerRecorder {
     private static volatile Map<String, String> declarativeAgents = Map.of();
 
     /**
-     * Sets the agentic systems known at build time (declarative ones).
+     * Sets the agentic systems known at build time (declarative ones). Called first at the static init of each
+     * application start: what the previous application (before a hot reload) built or produced is forgotten, as the
+     * runtime-dev classes may outlive it.
      */
     public void setSystems(List<AgenticSystem> buildTimeSystems) {
+        BuiltSystems.clear();
+        builderCandidates = List.of();
         systems = List.copyOf(buildTimeSystems);
     }
 
@@ -33,7 +38,7 @@ public class AgenticViewerRecorder {
     }
 
     /**
-     * Sets the beans that may be builder systems (builder-discovery=cdi).
+     * Sets the beans that may be builder systems (builder-discovery=cdi), after {@link #setSystems}.
      */
     public void setBuilderCandidates(List<BuilderCandidate> candidates) {
         builderCandidates = List.copyOf(candidates);

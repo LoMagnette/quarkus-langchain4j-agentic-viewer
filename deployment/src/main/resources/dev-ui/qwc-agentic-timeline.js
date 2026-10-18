@@ -1,5 +1,5 @@
 import { LitElement, html, css, nothing } from 'lit';
-import { TERMINATIONS } from './qwc-agentic-run-panel.js';
+import { formatDuration, TERMINATIONS } from './qwc-agentic-run-model.js';
 import { KIND_LABELS, KIND_STYLES } from './qwc-agentic-graph.js';
 import './qwc-agentic-value.js';
 
@@ -93,16 +93,17 @@ export function buildTimeline(events, now = Date.now()) {
                     name: event.toolName, arguments: event.arguments, start: event.timestamp, status: 'running',
                     children: [],
                 };
-                toolCalls.set(`${event.invocationId}/${event.toolCallId ?? event.toolName}`, call);
+                // calls without id of one tool in one invocation end in the order they started
+                const key = `${event.invocationId}/${event.toolCallId ?? event.toolName}`;
+                toolCalls.set(key, [...(toolCalls.get(key) ?? []), call]);
                 const agent = invocations.get(event.invocationId);
                 (agent ? agent.children : roots).push(call);
                 break;
             }
             case 'ToolFinished': {
                 const key = `${event.invocationId}/${event.toolCallId ?? event.toolName}`;
-                const call = toolCalls.get(key);
+                const call = toolCalls.get(key)?.shift();
                 if (call) {
-                    toolCalls.delete(key);
                     call.end = event.timestamp;
                     call.duration = event.durationMillis;
                     call.result = event.result;
@@ -115,6 +116,17 @@ export function buildTimeline(events, now = Date.now()) {
         }
     }
     const end = runEnd ?? now;
+    if (runEnd !== undefined) {
+        // what was still running when the run ended was interrupted (a cancel drops the events that follow)
+        const interrupt = entry => {
+            if (entry.status === 'running') {
+                entry.status = 'interrupted';
+                entry.end = runEnd;
+            }
+            entry.children.forEach(interrupt);
+        };
+        roots.forEach(interrupt);
+    }
     const rows = [];
     const visit = (entry, depth) => {
         const finish = entry.end ?? end;
@@ -126,10 +138,6 @@ export function buildTimeline(events, now = Date.now()) {
     };
     roots.forEach(root => visit(root, 0));
     return { rows, start: runStart, end };
-}
-
-function formatDuration(millis) {
-    return millis < 1000 ? `${Math.round(millis)} ms` : `${(millis / 1000).toFixed(1)} s`;
 }
 
 /**
@@ -213,6 +221,9 @@ export class QwcAgenticTimeline extends LitElement {
         }
         .bar.failed {
             background: var(--lumo-error-color-50pct);
+        }
+        .bar.interrupted {
+            background: var(--lumo-contrast-20pct);
         }
         .bar.tool {
             background: var(--lumo-contrast-40pct);
@@ -300,7 +311,7 @@ export class QwcAgenticTimeline extends LitElement {
                           style="left: ${(row.offset / span) * 100}%; width: ${(row.span / span) * 100}%"></span>
                 </span>
                 <span class="duration">${row.kind === 'decision' ? '' : row.status === 'running' ? '…'
-                        : formatDuration(row.duration ?? row.span)}</span>
+                        : row.status === 'interrupted' ? 'interrupted' : formatDuration(row.duration ?? row.span)}</span>
             </div>
             ${row.kind === 'tool' && this._open.has(row.id) ? html`
                 <div class="tool-details" style="margin-left: ${row.depth * 14}px" data-tool-details=${row.id}>arguments: ${row.arguments ?? ''}
@@ -335,6 +346,7 @@ result: ${row.result ?? '(running)'}</div>` : nothing}
             return nothing;
         }
         const outcome = row.status === 'running' ? html`<span class="muted">running…</span>`
+            : row.status === 'interrupted' ? html`<span class="muted">interrupted: the run ended first</span>`
             : row.status === 'failed' ? html`<div class="error">${row.error}</div>`
                 : html`<qwc-agentic-value .value=${row.output}></qwc-agentic-value>`;
         return html`<div class="details" style="margin-left: ${row.depth * 14}px" data-details=${row.id}>

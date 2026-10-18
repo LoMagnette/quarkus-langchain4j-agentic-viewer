@@ -1,6 +1,7 @@
 package io.quarkiverse.langchain4j.agentic.viewer.test.builder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,7 +24,7 @@ public class BuilderTransformDevModeTest extends DevUIJsonRPCTest {
 
     @RegisterExtension
     static final QuarkusDevModeTest config = new QuarkusDevModeTest()
-            .withApplicationRoot(jar -> jar.addClasses(FieldSystems.class, PipelineSystems.class,
+            .withApplicationRoot(jar -> jar.addClasses(FieldSystems.class, FieldProducer.class, PipelineSystems.class,
                     PipelineSystems.Greeter.class, PipelineSystems.FixtureChatModel.class)
                     .addAsResource(new StringAsset("quarkus.langchain4j.agentic.dev-ui.builder-discovery=transform\n"),
                             "application.properties"));
@@ -44,10 +45,11 @@ public class BuilderTransformDevModeTest extends DevUIJsonRPCTest {
             names.add(system.get("name").asText() + " " + system.get("origin").asText());
             ids.add(system.get("id").asText());
         }
-        // CDI producers once (not again through their build() calls), the field system, the per-call one once (T5.5a),
-        // the call site building two shapes twice, no nested system (inner, cleanup)
-        assertEquals(List.of("Greeter BUILDER", "archiver BUILDER", "perCall BUILDER", "pipeline BUILDER",
-                "variable BUILDER", "variable BUILDER"), names.stream().sorted().toList(), ids::toString);
+        // CDI producers once (not again through their build() calls, a producer field neither), the field system, the
+        // per-call one once (T5.5a), the call site building two shapes twice, no nested system (inner, cleanup)
+        assertEquals(List.of("Greeter BUILDER", "archiver BUILDER", "fieldProduced BUILDER", "perCall BUILDER",
+                "pipeline BUILDER", "variable BUILDER", "variable BUILDER"), names.stream().sorted().toList(),
+                ids::toString);
         String variable = ids.stream().filter(id -> id.startsWith(FIELD_SYSTEMS + "#variable:")).sorted().findFirst()
                 .orElseThrow();
         assertEquals(List.of(variable, variable + "~2"), ids.stream().filter(id -> id.startsWith(variable)).sorted().toList());
@@ -69,6 +71,7 @@ public class BuilderTransformDevModeTest extends DevUIJsonRPCTest {
                 }
             }
         }
+        assertNotNull(summary, "run " + runId + " not found in the history");
         assertEquals("SUCCEEDED", summary.path("status").asText());
     }
 }

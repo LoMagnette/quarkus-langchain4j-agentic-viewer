@@ -14,9 +14,9 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemInput;
 /**
  * Build-time description of one agent method found in the index.
  *
- * @param id unique id: declaring class + {@code #} + method name
+ * @param id unique id: declaring class + {@code #} + method name ({@code name(parameter types)} for an overloaded one)
  * @param declaringClass fully qualified name of the declaring interface or class
- * @param methodName agent method name
+ * @param methodName agent method name, with its parameter types in parentheses when overloaded
  * @param kind node kind: AI_AGENT for an abstract {@code @Agent} method, NON_AI_AGENT for a concrete one, otherwise
  *        the workflow kind of the annotation
  * @param name agent name (the annotation's name, or the method name)
@@ -35,6 +35,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemInput;
  * @param aiDetails prompts, model and tools of an AI_AGENT, null otherwise
  * @param inputs the scope parameters (same names and order as {@code inputKeys}) with their JSON schemas
  * @param remoteDetails server or MCP tool of an A2A or MCP client agent, null otherwise
+ * @param inheritedFrom the supertype declaring the method when the agent class inherits it, null otherwise
  */
 public record AgentDescriptor(
         String id,
@@ -55,7 +56,25 @@ public record AgentDescriptor(
         boolean async,
         AiAgentDetails aiDetails,
         List<SystemInput> inputs,
-        RemoteAgentDetails remoteDetails) {
+        RemoteAgentDetails remoteDetails,
+        String inheritedFrom) {
+
+    public AgentDescriptor(String id, String declaringClass, String methodName, NodeKind kind, String name,
+            String description, String outputKey, List<String> inputKeys, List<String> subAgents, String itemsProvider,
+            String plannerSupplier, Guard loopGuard, Map<String, Guard> branchGuards, String outputMethod, boolean optional,
+            boolean async, AiAgentDetails aiDetails, List<SystemInput> inputs, RemoteAgentDetails remoteDetails) {
+        this(id, declaringClass, methodName, kind, name, description, outputKey, inputKeys, subAgents, itemsProvider,
+                plannerSupplier, loopGuard, branchGuards, outputMethod, optional, async, aiDetails, inputs, remoteDetails,
+                null);
+    }
+
+    /** The same agent, for a class that inherits its method (langchain4j reads {@code Class.getMethods()}). */
+    public AgentDescriptor inheritedBy(String agentClass) {
+        String method = id.substring(id.indexOf('#') + 1);
+        return new AgentDescriptor(agentClass + "#" + method, agentClass, methodName, kind, name, description, outputKey,
+                inputKeys, subAgents, itemsProvider, plannerSupplier, loopGuard, branchGuards, outputMethod, optional, async,
+                aiDetails, inputs, remoteDetails, inheritedFrom != null ? inheritedFrom : declaringClass);
+    }
 
     public AgentDescriptor {
         inputKeys = inputKeys == null ? List.of() : List.copyOf(inputKeys);

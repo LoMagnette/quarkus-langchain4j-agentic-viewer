@@ -1,6 +1,7 @@
 package io.quarkiverse.langchain4j.agentic.viewer.test.builder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -98,8 +99,10 @@ public class BuilderDiscoveryDevModeTest extends DevUIJsonRPCTest {
                     }
                 }
             }
+            assertNotNull(summary, "run " + runId + " of " + system + " not found in the history");
             JsonNode trace = executeJsonRPCMethod("getRun", Map.of("runId", runId));
-            assertEquals("SUCCEEDED", summary.path("status").asText(), () -> system + ": " + trace);
+            String status = summary.path("status").asText();
+            assertEquals("SUCCEEDED", status, () -> system + ": " + trace);
             if (system.equals(DELEGATING)) {
                 // the pipeline its step runs is reported under the step, not as the run's root again
                 List<String> started = new ArrayList<>();

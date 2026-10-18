@@ -58,6 +58,13 @@ public interface PatternAdapter {
     boolean handles(Planner planner);
 
     /**
+     * Called once the planner is initialized, before its first decision: e.g. to record what the planner computes
+     * itself, so that {@link #insight} never calls the application's code (a predicate) again. Must not fail.
+     */
+    default void observe(Planner planner) {
+    }
+
+    /**
      * Pattern-specific information on a decision of the planner (GOAP path, P2P activations, blackboard candidates).
      */
     default Insight insight(Decision decision) {

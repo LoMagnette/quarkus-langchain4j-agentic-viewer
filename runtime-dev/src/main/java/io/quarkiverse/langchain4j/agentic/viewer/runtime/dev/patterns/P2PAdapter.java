@@ -56,6 +56,35 @@ public class P2PAdapter implements PatternAdapter {
         return planner instanceof P2PPlanner;
     }
 
+    /** The planner's exit condition, recording what it answered the planner (never called by the Dev UI). */
+    static final class RecordedExit implements BiPredicate<AgenticScope, Integer> {
+        final BiPredicate<AgenticScope, Integer> delegate;
+        volatile Boolean last;
+
+        RecordedExit(BiPredicate<AgenticScope, Integer> delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public boolean test(AgenticScope scope, Integer invocations) {
+            boolean result = delegate.test(scope, invocations);
+            last = result;
+            return result;
+        }
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public void observe(Planner planner) {
+        try {
+            if (EXIT != null && EXIT.get(planner) instanceof BiPredicate<?, ?> exit && !(exit instanceof RecordedExit)) {
+                EXIT.set(planner, new RecordedExit((BiPredicate<AgenticScope, Integer>) exit));
+            }
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            // the reason is then left out when the exit condition may be it
+        }
+    }
+
     @Override
     public Insight insight(Decision decision) {
         Map<String, Object> extras = new HashMap<>();
@@ -70,32 +99,32 @@ public class P2PAdapter implements PatternAdapter {
         List<AgentInstance> ready = decision.subagents().stream()
                 .filter(agent -> agent.arguments().stream().map(AgentArgument::name).allMatch(keys::contains)).toList();
         if (decision.action().isDone() && counter instanceof Integer invocations) {
-            extras.put("termination", termination(decision.planner(), scope, invocations, max));
+            String termination = termination(decision.planner(), invocations, max);
+            if (termination != null) {
+                extras.put("termination", termination);
+            }
         }
         return new Insight(extras, Map.of("ready", ready));
     }
 
     /** Why the planner stopped, in the order P2PPlanner checks (nextAction: terminated, then no agent to activate). */
-    private static String termination(Planner planner, AgenticScope scope, int invocations, Integer max) {
+    private static String termination(Planner planner, int invocations, Integer max) {
         if (max != null && invocations >= max) {
             return MAX_INVOCATIONS;
         }
-        if (exitConditionHolds(planner, scope, invocations)) {
-            return EXIT_CONDITION;
+        Boolean exit = exitConditionHeld(planner);
+        if (exit == null) {
+            return null; // unknown: what the planner's exit condition answered was not recorded
         }
-        return STABLE_STATE;
+        return exit ? EXIT_CONDITION : STABLE_STATE;
     }
 
-    @SuppressWarnings("unchecked")
-    private static boolean exitConditionHolds(Planner planner, AgenticScope scope, int invocations) {
-        if (EXIT == null || scope == null) {
-            return false;
-        }
+    /** What the exit condition answered the planner last (it checks it at each step), null when unknown. */
+    private static Boolean exitConditionHeld(Planner planner) {
         try {
-            BiPredicate<AgenticScope, Integer> exit = (BiPredicate<AgenticScope, Integer>) EXIT.get(planner);
-            return exit != null && exit.test(scope, invocations);
+            return EXIT != null && EXIT.get(planner) instanceof RecordedExit recorded ? recorded.last : null;
         } catch (ReflectiveOperationException | RuntimeException e) {
-            return false;
+            return null;
         }
     }
 

@@ -10,6 +10,8 @@ import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import org.jboss.logging.Logger;
+
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.builder.BuilderSystems;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.spi.TopologyContribution;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
@@ -20,6 +22,8 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
  */
 @ApplicationScoped
 public class AgenticSystemRegistry {
+
+    private static final Logger LOG = Logger.getLogger(AgenticSystemRegistry.class);
 
     // registration order is kept for listing; ids are unique
     private final Map<String, AgenticSystem> systems = new ConcurrentHashMap<>();
@@ -69,6 +73,14 @@ public class AgenticSystemRegistry {
         }
     }
 
+    /** Removes a system (a builder system that became part of another). */
+    void unregister(String systemId) {
+        contributionsBySystem.remove(systemId);
+        if (systems.remove(systemId) != null) {
+            order.remove(systemId);
+        }
+    }
+
     /**
      * @return the systems in registration order, builder systems found at the first call
      */
@@ -94,14 +106,24 @@ public class AgenticSystemRegistry {
             return;
         }
         if (!builderSystemsLoaded) {
+            // a concurrent caller waits here for the discovery, instead of seeing the builder systems unknown
             synchronized (this) {
                 if (!builderSystemsLoaded) {
-                    builderSystemsLoaded = true;
-                    builderSystems.discover().forEach(this::register);
+                    try {
+                        builderSystems.discover().forEach(this::register);
+                        builderSystemsLoaded = true;
+                    } catch (RuntimeException e) {
+                        LOG.warnf(e, "Agentic viewer: cannot discover the builder systems, tried again on the next call");
+                    }
                 }
             }
         }
-        // systems built since (builder-discovery=transform): new call sites, or newer instances at known ones
-        builderSystems.built().forEach(this::register);
+        try {
+            // systems built since (builder-discovery=transform): new call sites, or newer instances at known ones
+            builderSystems.built().forEach(this::register);
+            builderSystems.stale().forEach(this::unregister);
+        } catch (RuntimeException e) {
+            LOG.warnf(e, "Agentic viewer: cannot list the systems built by the application");
+        }
     }
 }

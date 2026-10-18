@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import org.jboss.jandex.Index;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -38,6 +39,11 @@ class PatternSampleRunsTest {
                 .detect(new AgenticAnnotationScanner().scan(Index.of(samples))));
         runManager = new RunManager(id -> systems.stream().filter(s -> s.id().equals(id)).findFirst(),
                 new CdiRunInvoker());
+    }
+
+    @AfterAll
+    static void shutDown() {
+        runManager.shutdown();
     }
 
     private static Object run(String name, Map<String, Object> inputs) throws Exception {

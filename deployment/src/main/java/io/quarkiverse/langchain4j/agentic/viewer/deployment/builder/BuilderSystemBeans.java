@@ -2,7 +2,10 @@ package io.quarkiverse.langchain4j.agentic.viewer.deployment.builder;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 import org.jboss.jandex.AnnotationTarget;
@@ -34,6 +37,8 @@ public class BuilderSystemBeans {
             "io.quarkiverse.langchain4j.agentic.viewer.runtime.");
 
     private final Function<String, InputStream> classBytes;
+    /** The methods ({@code name + descriptor}) of each class read so far that call an agentic build(): read once. */
+    private final Map<String, Set<String>> buildingMethods = new ConcurrentHashMap<>();
 
     /**
      * @param classBytes the bytecode of a class by name, null when unknown
@@ -75,34 +80,45 @@ public class BuilderSystemBeans {
         return LIBRARY_PACKAGES.stream().anyMatch(className::startsWith);
     }
 
+    /**
+     * The one definition of an agentic build: a no-argument {@code build()} returning an object, on a langchain4j-agentic
+     * builder (also what BuildCallTransformer rewrites).
+     */
+    static boolean isAgenticBuild(String owner, String name, String descriptor) {
+        return name.equals("build") && descriptor.startsWith("()L") && owner.startsWith(AGENTIC_PACKAGE);
+    }
+
     /** Whether the producer's bytecode calls build() on a langchain4j-agentic builder. */
     boolean callsBuild(MethodInfo producer) {
-        boolean[] found = { false };
-        try (InputStream bytes = classBytes.apply(producer.declaringClass().name().toString())) {
+        return buildingMethods.computeIfAbsent(producer.declaringClass().name().toString(), this::buildingMethods)
+                .contains(producer.name() + producer.descriptor());
+    }
+
+    /** The methods of a class calling an agentic build(), from its bytecode (none when it cannot be read). */
+    private Set<String> buildingMethods(String className) {
+        Set<String> methods = new HashSet<>();
+        try (InputStream bytes = classBytes.apply(className)) {
             if (bytes == null) {
-                return false;
+                return Set.of();
             }
-            String descriptor = producer.descriptor();
             new ClassReader(bytes).accept(new ClassVisitor(Opcodes.ASM9) {
                 @Override
                 public MethodVisitor visitMethod(int access, String name, String desc, String signature,
                         String[] exceptions) {
-                    if (!name.equals(producer.name()) || !desc.equals(descriptor)) {
-                        return null;
-                    }
                     return new MethodVisitor(Opcodes.ASM9) {
                         @Override
                         public void visitMethodInsn(int opcode, String owner, String method, String methodDesc,
                                 boolean isInterface) {
-                            found[0] |= method.equals("build") && methodDesc.startsWith("()")
-                                    && owner.startsWith(AGENTIC_PACKAGE);
+                            if (isAgenticBuild(owner, method, methodDesc)) {
+                                methods.add(name + desc);
+                            }
                         }
                     };
                 }
             }, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
         } catch (IOException | RuntimeException e) {
-            return false;
+            return Set.of();
         }
-        return found[0];
+        return Set.copyOf(methods);
     }
 }

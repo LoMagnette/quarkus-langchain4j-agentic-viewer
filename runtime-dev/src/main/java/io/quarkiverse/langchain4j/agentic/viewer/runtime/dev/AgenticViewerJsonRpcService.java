@@ -134,7 +134,7 @@ public class AgenticViewerJsonRpcService {
     }
 
     /**
-     * @return the runs of a system kept in the history, newest first (T2.2)
+     * @return the runs of a system kept in the history, newest first (T2.2); empty for an unknown system (no run kept)
      */
     public List<RunSummary> listRuns(String systemId) {
         return runManager.listRuns(systemId);
@@ -151,7 +151,8 @@ public class AgenticViewerJsonRpcService {
     /**
      * Cancels a running run, best effort.
      *
-     * @return whether the run was running and is now cancelled
+     * @return whether the run was running and is now cancelled; false for an unknown or evicted run (nothing to
+     *         cancel)
      */
     public boolean cancelRun(String runId) {
         return runManager.cancel(runId);

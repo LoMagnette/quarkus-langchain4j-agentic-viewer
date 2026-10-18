@@ -5,26 +5,13 @@ import { columnBodyRenderer } from '@vaadin/grid/lit.js';
 import '@vaadin/button';
 import '@vaadin/icon';
 import { KIND_LABELS } from './qwc-agentic-graph.js';
+import { findNode } from './qwc-agentic-run-model.js';
 import './qwc-agentic-node-details.js';
 import './qwc-agentic-run-panel.js';
 import './qwc-agentic-timeline.js';
 import './qwc-agentic-output.js';
 import './qwc-agentic-scope-state.js';
 import '@vaadin/tabs';
-
-/** The node with this id in a topology tree, undefined when none. */
-function findNode(node, id) {
-    if (!id || node.id === id) {
-        return id ? node : undefined;
-    }
-    for (const child of node.children ?? []) {
-        const found = findNode(child, id);
-        if (found) {
-            return found;
-        }
-    }
-    return undefined;
-}
 
 /**
  * Agentic Systems - lists the root agentic systems of the application; selecting one opens its view with the topology
@@ -264,7 +251,11 @@ export class QwcAgenticSystems extends LitElement {
                     this._selected = { ...response.result, contributions };
                 }
             })
-            .catch(error => this._systemError = `Cannot load ${summary.name}: ${error?.error?.message ?? error?.message ?? error}`);
+            .catch(error => {
+                if (this._summary === summary) {
+                    this._systemError = `Cannot load ${summary.name}: ${error?.error?.message ?? error?.message ?? error}`;
+                }
+            });
     }
 
     _back() {

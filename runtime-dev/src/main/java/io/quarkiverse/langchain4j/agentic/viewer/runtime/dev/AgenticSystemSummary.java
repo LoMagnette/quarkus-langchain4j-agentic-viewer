@@ -25,7 +25,7 @@ public record AgenticSystemSummary(String id, String name, SystemOrigin origin, 
         NodeKind rootKind, List<NodeKind> patternKinds, int inputCount) {
 
     private static final Set<NodeKind> AGENT_KINDS = Set.of(NodeKind.AI_AGENT, NodeKind.NON_AI_AGENT,
-            NodeKind.A2A_CLIENT_AGENT, NodeKind.MCP_CLIENT_AGENT);
+            NodeKind.A2A_CLIENT_AGENT, NodeKind.MCP_CLIENT_AGENT, NodeKind.REGISTRY_AGENT);
 
     public AgenticSystemSummary {
         patternKinds = patternKinds == null ? List.of() : List.copyOf(patternKinds);

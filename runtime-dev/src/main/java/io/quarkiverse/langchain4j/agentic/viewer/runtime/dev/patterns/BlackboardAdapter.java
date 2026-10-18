@@ -82,6 +82,36 @@ public class BlackboardAdapter implements PatternAdapter {
         return planner instanceof BlackboardPlanner;
     }
 
+    /** The planner's goal, recording what it answered the planner (never called by the Dev UI). */
+    static final class RecordedGoal implements Predicate<AgenticScope> {
+        final Predicate<AgenticScope> delegate;
+        volatile Boolean last;
+
+        RecordedGoal(Predicate<AgenticScope> delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public boolean test(AgenticScope scope) {
+            boolean result = delegate.test(scope);
+            last = result;
+            return result;
+        }
+    }
+
+    /** After init, which sets the default goal (the planner agent's output key present). */
+    @Override
+    @SuppressWarnings("unchecked")
+    public void observe(Planner planner) {
+        try {
+            if (GOAL != null && GOAL.get(planner) instanceof Predicate<?> goal && !(goal instanceof RecordedGoal)) {
+                GOAL.set(planner, new RecordedGoal((Predicate<AgenticScope>) goal));
+            }
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            // whether the goal holds is then left out
+        }
+    }
+
     @Override
     public Insight insight(Decision decision) {
         Planner planner = decision.planner();
@@ -95,12 +125,14 @@ public class BlackboardAdapter implements PatternAdapter {
         if (strategy != null) {
             extras.put("strategy", strategy);
         }
-        Boolean goal = goalHolds(planner, decision.scope());
+        Boolean goal = goalHeld(planner);
         if (goal != null) {
             extras.put("goalReached", goal);
         }
         if (decision.action().isDone()) {
-            extras.put("termination", Boolean.TRUE.equals(goal) ? GOAL_REACHED : QUIESCENT);
+            if (goal != null) { // unknown otherwise: not claimed
+                extras.put("termination", goal ? GOAL_REACHED : QUIESCENT);
+            }
             return new Insight(extras, Map.of());
         }
         List<AgentInstance> candidates = candidates(planner, decision);
@@ -131,15 +163,9 @@ public class BlackboardAdapter implements PatternAdapter {
         return decision.subagents().stream().filter(agent -> ids.contains(agent.agentId())).toList();
     }
 
-    @SuppressWarnings("unchecked")
-    private static Boolean goalHolds(Planner planner, AgenticScope scope) {
-        try {
-            return scope != null && get(GOAL, planner) instanceof Predicate<?> goal
-                    ? ((Predicate<AgenticScope>) goal).test(scope)
-                    : null;
-        } catch (RuntimeException e) {
-            return null;
-        }
+    /** What the goal answered the planner last (it checks it at each step), null when unknown. */
+    private static Boolean goalHeld(Planner planner) {
+        return get(GOAL, planner) instanceof RecordedGoal recorded ? recorded.last : null;
     }
 
     /** "declaration order", or the class the strategy is written in (e.g. a lambda of the application). */

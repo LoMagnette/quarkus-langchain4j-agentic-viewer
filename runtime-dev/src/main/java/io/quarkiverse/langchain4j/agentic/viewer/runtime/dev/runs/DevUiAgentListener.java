@@ -37,7 +37,10 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AgentStarted
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AwaitingHumanInput;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ErrorHandled;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ErrorInfo;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ExecutionEvent;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.PlannerDecision;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.RunFailed;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.RunFinished;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ScopeCreated;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ScopeDestroyed;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ScopeStateChanged;
@@ -46,6 +49,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ToolFinished
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ToolStarted;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.PatternAdapters;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgentNode;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeIds;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
 
 /**
@@ -53,8 +57,10 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
  * sub-agents ({@link RootListeners}). Callbacks run on the agent threads: they only build the event and queue it
  * ({@link RunManager#emit}), never block, and never stringify outputs (a streaming response would block).
  * <p>
- * A run is found through its AgenticScope: the scope is created on the run thread, which knows its run; later
- * callbacks, on any thread, carry the scope. Callbacks of invocations not started by the Dev UI are ignored.
+ * A run is found through its AgenticScope: the scope is created, or reused (a memory id), by the root call on the run
+ * thread, which knows its run; later callbacks, on any thread, carry the scope. A scope belongs to a run until the run
+ * ends: an application call reusing it afterwards is not a Dev UI run. Callbacks of invocations not started by the Dev
+ * UI are ignored.
  */
 public class DevUiAgentListener implements AgentListener {
 
@@ -68,8 +74,9 @@ public class DevUiAgentListener implements AgentListener {
     /** Invocations in progress on each thread, innermost last. */
     private final ThreadLocal<Deque<Invocation>> threadInvocations = ThreadLocal.withInitial(ArrayDeque::new);
     /**
-     * Invocations in progress per agent id, for the parent of a branch running on another thread. Agents are matched by
-     * {@link AgentInstance#agentId()} (as AgentMonitor does): callbacks may hand different objects for the same agent.
+     * Invocations in progress per run and agent id ({@link #openKey}), for the parent of a branch running on another
+     * thread. Agents are matched by {@link AgentInstance#agentId()} (as AgentMonitor does): callbacks may hand different
+     * objects for the same agent.
      */
     private final Map<String, Deque<Invocation>> openInvocations = new HashMap<>();
     private final Map<String, Long> toolStarts = new ConcurrentHashMap<>();
@@ -85,6 +92,7 @@ public class DevUiAgentListener implements AgentListener {
      * mapper and the indexes already given to its children.
      */
     private static final class Invocation {
+        final Run run;
         final String agentId;
         final String id;
         final long startNanos;
@@ -94,10 +102,11 @@ public class DevUiAgentListener implements AgentListener {
         int loopCounter = -1;
         List<Object> items;
         final Set<Integer> takenItems = new HashSet<>();
-        /** Starts of children per class name, to tell apart a sub-agent listed several times. */
+        /** Starts of children per node id, to tell apart one agent listed several times by its parent. */
         final Map<String, Integer> childStarts = new HashMap<>();
 
-        Invocation(String agentId, String id, String nodeId, Integer iteration, Integer itemIndex) {
+        Invocation(Run run, String agentId, String id, String nodeId, Integer iteration, Integer itemIndex) {
+            this.run = run;
             this.agentId = agentId;
             this.id = id;
             this.startNanos = System.nanoTime();
@@ -131,10 +140,36 @@ public class DevUiAgentListener implements AgentListener {
     public DevUiAgentListener(RunManager runManager, PatternAdapters patternAdapters) {
         this.runManager = runManager;
         this.patternAdapters = patternAdapters;
+        runManager.addListener(this::forgetEndedRun);
+    }
+
+    /**
+     * A run ended: its scopes no longer belong to it. A scope with a memory id outlives the root call (langchain4j only
+     * evicts ephemeral ones), and a later call reusing it, from the application or another run, is not this run.
+     */
+    private void forgetEndedRun(ExecutionEvent event) {
+        if (!(event instanceof RunFinished) && !(event instanceof RunFailed)) {
+            return;
+        }
+        String runId = event.runId();
+        synchronized (runsByScope) {
+            runsByScope.values().removeIf(run -> run.id().equals(runId));
+        }
+        errorObservers.remove(runId);
+        toolStarts.keySet().removeIf(key -> key.startsWith(runId + "/"));
+        synchronized (openInvocations) {
+            // e.g. agents of a cancelled run, or that died with an Error (langchain4j reports no error then)
+            openInvocations.keySet().removeIf(key -> key.startsWith(runId + "|"));
+        }
     }
 
     PatternAdapters patternAdapters() {
         return patternAdapters;
+    }
+
+    /** @return whether its manager was shut down (it then leaves the hooks of the roots it was attached to) */
+    boolean isClosed() {
+        return runManager.isShutdown();
     }
 
     @Override
@@ -144,11 +179,18 @@ public class DevUiAgentListener implements AgentListener {
 
     @Override
     public void afterAgenticScopeCreated(AgenticScope scope) {
-        // only runs of this listener's manager: listeners stay attached to the roots for the life of the application
-        RunManager.currentRun().filter(run -> runManager.run(run.id()).orElse(null) == run).ifPresent(run -> {
+        currentRun().ifPresent(run -> {
             runsByScope.put(scope, run);
             runManager.emit(run, new ScopeCreated(run.id(), now(), String.valueOf(scope.memoryId())));
         });
+    }
+
+    /**
+     * The run of the current thread if it is a run thread of this listener's manager: listeners stay attached to the
+     * roots for the life of the application.
+     */
+    private Optional<Run> currentRun() {
+        return RunManager.currentRun().filter(run -> runManager.run(run.id()).orElse(null) == run && !run.ended());
     }
 
     /**
@@ -196,14 +238,20 @@ public class DevUiAgentListener implements AgentListener {
 
     @Override
     public void beforeAgentInvocation(AgentRequest request) {
+        if (request.agent().parent() == null) {
+            // a root call of a run: its scope may be reused (same memory id) without afterAgenticScopeCreated
+            currentRun().ifPresent(run -> runsByScope.put(request.agenticScope(), run));
+        }
         Run run = runOf(request.agenticScope());
         if (run == null) {
             return;
         }
-        // every workflow sets its error handler on the scope when it starts: keep it observed
+        // the root call sets the scope's error handler: keep it observed (cheap when it already is)
         ErrorHandlers.observe(request.agenticScope(), errorObservers.computeIfAbsent(run.id(), id -> errorObserver(run)));
         AgentInstance agent = request.agent();
-        Invocation parent = openInvocation(agent.parent()).orElse(null);
+        // what this thread still holds of other runs is stale: their agents ended without a callback (an Error)
+        threadInvocations.get().removeIf(invocation -> invocation.run != run);
+        Invocation parent = openInvocation(run, agent.parent()).orElse(null);
         if (parent == null && agent.parent() == null) {
             // another system called from an agent of the run (e.g. a step delegating to a builder system): under that
             // agent, not as the run's root (its nodes are not in the graph, the timeline nests them)
@@ -226,15 +274,15 @@ public class DevUiAgentListener implements AgentListener {
         } else if (parentNode != null && parentNode.kind() == NodeKind.PARALLEL_MAPPER) {
             itemIndex = itemIndex(parent, request.agentName(), inputs);
         }
-        Invocation invocation = new Invocation(agent.agentId(), "inv-" + INVOCATIONS.incrementAndGet(), nodeId, iteration,
-                itemIndex);
+        Invocation invocation = new Invocation(run, agent.agentId(), "inv-" + INVOCATIONS.incrementAndGet(), nodeId,
+                iteration, itemIndex);
         AgentNode node = node(run, nodeId);
         if (node != null && node.kind() == NodeKind.PARALLEL_MAPPER) {
             invocation.items = items(inputs);
         }
         threadInvocations.get().addLast(invocation);
         synchronized (openInvocations) {
-            openInvocations.computeIfAbsent(agent.agentId(), a -> new ArrayDeque<>()).addLast(invocation);
+            openInvocations.computeIfAbsent(openKey(run, agent.agentId()), a -> new ArrayDeque<>()).addLast(invocation);
         }
         runManager.emit(run, new AgentStarted(run.id(), now(), nodeId, invocation.id(), parent == null ? null : parent.id,
                 request.agentName(), iteration, itemIndex, inputs, isStreaming(agent)));
@@ -243,8 +291,8 @@ public class DevUiAgentListener implements AgentListener {
     @Override
     public void afterAgentInvocation(AgentResponse response) {
         Run run = runOf(response.agenticScope());
-        Invocation invocation = close(response.agent());
-        if (run != null && invocation != null) {
+        Invocation invocation = run == null ? null : close(run, response.agent());
+        if (invocation != null) {
             long now = now();
             runManager.emit(run, new AgentFinished(run.id(), now, invocation.nodeId, invocation.id(),
                     response.output(), tokens(response.chatResponse()), elapsedMillis(invocation)));
@@ -260,8 +308,8 @@ public class DevUiAgentListener implements AgentListener {
     @Override
     public void onAgentInvocationError(AgentInvocationError error) {
         Run run = runOf(error.agenticScope());
-        Invocation invocation = close(error.agent());
-        if (run != null && invocation != null) {
+        Invocation invocation = run == null ? null : close(run, error.agent());
+        if (invocation != null) {
             runManager.emit(run, new AgentFailed(run.id(), now(), invocation.nodeId, invocation.id(),
                     ErrorInfo.of(error.error()), elapsedMillis(invocation)));
         }
@@ -275,7 +323,7 @@ public class DevUiAgentListener implements AgentListener {
         }
         ToolExecutionRequest request = execution.toolExecution().request();
         toolStarts.put(toolKey(run, request), System.nanoTime());
-        runManager.emit(run, new ToolStarted(run.id(), now(), callingInvocation(execution.agentInstance()), request.id(),
+        runManager.emit(run, new ToolStarted(run.id(), now(), callingInvocation(run, execution.agentInstance()), request.id(),
                 request.name(), request.arguments()));
     }
 
@@ -287,7 +335,7 @@ public class DevUiAgentListener implements AgentListener {
         }
         ToolExecutionRequest request = execution.toolExecution().request();
         Long start = toolStarts.remove(toolKey(run, request));
-        runManager.emit(run, new ToolFinished(run.id(), now(), callingInvocation(execution.agentInstance()), request.id(),
+        runManager.emit(run, new ToolFinished(run.id(), now(), callingInvocation(run, execution.agentInstance()), request.id(),
                 request.name(), execution.toolExecution().result(), start == null ? 0 : (System.nanoTime() - start) / 1_000_000));
     }
 
@@ -371,7 +419,7 @@ public class DevUiAgentListener implements AgentListener {
         if (action.getClass().getSimpleName().equals(LangChain4jInternals.NO_OP_ACTION)) {
             return; // nothing decided
         }
-        Invocation invocation = openInvocation(plannerAgent).orElse(null);
+        Invocation invocation = openInvocation(run, plannerAgent).orElse(null);
         String nodeId = invocation == null ? nodeId(run, plannerAgent) : invocation.nodeId;
         AgentNode node = node(run, nodeId);
         List<String> selected = new ArrayList<>();
@@ -403,7 +451,7 @@ public class DevUiAgentListener implements AgentListener {
         }
         return plannerNode != null && index >= 0 && index < plannerNode.children().size()
                 ? plannerNode.children().get(index).id()
-                : plannerNodeId + "/" + simpleName(agent.type());
+                : NodeIds.child(plannerNodeId, simpleName(agent.type()), 1);
     }
 
     /**
@@ -415,7 +463,7 @@ public class DevUiAgentListener implements AgentListener {
      */
     Object awaitHumanInput(Run run, AgentInstance step, String prompt, String expectedKey, Type valueType,
             Map<String, Object> inputs) {
-        Invocation invocation = openInvocation(step).orElse(null);
+        Invocation invocation = openInvocation(run, step).orElse(null);
         AwaitingHumanInput waiting = new AwaitingHumanInput(run.id(), now(),
                 invocation == null ? nodeId(run, step) : invocation.nodeId, invocation == null ? null : invocation.id(),
                 prompt == null || prompt.isBlank() ? null : prompt, expectedKey,
@@ -423,42 +471,58 @@ public class DevUiAgentListener implements AgentListener {
         return runManager.awaitHumanInput(run, waiting, valueType);
     }
 
-    /** The innermost invocation of this agent in progress: on this thread first, else on any thread. */
-    private Optional<Invocation> openInvocation(AgentInstance agent) {
+    /**
+     * The innermost invocation of this agent in progress in a run: on this thread first, else on any thread. On this
+     * thread, the invocation of a parallel mapper item ({@code <agent id>_<index>}, langchain4j MapperAgentInvoker)
+     * is one of its agent: the sub-agents of an item that is a workflow name the workflow itself as their parent.
+     */
+    private Optional<Invocation> openInvocation(Run run, AgentInstance agent) {
         if (agent == null) {
             return Optional.empty();
         }
         Deque<Invocation> local = threadInvocations.get();
         for (var it = local.descendingIterator(); it.hasNext();) {
             Invocation invocation = it.next();
-            if (invocation.agentId().equals(agent.agentId())) {
+            if (invocation.run == run && (invocation.agentId().equals(agent.agentId())
+                    || isItemOf(invocation.agentId(), agent.agentId()))) {
                 return Optional.of(invocation);
             }
         }
         synchronized (openInvocations) {
-            Deque<Invocation> open = openInvocations.get(agent.agentId());
+            Deque<Invocation> open = openInvocations.get(openKey(run, agent.agentId()));
             return open == null ? Optional.empty() : Optional.ofNullable(open.peekLast());
         }
     }
 
-    private Invocation close(AgentInstance agent) {
+    private static boolean isItemOf(String itemAgentId, String agentId) {
+        return itemAgentId.length() > agentId.length() + 1 && itemAgentId.startsWith(agentId)
+                && itemAgentId.charAt(agentId.length()) == '_'
+                && itemAgentId.substring(agentId.length() + 1).chars().allMatch(Character::isDigit);
+    }
+
+    private static String openKey(Run run, String agentId) {
+        return run.id() + "|" + agentId;
+    }
+
+    private Invocation close(Run run, AgentInstance agent) {
         Deque<Invocation> local = threadInvocations.get();
         Invocation closed = null;
         for (var it = local.descendingIterator(); it.hasNext();) {
             Invocation invocation = it.next();
-            if (invocation.agentId().equals(agent.agentId())) {
+            if (invocation.run == run && invocation.agentId().equals(agent.agentId())) {
                 it.remove();
                 closed = invocation;
                 break;
             }
         }
         if (closed != null) {
+            String key = openKey(run, agent.agentId());
             synchronized (openInvocations) {
-                Deque<Invocation> open = openInvocations.get(agent.agentId());
+                Deque<Invocation> open = openInvocations.get(key);
                 if (open != null) {
                     open.remove(closed);
                     if (open.isEmpty()) {
-                        openInvocations.remove(agent.agentId());
+                        openInvocations.remove(key);
                     }
                 }
             }
@@ -466,28 +530,32 @@ public class DevUiAgentListener implements AgentListener {
         return closed;
     }
 
-    private String callingInvocation(AgentInstance agent) {
-        return openInvocation(agent).map(Invocation::id).orElse(null);
+    private String callingInvocation(Run run, AgentInstance agent) {
+        return openInvocation(run, agent).map(Invocation::id).orElse(null);
     }
 
     /**
-     * The topology node of a sub-agent invocation: a child of the parent invocation's node whose id ends with the
-     * sub-agent's class name (TopologyBuilder rules). When the parent lists that class several times (/X, /X~2), the
-     * k-th start under the parent invocation takes the k-th one, cycling for loops.
+     * The topology node of a sub-agent invocation: a child of the parent invocation's node named after the sub-agent's
+     * class (TopologyBuilder rules), {@code ~n} for the n-th sub-agent of that class of its parent agent. The same agent
+     * listed several times (one agent bean in a declarative system) cannot be told apart: the k-th start under the
+     * parent invocation takes the k-th of its positions, cycling for loops. An id the topology does not have falls back
+     * to the plain class name.
      */
     private String childNodeId(Run run, Invocation parent, AgentInstance agent) {
-        String base = parent.nodeId + "/" + simpleName(agent.type());
+        String segment = simpleName(agent.type());
+        String base = NodeIds.child(parent.nodeId, segment, 1);
+        List<Integer> occurrences = occurrences(agent);
+        String id;
+        if (occurrences.size() <= 1) {
+            id = NodeIds.child(parent.nodeId, segment, occurrences.isEmpty() ? 1 : occurrences.get(0));
+        } else {
+            synchronized (parent) {
+                int start = parent.childStarts.merge(base, 1, Integer::sum) - 1;
+                id = NodeIds.child(parent.nodeId, segment, occurrences.get(start % occurrences.size()));
+            }
+        }
         AgentNode parentNode = node(run, parent.nodeId);
-        List<String> candidates = parentNode == null ? List.of()
-                : parentNode.children().stream().map(AgentNode::id)
-                        .filter(id -> id.equals(base) || id.startsWith(base + "~")).toList();
-        if (candidates.size() <= 1) {
-            return candidates.isEmpty() ? base : candidates.get(0);
-        }
-        synchronized (parent) {
-            int start = parent.childStarts.merge(base, 1, Integer::sum) - 1;
-            return candidates.get(start % candidates.size());
-        }
+        return parentNode == null || parentNode.children().stream().anyMatch(child -> child.id().equals(id)) ? id : base;
     }
 
     /**
@@ -499,22 +567,36 @@ public class DevUiAgentListener implements AgentListener {
         if (parent == null) {
             return run.systemId();
         }
+        List<Integer> occurrences = occurrences(agent);
+        return NodeIds.child(nodeId(run, parent), simpleName(agent.type()), occurrences.isEmpty() ? 1 : occurrences.get(0));
+    }
+
+    /**
+     * The positions of an agent among its parent's sub-agents of its class (1 for the first), found by agent id (a
+     * parallel mapper item is one of its agent). Several when the parent lists the same agent several times; none
+     * without a parent or position.
+     */
+    private static List<Integer> occurrences(AgentInstance agent) {
+        AgentInstance parent = agent.parent();
+        if (parent == null) {
+            return List.of();
+        }
         String segment = simpleName(agent.type());
+        List<Integer> occurrences = new ArrayList<>();
         int occurrence = 0;
         for (AgentInstance sibling : parent.subagents()) {
             if (simpleName(sibling.type()).equals(segment)) {
                 occurrence++;
             }
-            if (sibling.agentId().equals(agent.agentId())) {
-                break;
+            if (sibling.agentId().equals(agent.agentId()) || isItemOf(agent.agentId(), sibling.agentId())) {
+                occurrences.add(occurrence);
             }
         }
-        return nodeId(run, parent) + "/" + segment + (occurrence > 1 ? "~" + occurrence : "");
+        return occurrences;
     }
 
     private static String simpleName(Class<?> type) {
-        String name = type == null ? "?" : type.getName();
-        return name.substring(Math.max(name.lastIndexOf('.'), name.lastIndexOf('$')) + 1);
+        return NodeIds.simpleName(type);
     }
 
     private static boolean isStreaming(AgentInstance agent) {

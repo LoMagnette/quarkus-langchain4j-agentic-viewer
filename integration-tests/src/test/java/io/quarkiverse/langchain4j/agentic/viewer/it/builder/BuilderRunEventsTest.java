@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -70,6 +71,13 @@ class BuilderRunEventsTest {
                 new CdiRunInvoker(id -> Optional.ofNullable(roots.get(id))));
         DevUiAgentListener listener = new DevUiAgentListener(runManager);
         roots.forEach((id, root) -> assertTrue(RootListeners.attach(id, root, listener), id));
+    }
+
+    @AfterAll
+    static void shutDown() {
+        if (runManager != null) {
+            runManager.shutdown();
+        }
     }
 
     private static Run run(String systemId, Map<String, Object> inputs) throws Exception {

@@ -1,6 +1,7 @@
 package io.quarkiverse.langchain4j.agentic.viewer.test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
@@ -146,6 +147,7 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
                 }
             }
         }
+        assertNotNull(summary, "run " + runId + " not found in the history");
         assertEquals("FAILED", summary.path("status").asText(), String.valueOf(summary));
         assertEquals("history", summary.path("inputs").path("topic").asText());
 

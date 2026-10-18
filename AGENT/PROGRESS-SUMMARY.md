@@ -813,3 +813,28 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   build (Mandrel JDK 21) + NativeArtifactIT green: no Dev UI code in the executable.
 - Also: test artifacts renamed `quarkus-junit` / `quarkus-junit-internal` (relocation warning); the raw-websocket tests
   use the fixed Dev UI address (Quarkus 3.40 made `DevUIJsonRPCTest.uri` private).
+
+### Full code review and fixes — TASK-71 (Oct 17-18, 2026)
+
+- A review of the whole project (runs, builder discovery, deployment scan, Dev UI, tests, CI, docs) became TASK-71 with
+  20 subtasks, all done; each fix came with a test failing before it, and both CI configurations stayed green.
+- Runs: a scope with a memory id belongs to a run only while it runs (made-up memory ids evicted); invocations
+  correlated per run (overlapping runs, mapper items that are workflows, cancelled runs); repeated siblings by identity;
+  cyclic payloads and failing listeners can no longer lose events; cancel/shutdown edge cases; the planner wrapper is
+  invisible to langchain4j; pattern adapters never call application predicates again; Dev UI hooks installed once per
+  root; the event thread ends when idle.
+- Builder systems: robust discovery (a broken system is skipped, no stale entries after a hot reload, producer fields
+  listed once, adopted systems removed). Scanner parity with langchain4j (inherited agent methods, method priority, @K,
+  @P, @LoopCounter, @RegistryAgent kind, overloads, dropped conditional branches, loop branch guards). @Nullable parity
+  (type use) between both form generators.
+- Prod: the runtime artifact no longer brings quarkus-vertx-http (enforcer rule). ProdStartupIT starts the packaged app
+  (native: startup only, quarkus-langchain4j-agentic 1.14.2 registers no reflection for agent interfaces there).
+- Dev UI: run form keeps edits and sends no unset optional input; stream errors, disconnects and cancels end the live
+  view cleanly (interrupted state); late responses ignored; contributed duplicate transitions kept; zoom kept on
+  resize; per-frame event publishing (10000-event run in ~3 s instead of >60 s); errors show their root cause.
+- Tests/CI: listeners and managers no longer leak between test classes; timing checks wait for conditions; new browser
+  tests (human step, failed run, data flow, websocket event JSON, cancel, stream loss); CI timeouts, reports, docs
+  drift check, native workflow, snapshot version resolved at run time.
+- Ideas for later recorded as drafts DRAFT-3..15 (run part of a system, pinned outputs, breakpoints, model request
+  inspector, run comparison, run-to-test, topology warnings...).
+

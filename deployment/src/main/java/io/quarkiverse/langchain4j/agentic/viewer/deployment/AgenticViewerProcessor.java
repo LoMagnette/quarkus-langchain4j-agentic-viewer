@@ -12,6 +12,7 @@ import org.jboss.jandex.DotName;
 
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.builder.BuildCallTransformer;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.builder.BuilderSystemBeans;
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.builder.BuilderSystemBeansBuildItem;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.builder.MixedSystems;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotationScanner;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticDescriptorsBuildItem;
@@ -96,12 +97,15 @@ public class AgenticViewerProcessor {
     @BuildStep(onlyIf = { IsDevelopment.class, AgenticViewerEnabled.class })
     @Record(ExecutionTime.STATIC_INIT)
     void recordSystems(AgenticSystemsBuildItem systems, AgenticRootsBuildItem roots, CombinedIndexBuildItem index,
-            SynthesisFinishedBuildItem beans, AgenticViewerRecorder recorder) {
+            SynthesisFinishedBuildItem beans, BuilderSystemBeansBuildItem builderSystemBeans, AgenticViewerBuildConfig config,
+            AgenticViewerRecorder recorder) {
+        boolean builderDiscovery = config.builderDiscovery() != AgenticViewerBuildConfig.BuilderDiscovery.NONE;
+        BuilderSystemBeans builderBeans = builderSystemBeans.getBeans();
         // a declarative system whose agent injects a builder system is MIXED (T5.5b); builder systems sharing agents
         // with the declarative ones are told at runtime, from the node of each agent class
         Map<String, String> agentClasses = TopologyBuilder.agentClasses(roots.getRoots());
-        Set<String> mixed = MixedSystems.declarativeUsingBuilders(agentClasses, beans,
-                BuilderSystemBeans.of(Thread.currentThread().getContextClassLoader()));
+        Set<String> mixed = builderDiscovery ? MixedSystems.declarativeUsingBuilders(agentClasses, beans, builderBeans)
+                : Set.of();
         recorder.setSystems(systems.getSystems().stream().map(system -> mixed.contains(system.id())
                 ? new AgenticSystem(system.id(), system.name(), system.rootNodeId(), SystemOrigin.MIXED,
                         system.sourceRef(), system.inputs(), system.root())
@@ -114,6 +118,12 @@ public class AgenticViewerProcessor {
                 .getAllKnownImplementors(DotName.createSimple(AgenticTopologyContributor.class.getName())).stream()
                 .filter(type -> !type.isInterface() && !Modifier.isAbstract(type.flags()))
                 .map(type -> type.name().toString()).sorted().toList());
+        // the beans that may be builder systems, by bean identifier; after setSystems, which resets them
+        recorder.setBuilderCandidates(!builderDiscovery ? List.of()
+                : beans.getBeans().stream().filter(builderBeans::isBuilderSystem).map(builderBeans::candidate)
+                        .sorted(Comparator.comparing(BuilderCandidate::declaringClass)
+                                .thenComparing(BuilderCandidate::member))
+                        .toList());
     }
 
     /**
@@ -126,26 +136,19 @@ public class AgenticViewerProcessor {
                 BuilderSystems.class).setUnremovable().build();
     }
 
+    /** One reader of the producers' bytecode per build, shared by the steps below. */
+    @BuildStep(onlyIf = { IsDevelopment.class, AgenticViewerEnabled.class })
+    BuilderSystemBeansBuildItem builderSystemBeans() {
+        return new BuilderSystemBeansBuildItem(BuilderSystemBeans.of(Thread.currentThread().getContextClassLoader()));
+    }
+
     /**
      * Keeps the beans that are builder systems (T5.1) even when the application does not inject them: the Dev UI lists
      * them. Nothing creates them before the Dev UI asks.
      */
     @BuildStep(onlyIf = { IsDevelopment.class, AgenticViewerEnabled.class, BuilderDiscoveryCdi.class })
-    UnremovableBeanBuildItem keepBuilderSystemBeans() {
-        return new UnremovableBeanBuildItem(BuilderSystemBeans.of(Thread.currentThread().getContextClassLoader())::isBuilderSystem);
-    }
-
-    /**
-     * Hands the beans that may be builder systems to runtime-dev, by bean identifier.
-     */
-    @BuildStep(onlyIf = { IsDevelopment.class, AgenticViewerEnabled.class, BuilderDiscoveryCdi.class })
-    @Record(ExecutionTime.STATIC_INIT)
-    void recordBuilderSystemBeans(SynthesisFinishedBuildItem synthesis, AgenticViewerRecorder recorder) {
-        BuilderSystemBeans beans = BuilderSystemBeans.of(Thread.currentThread().getContextClassLoader());
-        recorder.setBuilderCandidates(synthesis.getBeans().stream().filter(beans::isBuilderSystem)
-                .map(beans::candidate).sorted(Comparator.comparing(BuilderCandidate::declaringClass)
-                        .thenComparing(BuilderCandidate::member))
-                .toList());
+    UnremovableBeanBuildItem keepBuilderSystemBeans(BuilderSystemBeansBuildItem builderSystemBeans) {
+        return new UnremovableBeanBuildItem(builderSystemBeans.getBeans()::isBuilderSystem);
     }
 
     /**
@@ -163,9 +166,6 @@ public class AgenticViewerProcessor {
         }
     }
 
-    /**
-     * Registers the Dev UI card and its page (only in dev mode).
-     */
     /**
      * Adapter of each pattern planner of langchain4j-agentic-patterns, by planner class. Names only: an adapter class
      * refers to the module, so it must not be loaded (here or at runtime) when the module is absent.
@@ -192,6 +192,9 @@ public class AgenticViewerProcessor {
                 .setUnremovable().build();
     }
 
+    /**
+     * Registers the Dev UI card and its page (only in dev mode).
+     */
     @BuildStep(onlyIf = { IsDevelopment.class, AgenticViewerEnabled.class })
     CardPageBuildItem registerDevUI(AgenticSystemsBuildItem systems) {
         CardPageBuildItem card = new CardPageBuildItem();

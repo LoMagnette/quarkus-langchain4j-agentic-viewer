@@ -30,6 +30,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgentNode;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AiAgentDetails;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.Guard;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeIds;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.PatternType;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.PlannerInfo;
@@ -137,7 +138,7 @@ public final class BuilderTopology {
         for (AgentInstance sub : agent.subagents()) {
             String segment = simpleName(sub.type());
             int occurrence = occurrences.merge(segment, 1, Integer::sum);
-            children.add(node(id + "/" + segment + (occurrence > 1 ? "~" + occurrence : ""), sub,
+            children.add(node(NodeIds.child(id, segment, occurrence), sub,
                     branchGuards.get(sub.agentId()), declarativeNodes));
         }
         // an agent of a declarative system: its build-time details (prompt resources, tools of superclasses...)
@@ -152,7 +153,7 @@ public final class BuilderTopology {
                 agent.optional(),
                 agent.async(),
                 children,
-                kind == NodeKind.LOOP ? loopGuard(agent) : guard,
+                kind == NodeKind.LOOP ? withActivation(loopGuard(agent), guard) : guard,
                 kind == NodeKind.PLANNER ? plannerInfo(agent.plannerType()) : null,
                 kind != NodeKind.AI_AGENT ? null : declared != null && declared.aiDetails() != null ? declared.aiDetails()
                         : aiDetails(agent.type()),
@@ -160,9 +161,9 @@ public final class BuilderTopology {
     }
 
     /**
-     * The planner decides for workflows: supervisors and custom planners report a SEQUENCE topology. A declarative
-     * human-in-the-loop step is a NON_AI_AGENT whose interface carries the annotation, a builder one is
-     * HUMAN_IN_THE_LOOP.
+     * The planner decides for workflows: supervisors and custom planners report a SEQUENCE topology. A
+     * human-in-the-loop step is HUMAN_IN_THE_LOOP, built with the builder (its topology) or declared (its interface
+     * carries the annotation).
      */
     static NodeKind kind(AgentInstance agent) {
         Class<?> planner = agent.plannerType();
@@ -247,7 +248,9 @@ public final class BuilderTopology {
             if (!AgenticScope.class.isAssignableFrom(parameter.getType())) {
                 Annotation v = annotation(parameter, V);
                 String name = v != null ? (String) value(v, "value") : parameter.getName();
-                arguments.add(new AgentArgument(parameter.getParameterizedType(), name));
+                // optional when @Nullable or Optional, as a declarative input (the parameter's annotations tell)
+                arguments.add(new AgentArgument(parameter.getParameterizedType(), name, null,
+                        !RuntimeInputSchema.required(parameter.getParameterizedType(), parameter)));
             }
         }
         return arguments;
@@ -256,6 +259,11 @@ public final class BuilderTopology {
     private static Guard loopGuard(AgentInstance agent) {
         LoopAgentInstance loop = as(agent, LoopAgentInstance.class);
         return loop == null ? null : Guard.loopExit(label(loop.exitCondition()), loop.maxIterations(), loop.testExitAtLoopEnd());
+    }
+
+    /** The exit condition of a loop, with the activation condition of the branch it is, if any. */
+    private static Guard withActivation(Guard loopGuard, Guard branch) {
+        return loopGuard == null ? branch : loopGuard.withActivation(branch);
     }
 
     /** Activation guard by sub-agent id. */
@@ -451,10 +459,10 @@ public final class BuilderTopology {
     }
 
     static String simpleName(Class<?> type) {
-        return simpleName(type == null ? "?" : type.getName());
+        return NodeIds.simpleName(type);
     }
 
     static String simpleName(String className) {
-        return className.substring(Math.max(className.lastIndexOf('.'), className.lastIndexOf('$')) + 1);
+        return NodeIds.simpleName(className);
     }
 }

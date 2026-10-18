@@ -15,6 +15,7 @@ import org.jboss.jandex.FieldInfo;
 import org.jboss.jandex.IndexView;
 import org.jboss.jandex.RecordComponentInfo;
 import org.jboss.jandex.Type;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.InputTypes;
 
 /**
  * JSON schemas of agent method parameters, from their Jandex types, for the run form.
@@ -26,32 +27,17 @@ import org.jboss.jandex.Type;
 public class InputSchemaGenerator {
 
     private static final DotName OPTIONAL = DotName.createSimple("java.util.Optional");
-    private static final String NULLABLE = "Nullable";
 
-    private static final Set<String> INTEGERS = Set.of("byte", "short", "int", "long", "java.lang.Byte",
-            "java.lang.Short", "java.lang.Integer", "java.lang.Long", "java.math.BigInteger");
-    private static final Set<String> NUMBERS = Set.of("float", "double", "java.lang.Float", "java.lang.Double",
-            "java.math.BigDecimal", "java.lang.Number");
-    private static final Set<String> BOOLEANS = Set.of("boolean", "java.lang.Boolean");
-    private static final Set<String> STRINGS = Set.of("java.lang.String", "java.lang.CharSequence");
-    private static final Set<String> CHARS = Set.of("char", "java.lang.Character");
-    private static final Map<String, String> FORMATS = Map.of(
-            "java.time.LocalDate", "date",
-            "java.time.LocalTime", "time",
-            "java.time.LocalDateTime", "date-time",
-            "java.time.OffsetDateTime", "date-time",
-            "java.time.ZonedDateTime", "date-time",
-            "java.time.Instant", "date-time",
-            "java.time.Duration", "duration",
-            "java.util.UUID", "uuid",
-            "java.net.URI", "uri",
-            "java.net.URL", "uri");
-    private static final Set<String> COLLECTIONS = Set.of("java.util.Collection", "java.lang.Iterable",
-            "java.util.List", "java.util.ArrayList", "java.util.LinkedList");
-    private static final Set<String> SETS = Set.of("java.util.Set", "java.util.HashSet", "java.util.LinkedHashSet",
-            "java.util.SortedSet", "java.util.TreeSet");
-    private static final Set<String> MAPS = Set.of("java.util.Map", "java.util.HashMap", "java.util.LinkedHashMap",
-            "java.util.SortedMap", "java.util.TreeMap");
+    // the type tables, shared with the other generator
+    private static final Set<String> INTEGERS = InputTypes.INTEGERS;
+    private static final Set<String> NUMBERS = InputTypes.NUMBERS;
+    private static final Set<String> BOOLEANS = InputTypes.BOOLEANS;
+    private static final Set<String> STRINGS = InputTypes.STRINGS;
+    private static final Set<String> CHARS = InputTypes.CHARS;
+    private static final Map<String, String> FORMATS = InputTypes.FORMATS;
+    private static final Set<String> COLLECTIONS = InputTypes.COLLECTIONS;
+    private static final Set<String> SETS = InputTypes.SETS;
+    private static final Set<String> MAPS = InputTypes.MAPS;
 
     private final IndexView index;
 
@@ -68,7 +54,7 @@ public class InputSchemaGenerator {
 
     /**
      * A parameter (or record component) is required unless it is an {@code Optional} or annotated
-     * {@code @Nullable} (from any package); primitives are always required.
+     * {@code @Nullable} (from any package, declaration or type use); primitives are always required.
      */
     public static boolean required(Type type, AnnotationTarget annotated) {
         if (type.kind() == Type.Kind.PRIMITIVE) {
@@ -77,14 +63,23 @@ public class InputSchemaGenerator {
         if (type.name().equals(OPTIONAL)) {
             return false;
         }
+        List<Type> types = new ArrayList<>(List.of(type));
+        if (annotated instanceof RecordComponentInfo component) {
+            // the type-use annotations of a record component are on its field and accessor
+            if (component.field() != null) {
+                types.add(component.field().type());
+            }
+            if (component.accessor() != null) {
+                types.add(component.accessor().returnType());
+            }
+        }
         return annotated.declaredAnnotations().stream().noneMatch(annotation -> isNullable(annotation.name()))
-                && type.annotations().stream().noneMatch(annotation -> isNullable(annotation.name()));
+                && types.stream().flatMap(t -> t.annotations().stream()).noneMatch(annotation -> isNullable(annotation.name()));
     }
 
     /** Matches jakarta.annotation.Nullable, org.jspecify.annotations.Nullable, a nested Outer$Nullable... */
     private static boolean isNullable(DotName annotation) {
-        String name = annotation.toString();
-        return name.substring(Math.max(name.lastIndexOf('.'), name.lastIndexOf('$')) + 1).equals(NULLABLE);
+        return InputTypes.isNullable(annotation.toString());
     }
 
     /** {@code visiting}: records on the current path, to stop on recursive types */

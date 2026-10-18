@@ -2,7 +2,9 @@ package io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.builder;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.AnnotatedElement;
+import java.lang.reflect.AnnotatedType;
 import java.lang.reflect.GenericArrayType;
+import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.RecordComponent;
 import java.lang.reflect.Type;
@@ -17,6 +19,7 @@ import java.util.Set;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.InputTypes;
 
 /**
  * The JSON schema of a run form input of a builder system (T5.6), from its Java type: same rules and output as the
@@ -25,32 +28,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public final class RuntimeInputSchema {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final String NULLABLE = "Nullable";
 
-    private static final Set<String> INTEGERS = Set.of("byte", "short", "int", "long", "java.lang.Byte",
-            "java.lang.Short", "java.lang.Integer", "java.lang.Long", "java.math.BigInteger");
-    private static final Set<String> NUMBERS = Set.of("float", "double", "java.lang.Float", "java.lang.Double",
-            "java.math.BigDecimal", "java.lang.Number");
-    private static final Set<String> BOOLEANS = Set.of("boolean", "java.lang.Boolean");
-    private static final Set<String> STRINGS = Set.of("java.lang.String", "java.lang.CharSequence");
-    private static final Set<String> CHARS = Set.of("char", "java.lang.Character");
-    private static final Map<String, String> FORMATS = Map.of(
-            "java.time.LocalDate", "date",
-            "java.time.LocalTime", "time",
-            "java.time.LocalDateTime", "date-time",
-            "java.time.OffsetDateTime", "date-time",
-            "java.time.ZonedDateTime", "date-time",
-            "java.time.Instant", "date-time",
-            "java.time.Duration", "duration",
-            "java.util.UUID", "uuid",
-            "java.net.URI", "uri",
-            "java.net.URL", "uri");
-    private static final Set<String> COLLECTIONS = Set.of("java.util.Collection", "java.lang.Iterable",
-            "java.util.List", "java.util.ArrayList", "java.util.LinkedList");
-    private static final Set<String> SETS = Set.of("java.util.Set", "java.util.HashSet", "java.util.LinkedHashSet",
-            "java.util.SortedSet", "java.util.TreeSet");
-    private static final Set<String> MAPS = Set.of("java.util.Map", "java.util.HashMap", "java.util.LinkedHashMap",
-            "java.util.SortedMap", "java.util.TreeMap");
+    // the type tables, shared with the other generator
+    private static final Set<String> INTEGERS = InputTypes.INTEGERS;
+    private static final Set<String> NUMBERS = InputTypes.NUMBERS;
+    private static final Set<String> BOOLEANS = InputTypes.BOOLEANS;
+    private static final Set<String> STRINGS = InputTypes.STRINGS;
+    private static final Set<String> CHARS = InputTypes.CHARS;
+    private static final Map<String, String> FORMATS = InputTypes.FORMATS;
+    private static final Set<String> COLLECTIONS = InputTypes.COLLECTIONS;
+    private static final Set<String> SETS = InputTypes.SETS;
+    private static final Set<String> MAPS = InputTypes.MAPS;
 
     private RuntimeInputSchema() {
     }
@@ -66,7 +54,10 @@ public final class RuntimeInputSchema {
         }
     }
 
-    /** Required unless an {@code Optional} or annotated {@code @Nullable} (from any package); primitives always. */
+    /**
+     * Required unless an {@code Optional} or annotated {@code @Nullable} (from any package, declaration or type use,
+     * as InputSchemaGenerator); primitives always. A class-retention annotation (JetBrains) is only seen at build time.
+     */
     static boolean required(Type type, AnnotatedElement annotated) {
         Class<?> raw = raw(type);
         if (raw != null && raw.isPrimitive()) {
@@ -75,12 +66,17 @@ public final class RuntimeInputSchema {
         if (raw == Optional.class) {
             return false;
         }
-        return annotated == null || Arrays.stream(annotated.getAnnotations()).noneMatch(RuntimeInputSchema::isNullable);
+        if (annotated == null) {
+            return true;
+        }
+        AnnotatedType annotatedType = annotated instanceof RecordComponent component ? component.getAnnotatedType()
+                : annotated instanceof Parameter parameter ? parameter.getAnnotatedType() : null;
+        return Arrays.stream(annotated.getAnnotations()).noneMatch(RuntimeInputSchema::isNullable)
+                && (annotatedType == null || Arrays.stream(annotatedType.getAnnotations()).noneMatch(RuntimeInputSchema::isNullable));
     }
 
     private static boolean isNullable(Annotation annotation) {
-        String name = annotation.annotationType().getName();
-        return name.substring(Math.max(name.lastIndexOf('.'), name.lastIndexOf('$')) + 1).equals(NULLABLE);
+        return InputTypes.isNullable(annotation.annotationType().getName());
     }
 
     /** {@code visiting}: records on the current path, to stop on recursive types */

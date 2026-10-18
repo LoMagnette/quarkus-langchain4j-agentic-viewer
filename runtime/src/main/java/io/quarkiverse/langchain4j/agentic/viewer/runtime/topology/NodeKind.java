@@ -17,5 +17,7 @@ public enum NodeKind {
     /** A remote agent called through the A2A protocol ({@code @A2AClientAgent}). */
     A2A_CLIENT_AGENT,
     /** An agent calling one tool of an MCP server ({@code @McpClientAgent}). */
-    MCP_CLIENT_AGENT
+    MCP_CLIENT_AGENT,
+    /** An agent taken by name from the agents registry at runtime ({@code @RegistryAgent}). */
+    REGISTRY_AGENT
 }

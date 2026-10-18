@@ -21,6 +21,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -82,12 +85,14 @@ public class RunManager {
     /** Human-in-the-loop steps waiting for an answer, per run id, oldest first. */
     private final Map<String, Deque<PendingInput>> pendingInputs = new ConcurrentHashMap<>();
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private volatile boolean shutdown;
 
     /** A step waiting for an answer of a given type. */
     private record PendingInput(Type valueType, CompletableFuture<Object> answer) {
     }
 
     public static final int DEFAULT_HISTORY_SIZE = 20;
+    private static final long EVENT_THREAD_IDLE_SECONDS = 5;
 
     @Inject
     public RunManager(AgenticSystemRegistry registry, BuilderSystems builderSystems, AgenticViewerRuntimeConfig config) {
@@ -112,12 +117,16 @@ public class RunManager {
             thread.setContextClassLoader(classLoader);
             return thread;
         });
-        this.dispatcher = Executors.newSingleThreadExecutor(task -> {
-            Thread thread = new Thread(task, "agentic-viewer-events-" + THREADS.incrementAndGet());
-            thread.setDaemon(true);
-            thread.setContextClassLoader(classLoader);
-            return thread;
-        });
+        // one thread at most (events in order), which ends when idle: a manager never shut down keeps no thread
+        ThreadPoolExecutor events = new ThreadPoolExecutor(1, 1, EVENT_THREAD_IDLE_SECONDS, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(), task -> {
+                    Thread thread = new Thread(task, "agentic-viewer-events-" + THREADS.incrementAndGet());
+                    thread.setDaemon(true);
+                    thread.setContextClassLoader(classLoader);
+                    return thread;
+                });
+        events.allowCoreThreadTimeOut(true);
+        this.dispatcher = events;
     }
 
     /**
@@ -135,7 +144,10 @@ public class RunManager {
         runs.put(run.id(), run);
         remember(run);
         emit(run, new RunStarted(run.id(), run.startedAt(), systemId, runInputs));
-        run.task(executor.submit(() -> execute(run, system)));
+        // known to the run before it starts: a cancel at any time finds it
+        FutureTask<Void> task = new FutureTask<>(() -> execute(run, system), null);
+        run.task(task);
+        executor.execute(task);
         return run.id();
     }
 
@@ -235,7 +247,8 @@ public class RunManager {
         Deque<PendingInput> runInputs = pendingInputs.computeIfAbsent(run.id(), id -> new ConcurrentLinkedDeque<>());
         runInputs.addLast(pending);
         try {
-            if (run.ended()) {
+            // the claim, not ended(): ending is delivered later, after failPendingInputs may have run
+            if (run.endClaimed()) {
                 throw new CancellationException("Run ended");
             }
             emit(run, waiting);
@@ -348,15 +361,28 @@ public class RunManager {
     }
 
     private void deliver(Run run, ExecutionEvent raw) {
-        if (run.ended()) {
+        if (run.ended() || run.terminated()) {
             return; // e.g. callbacks of a cancelled run whose thread kept going
         }
-        ExecutionEvent event = bounded(raw);
+        ExecutionEvent event;
+        try {
+            event = bounded(raw);
+        } catch (RuntimeException e) {
+            // never expected (the truncator does not throw), but a run must still end with its terminal event
+            LOG.warnf(e, "Agentic viewer: cannot bound the payload of %s", raw.getType());
+            if (!(raw instanceof RunFinished finished)) {
+                return;
+            }
+            event = new RunFinished(finished.runId(), finished.timestamp(), null, finished.durationMillis());
+        }
         run.add(event);
         for (Consumer<ExecutionEvent> listener : listeners) {
             try {
                 listener.accept(event);
-            } catch (RuntimeException e) {
+            } catch (Throwable e) {
+                if (e instanceof VirtualMachineError && !(e instanceof StackOverflowError)) {
+                    throw e;
+                }
                 LOG.warnf(e, "Agentic viewer event listener failed on %s", event.getType());
             }
         }
@@ -401,14 +427,24 @@ public class RunManager {
      */
     @PreDestroy
     public void shutdown() {
-        for (Run run : runs.values()) {
-            if (run.claimEnd(elapsedSince(run))) {
-                emit(run, new RunFailed(run.id(), System.currentTimeMillis(),
-                        ErrorInfo.of(new CancellationException("Application stopped or reloaded")), run.durationMillis()));
-                end(run, RunStatus.CANCELLED, null);
+        shutdown = true;
+        try {
+            for (Run run : runs.values()) {
+                if (run.claimEnd(elapsedSince(run))) {
+                    emit(run, new RunFailed(run.id(), System.currentTimeMillis(),
+                            ErrorInfo.of(new CancellationException("Application stopped or reloaded")), run.durationMillis()));
+                    end(run, RunStatus.CANCELLED, null);
+                }
             }
+            pendingInputs.keySet().forEach(runId -> failPendingInputs(runId, "Application stopped or reloaded"));
+        } catch (RuntimeException e) {
+            LOG.warnf(e, "Agentic viewer: cannot end every open run, stopping the run threads anyway");
+        } finally {
+            stopThreads();
         }
-        pendingInputs.keySet().forEach(runId -> failPendingInputs(runId, "Application stopped or reloaded"));
+    }
+
+    private void stopThreads() {
         executor.shutdownNow();
         dispatcher.shutdown();
         try {
@@ -419,6 +455,11 @@ public class RunManager {
             dispatcher.shutdownNow();
             Thread.currentThread().interrupt();
         }
+    }
+
+    /** @return whether the manager was shut down: its listeners serve no run any more */
+    public boolean isShutdown() {
+        return shutdown;
     }
 
     private static long elapsedMillis(long startNanos) {

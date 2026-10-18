@@ -1,5 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import './qwc-agentic-value.js';
+import { errorText } from './qwc-agentic-run-model.js';
 
 /**
  * The Output tab: the result of the run shown (current or replayed), from its events, or its error.
@@ -39,7 +40,7 @@ export class QwcAgenticOutput extends LitElement {
         }
         if (failed) {
             return html`<h5>Error</h5>
-                <div class="error" data-run-error>${failed.error?.message ?? failed.error?.exceptionClass ?? 'unknown error'}</div>`;
+                <div class="error" data-run-error>${errorText(failed.error)}</div>`;
         }
         return html`<div class="muted">The output appears when the run ends.</div>`;
     }

@@ -11,6 +11,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentTree;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgentNode;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.Guard;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeIds;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.PatternType;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.PlannerInfo;
@@ -21,14 +22,9 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemOrigin;
  * Turns the declarative root systems found at build time into the shared topology model.
  * <p>
  * Node ids only depend on class and method names, so they are stable across builds of the same code: the root node
- * id is the root descriptor id ({@code Class#method}), and a sub-agent node id is its parent id, {@code /}, and the
- * simple name of the sub-agent class, suffixed with {@code ~2}, {@code ~3}... when the parent lists the same class
- * several times.
+ * id is the root descriptor id ({@code Class#method}), the sub-agents follow {@link NodeIds}.
  */
 public class TopologyBuilder {
-
-    static final String SEGMENT_SEPARATOR = "/";
-    static final String REPEAT_SEPARATOR = "~";
 
     /** Tells the planner behind a {@code @PlannerSupplier}; null: unknown (CUSTOM, no class). */
     private final PlannerTypeDetector plannerTypes;
@@ -86,7 +82,9 @@ public class TopologyBuilder {
                 descriptor.optional(),
                 descriptor.async(),
                 children,
-                descriptor.kind() == NodeKind.LOOP ? descriptor.loopGuard() : guard,
+                descriptor.kind() == NodeKind.LOOP && descriptor.loopGuard() != null
+                        ? descriptor.loopGuard().withActivation(guard)
+                        : guard,
                 plannerInfo(descriptor),
                 descriptor.aiDetails(),
                 descriptor.remoteDetails());
@@ -99,7 +97,7 @@ public class TopologyBuilder {
         for (AgentTree child : tree.children()) {
             String segment = simpleName(child.agentClass());
             int occurrence = occurrences.merge(segment, 1, Integer::sum);
-            children.put(id + SEGMENT_SEPARATOR + segment + (occurrence > 1 ? REPEAT_SEPARATOR + occurrence : ""), child);
+            children.put(NodeIds.child(id, segment, occurrence), child);
         }
         return children;
     }
@@ -134,6 +132,6 @@ public class TopologyBuilder {
 
     /** {@code com.example.Outer$Inner} -> {@code Inner} */
     private static String simpleName(String className) {
-        return className.substring(Math.max(className.lastIndexOf('.'), className.lastIndexOf('$')) + 1);
+        return NodeIds.simpleName(className);
     }
 }

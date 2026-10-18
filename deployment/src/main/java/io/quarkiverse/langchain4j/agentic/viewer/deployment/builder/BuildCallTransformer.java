@@ -28,7 +28,7 @@ public final class BuildCallTransformer {
 
     /** Whether an invocation is a langchain4j-agentic builder's build(), returning the built object. */
     static boolean isAgenticBuild(String owner, String name, String descriptor) {
-        return name.equals("build") && descriptor.startsWith("()L") && owner.startsWith(BuilderSystemBeans.AGENTIC_PACKAGE);
+        return BuilderSystemBeans.isAgenticBuild(owner, name, descriptor);
     }
 
     /**

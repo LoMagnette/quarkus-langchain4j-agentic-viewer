@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import org.jboss.jandex.Index;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -47,6 +48,11 @@ class ErrorHandlingEventsTest {
         runManager = new RunManager(id -> systems.stream().filter(s -> s.id().equals(id)).findFirst(),
                 new CdiRunInvoker());
         RootListeners.attach(systems, new DevUiAgentListener(runManager));
+    }
+
+    @AfterAll
+    static void shutDown() {
+        runManager.shutdown();
     }
 
     private static Run run(String name, Map<String, Object> inputs) throws Exception {

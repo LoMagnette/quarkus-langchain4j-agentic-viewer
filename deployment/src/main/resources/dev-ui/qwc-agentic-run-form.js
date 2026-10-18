@@ -152,7 +152,7 @@ export class QwcAgenticRunForm extends LitElement {
     static properties = {
         /** the object schema of the run inputs */
         schema: { type: Object },
-        /** initial values by input name (e.g. the last inputs used) */
+        /** initial values by input name (e.g. the last inputs used): the fields are reset when their content changes */
         values: { type: Object },
         _texts: { state: true },
         _errors: { state: true },
@@ -167,14 +167,22 @@ export class QwcAgenticRunForm extends LitElement {
                     { label: this._required(name) ? 'Choose…' : '(none)', value: '' },
                     ...property.enum.map(v => ({ label: String(v), value: String(v) }))]);
         }
-        if (changed.has('schema') || changed.has('values')) {
+        // the same values again (e.g. parsed anew by the parent) must not throw away what the user typed
+        const valuesKey = JSON.stringify(this.values ?? null);
+        if (changed.has('schema') || (changed.has('values') && valuesKey !== this._valuesKey)) {
+            this._valuesKey = valuesKey;
             this._texts = {};
             this._errors = {};
             Object.entries(this._properties()).forEach(([name, property]) => {
                 const value = this.values?.[name];
-                this._texts[name] = widgetOf(property) === 'json'
-                    ? JSON.stringify(value !== undefined ? value : skeleton(property), null, 2)
-                    : value;
+                if (widgetOf(property) !== 'json') {
+                    this._texts[name] = value;
+                } else if (value !== undefined) {
+                    this._texts[name] = JSON.stringify(value, null, 2);
+                } else {
+                    // an optional input only shows its shape (placeholder): it is not sent unless filled
+                    this._texts[name] = this._required(name) ? JSON.stringify(skeleton(property), null, 2) : '';
+                }
             });
         }
     }
@@ -236,7 +244,7 @@ export class QwcAgenticRunForm extends LitElement {
             case 'boolean':
                 return html`<div class="checkbox">
                         <vaadin-checkbox data-input=${name} label=${common.label} .checked=${!!this._texts[name]}
-                                @checked-changed=${e => set(e.detail.value)}></vaadin-checkbox>
+                                @checked-changed=${e => e.detail.value !== !!this._texts[name] && set(e.detail.value)}></vaadin-checkbox>
                         ${error ? html`<span class="error">${error}</span>` : nothing}</div>`;
             case 'enum':
                 return html`<vaadin-select data-input=${name} label=${common.label} ?required=${common.required}
@@ -245,6 +253,7 @@ export class QwcAgenticRunForm extends LitElement {
                         @value-changed=${e => set(e.detail.value)}></vaadin-select>`;
             default:
                 return html`<vaadin-text-area class="json" data-input=${name} label="${name} (JSON)"
+                        placeholder=${common.required ? '' : JSON.stringify(skeleton(property))}
                         ?required=${common.required} .value=${this._texts[name] ?? ''} .manualValidation=${true} .invalid=${!!error}
                         .errorMessage=${error ?? ''} @value-changed=${e => set(e.detail.value)}></vaadin-text-area>`;
         }
@@ -268,7 +277,8 @@ export class QwcAgenticRunForm extends LitElement {
                     value = text === undefined || text === null || text === '' ? undefined : Number(text);
                     break;
                 case 'boolean':
-                    value = !!text;
+                    // an optional boolean the user never set has no value (false would be one)
+                    value = text === undefined && !this._required(name) ? undefined : !!text;
                     break;
                 case 'enum':
                     value = text === '' || text === undefined ? undefined : property.enum.find(v => String(v) === text);

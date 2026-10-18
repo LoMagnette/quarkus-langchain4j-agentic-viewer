@@ -1,7 +1,8 @@
 package io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.builder;
 
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,9 +38,19 @@ public class BuilderSystems {
 
     // the root agent of each system found, by system id: what a run invokes
     private final Map<String, Object> roots = new ConcurrentHashMap<>();
+    // reported systems that could not be shown, by entry id: not tried again until rebuilt
+    private final Map<String, Object> failed = new ConcurrentHashMap<>();
 
     @Inject
     RunObservation observation;
+
+    public BuilderSystems() {
+    }
+
+    /** Outside CDI (tests). */
+    public BuilderSystems(RunObservation observation) {
+        this.observation = observation;
+    }
     private static final Set<String> UNTYPED = Set.of("dev.langchain4j.agentic.UntypedAgent",
             "dev.langchain4j.agentic.supervisor.SupervisorAgent", "dev.langchain4j.agentic.planner.AgentInstance");
 
@@ -64,10 +75,14 @@ public class BuilderSystems {
         agents.forEach((candidate, agent) -> {
             if (agent.parent() == null) {
                 String id = candidate.declaringClass() + "#" + candidate.member();
-                systems.add(BuilderTopology.system(id, name(candidate), new SourceRef(candidate.declaringClass(),
-                        candidate.member(), null), agent, BuilderSystems::declarativeNode));
-                roots.put(id, agent);
-                observation.observe(id, agent);
+                try {
+                    systems.add(BuilderTopology.system(id, name(candidate), new SourceRef(candidate.declaringClass(),
+                            candidate.member(), null), agent, BuilderSystems::declarativeNode));
+                    roots.put(id, agent);
+                    observation.observe(id, agent);
+                } catch (RuntimeException e) {
+                    LOG.warnf(e, "Agentic viewer: cannot show the agentic system of %s", id);
+                }
             }
         });
         return systems;
@@ -81,26 +96,80 @@ public class BuilderSystems {
      * @return the systems to register or replace, by id {@code Class#method:line}, {@code ~n} for the n-th shape
      */
     public synchronized List<AgenticSystem> built() {
-        Set<String> producers = new HashSet<>();
-        AgenticViewerRecorder.getBuilderCandidates().forEach(c -> producers.add(c.declaringClass() + "#" + c.member()));
+        List<BuilderCandidate> candidates = AgenticViewerRecorder.getBuilderCandidates();
+        Set<Object> cdiRoots = Collections.newSetFromMap(new IdentityHashMap<>());
+        cdiRoots.addAll(roots.values());
         List<AgenticSystem> systems = new ArrayList<>();
         BuiltSystems.latest().forEach((id, built) -> {
             AgentInstance agent = (AgentInstance) built;
             String callSite = id.contains("~") ? id.substring(0, id.indexOf('~')) : id;
             String producer = callSite.substring(0, callSite.lastIndexOf(':'));
-            if (agent.parent() != null || producers.contains(producer) || roots.get(id) == built) {
+            if (agent.parent() != null || roots.get(id) == built || failed.get(id) == built
+                    || (!roots.containsKey(id) && (cdiRoots.contains(built) || isProducer(producer, candidates)))) {
                 return;
             }
             String className = producer.substring(0, producer.indexOf('#'));
             String method = producer.substring(producer.indexOf('#') + 1);
             String name = agent.name() != null && !agent.name().isBlank() ? agent.name()
                     : BuilderTopology.simpleName(className) + "." + method;
-            systems.add(BuilderTopology.system(id, name, new SourceRef(className, method, callSite), agent,
-                    BuilderSystems::declarativeNode));
-            roots.put(id, built);
-            observation.observe(id, built);
+            try {
+                systems.add(BuilderTopology.system(id, name, new SourceRef(className, method, callSite), agent,
+                        BuilderSystems::declarativeNode));
+                roots.put(id, built);
+                failed.remove(id);
+                observation.observe(id, built);
+            } catch (RuntimeException e) {
+                // one system that cannot be shown must not hide the others
+                failed.put(id, built);
+                LOG.warnf(e, "Agentic viewer: cannot show the agentic system built at %s", callSite);
+            }
         });
         return systems;
+    }
+
+    /**
+     * Whether a call site ({@code Class#method}) is the build of a CDI producer, which discover() already shows: the
+     * producer method, a lambda in it, or the constructor (static initializer) setting a producer field.
+     */
+    private static boolean isProducer(String callSite, List<BuilderCandidate> candidates) {
+        String className = callSite.substring(0, callSite.indexOf('#'));
+        String method = callSite.substring(callSite.indexOf('#') + 1);
+        for (BuilderCandidate candidate : candidates) {
+            if (!candidate.declaringClass().equals(className)) {
+                continue;
+            }
+            if (method.equals(candidate.member()) || method.startsWith("lambda$" + candidate.member() + "$")) {
+                return true;
+            }
+            if ((method.equals("<init>") || method.equals("<clinit>")) && isField(className, candidate.member())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isField(String className, String member) {
+        try {
+            Class.forName(className, false, Thread.currentThread().getContextClassLoader()).getDeclaredField(member);
+            return true;
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * @return the ids of the systems shown so far that became a sub-agent of another system since (built first, adopted
+     *         by a later build): no longer systems of their own; reported once
+     */
+    public synchronized List<String> stale() {
+        List<String> stale = new ArrayList<>();
+        roots.forEach((id, root) -> {
+            if (root instanceof AgentInstance agent && agent.parent() != null) {
+                stale.add(id);
+            }
+        });
+        stale.forEach(roots::remove);
+        return stale;
     }
 
     @PreDestroy

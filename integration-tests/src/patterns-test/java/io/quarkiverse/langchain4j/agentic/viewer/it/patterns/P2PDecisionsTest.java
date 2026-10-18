@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import org.jboss.jandex.Index;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -52,6 +53,11 @@ class P2PDecisionsTest {
         }
         runManager = new RunManager(id -> systems.stream().filter(s -> s.id().equals(id)).findFirst(), new CdiRunInvoker());
         RootListeners.attach(systems, new DevUiAgentListener(runManager, new PatternAdapters(List.of(new P2PAdapter()))));
+    }
+
+    @AfterAll
+    static void shutDown() {
+        runManager.shutdown();
     }
 
     private static List<PlannerDecision> decisions(String name) throws Exception {

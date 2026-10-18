@@ -2,19 +2,10 @@ import { LitElement, html, css, nothing } from 'lit';
 import '@vaadin/button';
 import '@vaadin/icon';
 import { KIND_LABELS, KIND_STYLES } from './qwc-agentic-graph.js';
+import { shortRef } from './qwc-agentic-run-model.js';
 
 /** Display names of the langchain4j-agentic-patterns planners. */
 const PATTERN_LABELS = { GOAP: 'goal-oriented (GOAP)', P2P: 'peer-to-peer', BLACKBOARD: 'blackboard' };
-
-/** "com.example.Outer$Inner#method" -> "Inner#method" */
-function shortRef(ref) {
-    if (!ref) {
-        return ref;
-    }
-    const [className, method] = ref.split('#');
-    const simple = className.substring(Math.max(className.lastIndexOf('.'), className.lastIndexOf('$')) + 1);
-    return method ? `${simple}#${method}` : simple;
-}
 
 /**
  * Details of one topology node (an AgentNode of the AgenticSystem): what the agent is and does, without opening the
@@ -186,6 +177,7 @@ export class QwcAgenticNodeDetails extends LitElement {
         }
         if (guard.maxIterations != null) {
             return html`
+                ${guard.activation ? html`<dt>Activation</dt><dd data-field="activation">${guard.activation}</dd>` : nothing}
                 <dt>Exit condition</dt><dd data-field="exitCondition">${guard.label ?? this._none()}</dd>
                 <dt>Max iterations</dt><dd data-field="maxIterations">${guard.maxIterations}</dd>
                 <dt>Exit tested</dt><dd data-field="testExitAtLoopEnd">${guard.testExitAtLoopEnd ? 'at the end of an iteration' : 'after each agent'}</dd>`;

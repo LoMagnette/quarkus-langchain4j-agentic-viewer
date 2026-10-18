@@ -13,18 +13,26 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 
+import org.jboss.logging.Logger;
+
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agentic.UntypedAgent;
+import dev.langchain4j.agentic.declarative.K;
+import dev.langchain4j.agentic.declarative.LoopCounter;
 import dev.langchain4j.agentic.planner.AgentInstance;
 import dev.langchain4j.agentic.scope.AgenticScope;
+import dev.langchain4j.agentic.scope.AgenticScopeAccess;
+import dev.langchain4j.invocation.InvocationParameters;
 import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.V;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemInput;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemOrigin;
 import io.quarkus.arc.Arc;
+import io.quarkus.arc.ClientProxy;
 import io.quarkus.arc.ManagedContext;
 
 /**
@@ -32,6 +40,8 @@ import io.quarkus.arc.ManagedContext;
  * from the run form JSON; a builder system's root agent is invoked with the converted values.
  */
 public class CdiRunInvoker implements RunInvoker {
+
+    private static final Logger LOG = Logger.getLogger(CdiRunInvoker.class);
 
     private static final String AGENTIC_ANNOTATIONS = "dev.langchain4j.agentic.";
     private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
@@ -87,13 +97,46 @@ public class CdiRunInvoker implements RunInvoker {
         Class<?> type = Class.forName(system.sourceRef().className(), true, Thread.currentThread().getContextClassLoader());
         Method method = rootMethod(type, system.sourceRef().methodName());
         Object[] arguments = arguments(method, inputs);
+        Object memoryId = inventedMemoryId(method, inputs, arguments);
         return () -> {
             Object bean = Arc.container().instance(type).get();
             if (bean == null) {
                 throw new IllegalStateException("No CDI bean for " + type.getName());
             }
-            return method.invoke(bean, arguments);
+            return invokeAndForget(bean, method, arguments, memoryId);
         };
+    }
+
+    /**
+     * Calls the root, then evicts the scope of a memory id made up for the run: nobody can reuse it, and langchain4j
+     * keeps a scope with a memory id registered (only ephemeral scopes end with the root call).
+     */
+    private static Object invokeAndForget(Object root, Method method, Object[] arguments, Object memoryId)
+            throws Exception {
+        try {
+            return method.invoke(root, arguments);
+        } finally {
+            if (memoryId != null && ClientProxy.unwrap(root) instanceof AgenticScopeAccess access) {
+                try {
+                    access.evictAgenticScope(memoryId);
+                } catch (RuntimeException e) {
+                    LOG.debugf(e, "Agentic viewer: cannot evict the scope of the run memory id %s", memoryId);
+                }
+            }
+        }
+    }
+
+    /**
+     * @return the memory id {@link #arguments} made up because the form gave none, null if there is none
+     */
+    static Object inventedMemoryId(Method method, Map<String, Object> inputs, Object[] arguments) {
+        Parameter[] parameters = method.getParameters();
+        for (int i = 0; i < parameters.length; i++) {
+            if (parameters[i].isAnnotationPresent(MemoryId.class) && inputs.get(key(parameters[i])) == null) {
+                return arguments[i];
+            }
+        }
+        return null;
     }
 
     /**
@@ -107,7 +150,8 @@ public class CdiRunInvoker implements RunInvoker {
         }
         Method method = agentMethod(((AgentInstance) root).type());
         Object[] arguments = arguments(method, inputs);
-        return () -> method.invoke(root, arguments);
+        Object memoryId = inventedMemoryId(method, inputs, arguments);
+        return () -> invokeAndForget(root, method, arguments, memoryId);
     }
 
     /** The one method of a typed agent interface built with a builder (it carries no agentic annotation). */
@@ -145,11 +189,18 @@ public class CdiRunInvoker implements RunInvoker {
     }
 
     /**
-     * The agent method of the root interface with that name (the one carrying an agentic annotation).
+     * The agent method of the root interface with that name (the one carrying an agentic annotation); an overloaded
+     * one is named with its parameter types, {@code name(java.lang.String,int)} (the scanner's method name).
      */
-    static Method rootMethod(Class<?> type, String name) {
+    public static Method rootMethod(Class<?> type, String name) {
+        int paren = name.indexOf('(');
+        String methodName = paren < 0 ? name : name.substring(0, paren);
+        List<String> parameterTypes = paren < 0 ? null
+                : name.length() == paren + 2 ? List.of() : List.of(name.substring(paren + 1, name.length() - 1).split(","));
         return Arrays.stream(type.getMethods())
-                .filter(method -> method.getName().equals(name) && !Modifier.isStatic(method.getModifiers()))
+                .filter(method -> method.getName().equals(methodName) && !Modifier.isStatic(method.getModifiers()))
+                .filter(method -> parameterTypes == null || Arrays.stream(method.getParameterTypes())
+                        .map(Class::getName).toList().equals(parameterTypes))
                 .sorted(Comparator.comparing((Method method) -> Arrays.stream(method.getAnnotations())
                         .noneMatch(a -> a.annotationType().getName().startsWith(AGENTIC_ANNOTATIONS))))
                 .findFirst()
@@ -158,7 +209,8 @@ public class CdiRunInvoker implements RunInvoker {
 
     /**
      * Converts the form values to the method parameter types: a parameter takes the value of its scope key ({@code @V}
-     * value or parameter name); a {@code @MemoryId} parameter takes its value or a fresh id.
+     * value or parameter name); a {@code @MemoryId} parameter takes its value or a fresh id (a String or a UUID; none
+     * for other types).
      *
      * @throws IllegalArgumentException naming the parameter, for a missing primitive or a value that cannot be converted
      */
@@ -167,13 +219,13 @@ public class CdiRunInvoker implements RunInvoker {
         Object[] arguments = new Object[parameters.length];
         for (int i = 0; i < parameters.length; i++) {
             Parameter parameter = parameters[i];
-            if (AgenticScope.class.isAssignableFrom(parameter.getType())) {
-                continue; // provided by langchain4j
+            if (providedByLangChain4j(parameter)) {
+                continue;
             }
             String key = key(parameter);
             Object value = inputs.get(key);
             if (value == null && parameter.isAnnotationPresent(MemoryId.class)) {
-                value = UUID.randomUUID().toString();
+                value = freshMemoryId(parameter.getType());
             }
             if (value == null) {
                 if (parameter.getType().isPrimitive()) {
@@ -192,8 +244,32 @@ public class CdiRunInvoker implements RunInvoker {
         return arguments;
     }
 
+    private static Object freshMemoryId(Class<?> type) {
+        if (type == UUID.class) {
+            return UUID.randomUUID();
+        }
+        return type.isAssignableFrom(String.class) ? UUID.randomUUID().toString() : null;
+    }
+
+    /** The scope, the loop counter, the invocation parameters, the user message: not run inputs (no form field). */
+    private static boolean providedByLangChain4j(Parameter parameter) {
+        return AgenticScope.class.isAssignableFrom(parameter.getType())
+                || InvocationParameters.class.isAssignableFrom(parameter.getType())
+                || parameter.isAnnotationPresent(LoopCounter.class)
+                || parameter.isAnnotationPresent(dev.langchain4j.service.UserMessage.class);
+    }
+
+    /** The scope key of a parameter, as the build-time scanner names the run inputs (langchain4j rules). */
     private static String key(Parameter parameter) {
+        P p = parameter.getAnnotation(P.class);
+        if (p != null && !p.name().isBlank()) {
+            return p.name();
+        }
         V v = parameter.getAnnotation(V.class);
-        return v != null && !v.value().isBlank() ? v.value() : parameter.getName();
+        if (v != null && !v.value().isBlank()) {
+            return v.value();
+        }
+        K k = parameter.getAnnotation(K.class);
+        return k != null ? k.value().getSimpleName() : parameter.getName();
     }
 }

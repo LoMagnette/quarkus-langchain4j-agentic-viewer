@@ -14,6 +14,7 @@ import java.util.stream.Collectors;
 import jakarta.inject.Inject;
 
 import org.jboss.jandex.Index;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -54,6 +55,7 @@ class JsonRpcEventSequenceTest {
     BankSupervisor.BankTool bankTool;
 
     private static AgenticViewerJsonRpcService service;
+    private static RunManager runManager;
     private static Map<String, String> idsByName;
 
     @BeforeAll
@@ -63,11 +65,16 @@ class JsonRpcEventSequenceTest {
                 .detect(new AgenticAnnotationScanner().scan(Index.of(samples))));
         AgenticSystemRegistry registry = new AgenticSystemRegistry();
         systems.forEach(registry::register);
-        RunManager runManager = new RunManager(registry::find, new CdiRunInvoker());
+        runManager = new RunManager(registry::find, new CdiRunInvoker());
         RootListeners.attach(systems, new DevUiAgentListener(runManager));
         service = new AgenticViewerJsonRpcService(registry, runManager);
         idsByName = new LinkedHashMap<>();
         systems.forEach(system -> idsByName.put(system.name(), system.id()));
+    }
+
+    @AfterAll
+    static void shutDown() {
+        runManager.shutdown();
     }
 
     @BeforeEach

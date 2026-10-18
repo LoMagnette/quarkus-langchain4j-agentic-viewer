@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.IntStream;
@@ -67,9 +69,12 @@ class PayloadTruncatorTest {
         assertTrue(result.truncated());
         JsonNode tree = result.tree();
         assertEquals("Ada", tree.get("name").asText());
-        assertTrue(tree.get("notes").get(0).asText().endsWith("… [truncated, 3000 chars]")
-                || tree.get("notes").get(0).asText().startsWith("… ["), tree::toString);
-        assertTrue(tree.toString().length() <= MAX + 60, () -> "length " + tree.toString().length());
+        // the long note is cut within the budget left after the name; the extra field no longer fits
+        assertEquals("y".repeat(67) + "… [truncated, 3000 chars]", tree.get("notes").get(0).asText(), tree::toString);
+        assertEquals(1, tree.get("notes").size());
+        assertEquals("[1 more fields]", tree.get("…").asText());
+        assertEquals(3, tree.size());
+        assertTrue(tree.toString().length() <= MAX, () -> "length " + tree.toString().length());
     }
 
     @Test
@@ -90,5 +95,62 @@ class PayloadTruncatorTest {
         assertTrue(truncator.truncate(Multi.createFrom().items(1, 2)).tree().asText().startsWith("<stream "),
                 "never subscribed nor stringified");
         assertTrue(truncator.truncate(new Opaque()).tree().asText().contains("not serializable to JSON"));
+    }
+
+    /** A getter that fails when Jackson reads it. */
+    public static class Failing {
+        public String getName() {
+            throw new IllegalStateException("not now");
+        }
+
+        @Override
+        public String toString() {
+            throw new IllegalStateException("never stringified");
+        }
+    }
+
+    @Test
+    void cyclicAndFailingValuesBecomeMarkers() {
+        Map<String, Object> map = new HashMap<>();
+        map.put("me", map);
+        List<Object> list = new ArrayList<>();
+        list.add(list);
+        for (Object value : List.of(map, list, new Failing())) {
+            PayloadTruncator.Result result = truncator.truncate(value);
+            assertTrue(result.tree().asText().contains("not serializable to JSON"), result.tree()::toString);
+        }
+        Map<String, Object> inputs = truncator.truncateValues(Map.of("cyclic", map, "fine", "ok"));
+        assertEquals("ok", inputs.get("fine"));
+        assertTrue(((String) inputs.get("cyclic")).contains("not serializable to JSON"));
+    }
+
+    @Test
+    void anObjectWithTooManyFieldsKeepsItsFirstOnesAndCountsTheRest() {
+        Map<String, Object> wide = new java.util.LinkedHashMap<>();
+        IntStream.range(0, 50).forEach(i -> wide.put(String.format("k%02d", i), "value " + i));
+        JsonNode tree = truncator.truncate(wide).tree();
+        int kept = tree.size() - 1;
+        assertEquals("value 0", tree.get("k00").asText());
+        assertEquals("[" + (50 - kept) + " more fields]", tree.get("…").asText(), tree::toString);
+        assertTrue(tree.toString().length() <= MAX, () -> "length " + tree.toString().length());
+    }
+
+    @Test
+    void aCutNeverSplitsACharacter() {
+        String emojis = "\uD83D\uDE00".repeat(500); // 😀, two UTF-16 chars each
+        for (String text : List.of(emojis, "a" + emojis)) {
+            String kept = truncator.truncate(text).tree().asText();
+            String content = kept.substring(0, kept.indexOf("… [truncated"));
+            assertTrue(!content.isEmpty() && !Character.isHighSurrogate(content.charAt(content.length() - 1)),
+                    () -> "cut inside a character: " + content.length());
+            assertTrue(truncator.truncateText(text).codePoints().noneMatch(c -> Character.isSurrogate((char) c)));
+        }
+    }
+
+    @Test
+    void theLimitIsAtLeastEightyCharacters() {
+        PayloadTruncator tiny = new PayloadTruncator(40);
+        String kept = tiny.truncate("x".repeat(500)).tree().toString();
+        assertTrue(kept.length() > 40 && kept.length() <= 80, () -> "length " + kept.length() + ": " + kept);
     }
 }

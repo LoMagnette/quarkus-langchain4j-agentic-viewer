@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 import jakarta.inject.Inject;
 
 import org.jboss.jandex.Index;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -77,6 +78,11 @@ class SampleRunEventsTest {
         systems.addAll(new TopologyBuilder().build(new RootSystemDetector().detect(new AgenticAnnotationScanner()
                 .scan(Index.of(TwiceExclaimed.class, TwiceExclaimed.Exclaimer.class)))));
         runManager = manager();
+    }
+
+    @AfterAll
+    static void shutDown() {
+        runManager.shutdown();
     }
 
     private static RunManager manager() {
@@ -251,7 +257,12 @@ class SampleRunEventsTest {
             received.add(event);
         });
 
-        Run run = run(slowManager, "StoryCreator");
+        Run run;
+        try {
+            run = run(slowManager, "StoryCreator");
+        } finally {
+            slowManager.shutdown();
+        }
 
         List<ExecutionEvent> events = run.events();
         long runDuration = ((RunFinished) events.get(events.size() - 1)).durationMillis();

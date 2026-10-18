@@ -55,6 +55,7 @@ public class AgenticAnnotationScanner {
             .createSimple("dev.langchain4j.agentic.declarative.A2AServerUrlSupplier");
     static final DotName MCP_CLIENT_AGENT = DotName.createSimple("dev.langchain4j.agentic.declarative.McpClientAgent");
     static final DotName MCP_CLIENT_SUPPLIER = DotName.createSimple("dev.langchain4j.agentic.declarative.McpClientSupplier");
+    static final DotName REGISTRY_AGENT = DotName.createSimple("dev.langchain4j.agentic.declarative.RegistryAgent");
     static final DotName EXIT_CONDITION = DotName.createSimple("dev.langchain4j.agentic.declarative.ExitCondition");
     static final DotName ACTIVATION_CONDITION = DotName
             .createSimple("dev.langchain4j.agentic.declarative.ActivationCondition");
@@ -74,26 +75,34 @@ public class AgenticAnnotationScanner {
     private static final int DEFAULT_MAX_ITERATIONS = 10;
 
     private static final DotName V = DotName.createSimple("dev.langchain4j.service.V");
+    private static final DotName K = DotName.createSimple("dev.langchain4j.agentic.declarative.K");
+    private static final DotName P = DotName.createSimple("dev.langchain4j.agent.tool.P");
     private static final DotName MEMORY_ID = DotName.createSimple("dev.langchain4j.service.MemoryId");
+    private static final DotName LOOP_COUNTER = DotName.createSimple("dev.langchain4j.agentic.declarative.LoopCounter");
+    private static final DotName INVOCATION_PARAMETERS = DotName
+            .createSimple("dev.langchain4j.invocation.InvocationParameters");
+    private static final DotName USER_MESSAGE_PARAMETER = USER_MESSAGE;
     private static final DotName AGENTIC_SCOPE = DotName.createSimple("dev.langchain4j.agentic.scope.AgenticScope");
     private static final DotName NO_TYPED_KEY = DotName.createSimple("dev.langchain4j.agentic.Agent$NoTypedKey");
     private static final String LANGCHAIN4J_PACKAGE_PREFIX = "dev.langchain4j.";
 
     /** Annotations other than {@code @Agent} and the node kind they define: workflows and remote agents. */
-    private static final Map<DotName, NodeKind> WORKFLOW_ANNOTATIONS = Map.of(
-            SEQUENCE_AGENT, NodeKind.SEQUENCE,
-            PARALLEL_AGENT, NodeKind.PARALLEL,
-            PARALLEL_MAPPER_AGENT, NodeKind.PARALLEL_MAPPER,
-            LOOP_AGENT, NodeKind.LOOP,
-            CONDITIONAL_AGENT, NodeKind.CONDITIONAL,
-            SUPERVISOR_AGENT, NodeKind.SUPERVISOR,
-            PLANNER_AGENT, NodeKind.PLANNER,
-            HUMAN_IN_THE_LOOP, NodeKind.HUMAN_IN_THE_LOOP,
-            A2A_CLIENT_AGENT, NodeKind.A2A_CLIENT_AGENT,
-            MCP_CLIENT_AGENT, NodeKind.MCP_CLIENT_AGENT);
+    private static final Map<DotName, NodeKind> WORKFLOW_ANNOTATIONS = Map.ofEntries(
+            Map.entry(SEQUENCE_AGENT, NodeKind.SEQUENCE),
+            Map.entry(PARALLEL_AGENT, NodeKind.PARALLEL),
+            Map.entry(PARALLEL_MAPPER_AGENT, NodeKind.PARALLEL_MAPPER),
+            Map.entry(LOOP_AGENT, NodeKind.LOOP),
+            Map.entry(CONDITIONAL_AGENT, NodeKind.CONDITIONAL),
+            Map.entry(SUPERVISOR_AGENT, NodeKind.SUPERVISOR),
+            Map.entry(PLANNER_AGENT, NodeKind.PLANNER),
+            Map.entry(HUMAN_IN_THE_LOOP, NodeKind.HUMAN_IN_THE_LOOP),
+            Map.entry(A2A_CLIENT_AGENT, NodeKind.A2A_CLIENT_AGENT),
+            Map.entry(MCP_CLIENT_AGENT, NodeKind.MCP_CLIENT_AGENT),
+            Map.entry(REGISTRY_AGENT, NodeKind.REGISTRY_AGENT));
 
     /**
-     * @return one descriptor per agent method, sorted by id
+     * @return one descriptor per agent method, sorted by id; also one per agent method a class inherits from an
+     *         indexed supertype without declaring agent methods of its own (langchain4j reads {@code getMethods()})
      */
     public List<AgentDescriptor> scan(IndexView index) {
         List<AgentDescriptor> descriptors = new ArrayList<>();
@@ -106,8 +115,32 @@ public class AgenticAnnotationScanner {
                 agentMethod(annotation).ifPresent(method -> descriptors.add(describe(index, method, annotation, kind)));
             }
         });
+        descriptors.addAll(inherited(index, descriptors));
         descriptors.sort(Comparator.comparing(AgentDescriptor::id));
         return descriptors;
+    }
+
+    /** The agents of the indexed subtypes of agent classes that declare no agent method of their own. */
+    private static List<AgentDescriptor> inherited(IndexView index, List<AgentDescriptor> declared) {
+        Map<String, List<AgentDescriptor>> byClass = new LinkedHashMap<>();
+        declared.forEach(d -> byClass.computeIfAbsent(d.declaringClass(), c -> new ArrayList<>()).add(d));
+        Map<String, AgentDescriptor> inherited = new LinkedHashMap<>();
+        byClass.forEach((className, agents) -> {
+            ClassInfo type = index.getClassByName(DotName.createSimple(className));
+            if (type == null) {
+                return;
+            }
+            List<ClassInfo> subtypes = new ArrayList<>(type.isInterface() ? index.getAllKnownSubinterfaces(type.name())
+                    : index.getAllKnownSubclasses(type.name()));
+            for (ClassInfo subtype : subtypes) {
+                String subclass = subtype.name().toString();
+                if (!byClass.containsKey(subclass) && !subclass.startsWith(LANGCHAIN4J_PACKAGE_PREFIX)) {
+                    agents.forEach(agent -> inherited.putIfAbsent(subclass + "#" + agent.methodName(),
+                            agent.inheritedBy(subclass)));
+                }
+            }
+        });
+        return new ArrayList<>(inherited.values());
     }
 
     private static Optional<MethodInfo> agentMethod(AnnotationInstance annotation) {
@@ -135,13 +168,19 @@ public class AgenticAnnotationScanner {
         String declaringClass = method.declaringClass().name().toString();
         String name = nonBlank(stringValue(annotation, "name"));
         String description = nonBlank(stringValue(annotation, "description"));
-        if (description == null) {
+        if (kind == NodeKind.REGISTRY_AGENT) {
+            // @RegistryAgent("name"): the agent registered under that name, known at runtime only
+            String registered = nonBlank(stringValue(annotation, "value"));
+            description = registered == null ? null : "Agent \"" + registered + "\" of the agents registry";
+        } else if (description == null) {
             description = nonBlank(stringValue(annotation, "value")); // @Agent("...") / @HumanInTheLoop("...")
         }
+        // an overloaded agent method is told apart by its parameter types
+        String methodName = isOverloaded(method) ? signature(method) : method.name();
         return new AgentDescriptor(
-                declaringClass + "#" + method.name(),
+                declaringClass + "#" + methodName,
                 declaringClass,
-                method.name(),
+                methodName,
                 kind,
                 name != null ? name : method.name(),
                 description,
@@ -278,7 +317,23 @@ public class AgenticAnnotationScanner {
 
     private static boolean isWorkflow(NodeKind kind) {
         return kind != NodeKind.AI_AGENT && kind != NodeKind.NON_AI_AGENT && kind != NodeKind.HUMAN_IN_THE_LOOP
-                && kind != NodeKind.A2A_CLIENT_AGENT && kind != NodeKind.MCP_CLIENT_AGENT;
+                && kind != NodeKind.A2A_CLIENT_AGENT && kind != NodeKind.MCP_CLIENT_AGENT
+                && kind != NodeKind.REGISTRY_AGENT;
+    }
+
+    /** Whether another method of the class with that name is an agent method too. */
+    private static boolean isOverloaded(MethodInfo method) {
+        return method.declaringClass().methods().stream()
+                .filter(other -> other.name().equals(method.name()))
+                .filter(other -> other.annotations().stream().anyMatch(a -> a.target().kind() == AnnotationTarget.Kind.METHOD
+                        && (a.name().equals(AGENT) || WORKFLOW_ANNOTATIONS.containsKey(a.name()))))
+                .count() > 1;
+    }
+
+    /** {@code name(java.lang.String,int)}: the erased parameter types, as {@code Class.getName()} for non-arrays. */
+    private static String signature(MethodInfo method) {
+        return method.name() + "(" + String.join(",", method.parameterTypes().stream()
+                .map(type -> type.name().toString()).toList()) + ")";
     }
 
     /**
@@ -378,15 +433,33 @@ public class AgenticAnnotationScanner {
     }
 
     /**
-     * @return the AgenticScope key of a parameter ({@code @V} value or parameter name), null for the scope itself, a
-     *         memory id or a parameter without name
+     * Like langchain4j (AgentUtil.parameterName, AgenticParameterNameResolver): {@code @P(name)}, {@code @V}, the
+     * simple name of the {@code @K} typed key (an overridden {@code name()} is only known at runtime), or the
+     * parameter name.
+     *
+     * @return the AgenticScope key of a parameter, null for what langchain4j provides itself (the scope, the memory id,
+     *         the loop counter, the invocation parameters, the user message) or a parameter without name
      */
     private static String scopeKey(MethodParameterInfo parameter) {
-        if (parameter.type().name().equals(AGENTIC_SCOPE) || parameter.hasAnnotation(MEMORY_ID)) {
+        if (parameter.type().name().equals(AGENTIC_SCOPE) || parameter.type().name().equals(INVOCATION_PARAMETERS)
+                || parameter.hasAnnotation(MEMORY_ID) || parameter.hasAnnotation(LOOP_COUNTER)
+                || parameter.hasAnnotation(USER_MESSAGE_PARAMETER)) {
             return null;
         }
+        AnnotationInstance p = parameter.annotation(P);
+        String pName = p == null ? null : nonBlank(stringValue(p, "name"));
+        if (pName != null) {
+            return pName;
+        }
         AnnotationInstance v = parameter.annotation(V);
-        return v != null ? nonBlank(v.value().asString()) : parameter.name();
+        if (v != null) {
+            return nonBlank(v.value().asString());
+        }
+        AnnotationInstance k = parameter.annotation(K);
+        if (k != null) {
+            return k.value().asClass().name().withoutPackagePrefix().replaceFirst(".*\\$", "");
+        }
+        return parameter.name();
     }
 
     private static List<String> subAgents(AnnotationInstance annotation) {

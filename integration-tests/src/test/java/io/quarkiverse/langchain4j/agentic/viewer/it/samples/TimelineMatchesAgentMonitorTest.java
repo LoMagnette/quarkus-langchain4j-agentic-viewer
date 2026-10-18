@@ -14,6 +14,7 @@ import java.util.stream.Collectors;
 import jakarta.inject.Inject;
 
 import org.jboss.jandex.Index;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -79,6 +80,11 @@ class TimelineMatchesAgentMonitorTest {
         monitor = new AgentMonitor();
         monitor.setMaxRetainedSessions(1000);
         RootListeners.attach(systems, monitor);
+    }
+
+    @AfterAll
+    static void shutDown() {
+        runManager.shutdown();
     }
 
     /** name, then children and tool calls in brackets, siblings sorted */

@@ -48,7 +48,7 @@ final class HumanInTheLoopSteps {
      *
      * @return the number of steps intercepted
      */
-    static int intercept(Object root, DevUiAgentListener listener) {
+    static int intercept(Object root, DevUiListeners listener) {
         try {
             int intercepted = 0;
             for (Object handler : AgentTrees.handlers(root)) {
@@ -63,7 +63,7 @@ final class HumanInTheLoopSteps {
     }
 
     @SuppressWarnings("unchecked")
-    private static int interceptSteps(Object handler, DevUiAgentListener listener) throws ReflectiveOperationException {
+    private static int interceptSteps(Object handler, DevUiListeners listener) throws ReflectiveOperationException {
         // per-scope copies of a workflow take its builder's list; root calls use the workflow's own copy
         List<Object> serviceAgents = AgentTrees.serviceSubagents(handler);
         Map<Object, Object> replaced = new IdentityHashMap<>();
@@ -85,24 +85,26 @@ final class HumanInTheLoopSteps {
 
     /**
      * The invoker of an intercepted step: everything is the original invoker's, except an invocation in a Dev UI run
-     * of the listener's manager, which notifies the listeners as the original does and waits for the Dev UI's answer.
+     * of one of the listeners' managers, which notifies the listeners as the original does and waits for the Dev UI's
+     * answer.
      */
     static final class DevUiStep implements AgentInvoker {
 
         private final AgentInvoker delegate;
         private final HumanInTheLoop step;
-        private final DevUiAgentListener listener;
+        private final DevUiListeners listeners;
 
-        DevUiStep(AgentInvoker delegate, HumanInTheLoop step, DevUiAgentListener listener) {
+        DevUiStep(AgentInvoker delegate, HumanInTheLoop step, DevUiListeners listeners) {
             this.delegate = delegate;
             this.step = step;
-            this.listener = listener;
+            this.listeners = listeners;
         }
 
         @Override
         public Object invoke(DefaultAgenticScope scope, Object agent, AgentInvocationArguments arguments)
                 throws AgentInvocationException {
-            Run run = listener.run(scope);
+            DevUiAgentListener listener = listeners.owner(scope);
+            Run run = listener == null ? null : listener.run(scope);
             if (run == null) {
                 return delegate.invoke(scope, agent, arguments);
             }

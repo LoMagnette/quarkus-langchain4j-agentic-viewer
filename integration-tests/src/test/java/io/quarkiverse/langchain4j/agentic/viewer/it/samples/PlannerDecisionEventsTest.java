@@ -11,10 +11,15 @@ import java.util.concurrent.TimeUnit;
 import jakarta.inject.Inject;
 
 import org.jboss.jandex.Index;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import dev.langchain4j.agentic.internal.AgenticScopeOwner;
+import dev.langchain4j.agentic.planner.AgentInstance;
+import dev.langchain4j.agentic.scope.DefaultAgenticScope;
+import dev.langchain4j.agentic.supervisor.SupervisorPlanner;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotationScanner;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.RootSystemDetector;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.TopologyBuilder;
@@ -29,6 +34,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.Run;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunManager;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunStatus;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
+import io.quarkus.arc.ClientProxy;
 import io.quarkus.test.junit.QuarkusTest;
 
 /**
@@ -56,6 +62,11 @@ class PlannerDecisionEventsTest {
                 new CdiRunInvoker());
         RootListeners.attach(systems, new DevUiAgentListener(runManager));
         HumanInputAnswers.answerInTheDevUi(runManager);
+    }
+
+    @AfterAll
+    static void shutDown() {
+        runManager.shutdown();
     }
 
     @BeforeEach
@@ -131,5 +142,22 @@ class PlannerDecisionEventsTest {
             reset();
             assertEquals(List.of(), decisions(run(entry.getKey(), entry.getValue())), entry.getKey());
         }
+    }
+
+    @Inject
+    BankSupervisor bankSupervisor;
+
+    /**
+     * langchain4j copies a workflow per scope (withAgenticScope) and takes the copy's default planner from the planner
+     * supplier: the Dev UI wrapper must not show there (plannerType, the chat memory of a supervisor).
+     */
+    @Test
+    void perScopeCopiesKeepTheOriginalPlanner() {
+        Object root = ClientProxy.unwrap(bankSupervisor);
+        AgentInstance copy = (AgentInstance) ((AgenticScopeOwner) root)
+                .withAgenticScope(DefaultAgenticScope.ephemeralAgenticScope());
+
+        assertEquals(SupervisorPlanner.class, copy.plannerType());
+        assertEquals(SupervisorPlanner.class, ((AgentInstance) root).plannerType());
     }
 }

@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import org.jboss.jandex.Index;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -53,6 +54,11 @@ class GoalPathPreviewTest {
         RootListeners.attach(systems, new DevUiAgentListener(runManager, adapters));
         service = new AgenticViewerJsonRpcService(registry, runManager, adapters);
         system = systems.stream().filter(s -> s.name().equals("TripGoalPlanner")).findFirst().orElseThrow();
+    }
+
+    @AfterAll
+    static void shutDown() {
+        runManager.shutdown();
     }
 
     private static List<String> preview(String... keys) {

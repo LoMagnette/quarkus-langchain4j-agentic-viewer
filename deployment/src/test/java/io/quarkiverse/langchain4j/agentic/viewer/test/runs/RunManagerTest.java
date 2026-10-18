@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -117,5 +118,38 @@ class RunManagerTest {
                 () -> manager.startRun("com.example.Nope#run", Map.of()));
         assertEquals("Unknown agentic system: com.example.Nope#run", error.getMessage());
         assertFalse(manager.run("nope").isPresent());
+    }
+
+    @Test
+    void aCyclicOutputStillEndsTheRunWithRunFinished() throws Exception {
+        Map<String, Object> output = new HashMap<>();
+        output.put("me", output);
+        RunManager manager = manager((system, inputs) -> output);
+        try {
+            Run run = manager.run(manager.startRun(SYSTEM, Map.of())).orElseThrow();
+            run.completion().get(5, TimeUnit.SECONDS);
+            assertEquals(RunStatus.SUCCEEDED, run.status());
+            RunFinished finished = (RunFinished) run.events().get(run.events().size() - 1);
+            assertTrue(String.valueOf(finished.output()).contains("not serializable to JSON"), finished::toString);
+        } finally {
+            manager.shutdown();
+        }
+    }
+
+    @Test
+    void aListenerThrowingAnErrorDoesNotStopTheOthers() throws Exception {
+        RunManager manager = manager((system, inputs) -> "done");
+        List<String> received = new CopyOnWriteArrayList<>();
+        manager.addListener(event -> {
+            throw new AssertionError("broken listener");
+        });
+        manager.addListener(event -> received.add(event.getType()));
+        try {
+            Run run = manager.run(manager.startRun(SYSTEM, Map.of())).orElseThrow();
+            run.completion().get(5, TimeUnit.SECONDS);
+            assertEquals(List.of("RunStarted", "RunFinished"), received);
+        } finally {
+            manager.shutdown();
+        }
     }
 }
