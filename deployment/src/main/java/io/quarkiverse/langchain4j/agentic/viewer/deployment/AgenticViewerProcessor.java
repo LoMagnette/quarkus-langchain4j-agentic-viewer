@@ -83,11 +83,13 @@ public class AgenticViewerProcessor {
      * Builds the topology of every declarative system (T1.4).
      */
     @BuildStep
-    AgenticSystemsBuildItem buildTopologies(AgenticRootsBuildItem roots, CombinedIndexBuildItem index) {
+    AgenticSystemsBuildItem buildTopologies(AgenticRootsBuildItem roots, CombinedIndexBuildItem index,
+            AgenticViewerBuildConfig config) {
         // planner classes come from the bytecode of the @PlannerSupplier methods, read through the build class loader
         PlannerTypeDetector plannerTypes = PlannerTypeDetector.of(index.getIndex(),
                 Thread.currentThread().getContextClassLoader());
-        return new AgenticSystemsBuildItem(new TopologyBuilder(plannerTypes).build(roots.getRoots()));
+        return new AgenticSystemsBuildItem(new TopologyBuilder(plannerTypes, config.loopWarningIterations())
+                .build(roots.getRoots()));
     }
 
     /**
@@ -108,11 +110,12 @@ public class AgenticViewerProcessor {
                 : Set.of();
         recorder.setSystems(systems.getSystems().stream().map(system -> mixed.contains(system.id())
                 ? new AgenticSystem(system.id(), system.name(), system.rootNodeId(), SystemOrigin.MIXED,
-                        system.sourceRef(), system.inputs(), system.root())
+                        system.sourceRef(), system.inputs(), system.root(), system.warnings())
                 : system).toList());
         Map<String, String> declarativeAgents = new LinkedHashMap<>();
         agentClasses.forEach((nodeId, agentClass) -> declarativeAgents.putIfAbsent(agentClass, nodeId));
         recorder.setDeclarativeAgents(declarativeAgents);
+        recorder.setLoopWarningIterations(config.loopWarningIterations());
         // the application's topology contributors, created and applied in dev mode only (runtime-dev)
         recorder.setTopologyContributors(index.getIndex()
                 .getAllKnownImplementors(DotName.createSimple(AgenticTopologyContributor.class.getName())).stream()

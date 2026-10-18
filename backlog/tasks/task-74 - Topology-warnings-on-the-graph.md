@@ -1,10 +1,11 @@
 ---
 id: TASK-74
 title: Topology warnings on the graph
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-10-17 21:49'
-updated_date: '2026-10-18 06:06'
+updated_date: '2026-10-18 12:21'
 labels:
   - idea
   - dev-ui
@@ -39,9 +40,31 @@ Dropped from the first idea: a human-in-the-loop step fed only by the root (quar
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A conditional sub-agent without activation condition and a loop without exit condition above a configurable maximum are reported as warnings on their nodes
-- [ ] #2 Output keys nobody reads and keys read but never written in a system are reported as hints, taking @Output and condition method parameters into account and silenced under supervisors, planners and parallel mappers
-- [ ] #3 The system page lists the warnings and hints; a node badge opens them
-- [ ] #4 Declarative systems are checked at build time and builder systems at runtime by the same rules
-- [ ] #5 Unit tests cover each warning and the main false-positive cases (keys written in code, typed keys, mapper items)
+- [x] #1 A conditional sub-agent without activation condition and a loop without exit condition above a configurable maximum are reported as warnings on their nodes
+- [x] #2 Output keys nobody reads and keys read but never written in a system are reported as hints, taking @Output and condition method parameters into account and silenced under supervisors, planners and parallel mappers
+- [x] #3 The system page lists the warnings and hints; a node badge opens them
+- [x] #4 Declarative systems are checked at build time and builder systems at runtime by the same rules
+- [x] #5 Unit tests cover each warning and the main false-positive cases (keys written in code, typed keys, mapper items)
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. runtime topology: TopologyWarning (node, level WARNING/HINT, code, message) and TopologyChecks, the rules shared by build time and runtime; AgenticSystem.warnings (@RecordableConstructor).
+2. Rules: branch-without-condition (dropped conditional sub-agents, from the descriptors), loop-without-exit (no exit condition above loop-warning-iterations, build config, default 5), output-never-read and key-never-written hints, silenced under supervisors, planners and parallel mappers; never-read only when the reads of conditions/@Output are known; never-written left out in systems with a non-AI agent without output key (writes in code).
+3. Scanner: keys read by @Output, @ExitCondition and @ActivationCondition parameters; TopologyBuilder runs the checks; BuilderTopology runs them at runtime (reads unknown, a loop without exit told from a lambda: null description).
+4. UI: badge on node labels (⚠ / ⓘ), the node's warnings in its details, a collapsible list on the system page opening the node.
+5. Tests (TopologyChecksTest incl. scan-based false-positive cases and builder systems, browser test), docs.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Decisions: threshold configurable at build time (quarkus.langchain4j.agentic.dev-ui.loop-warning-iterations, default 5, passed to runtime-dev for builder systems); no silencing annotation, hints are labeled as such. Finding: quarkus-langchain4j-agentic rejects at build time keys no agent of the whole application writes (the first fixture failed that way), so the never-written hint is per system by nature. TopologyChecksTest (7): each rule, typed keys, @Output/condition reads, mapper items, a non-AI writer in code, supervisors/planners, builder loops with and without exit. Both CI configurations BUILD SUCCESS (deployment 169/173, integration 106/127), ui-tests 25/25, config reference regenerated.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Each system's wiring is checked before any run: conditional branches without condition and loops without exit condition (above a configurable limit) are warnings, outputs nothing reads and keys nothing in the system writes are hints, silenced where arguments are dynamic; the same rules apply to declarative systems at build time and builder systems at runtime. Shown as node badges, in node details and as a list on the system page. Verified with unit, scan-based and browser tests and both CI configurations.
+<!-- SECTION:FINAL_SUMMARY:END -->

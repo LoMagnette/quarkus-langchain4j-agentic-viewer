@@ -53,7 +53,8 @@ public class AgenticSystemsPageUiTest {
                             ToolPlanner.class, ToolPlanner.OneShot.class, ToolPlanner.Clerk.class, ToolPlanner.Clock.class,
                             ToolPlanner.EntryPoint.class, CompareWorkflow.class, CompareWorkflow.Polish.class,
                             CompareWorkflow.Grow.class, CompareWorkflow.Route.class, CompareWorkflow.Fast.class,
-                            CompareWorkflow.Slow.class, CompareWorkflow.EntryPoint.class)
+                            CompareWorkflow.Slow.class, CompareWorkflow.EntryPoint.class, LoopingWorkflow.class,
+                            LoopingWorkflow.Reworder.class, LoopingWorkflow.EntryPoint.class)
                     // the provider extension is only there to wire the fixture model into the AI agents
                     .addAsResource(new StringAsset("quarkus.langchain4j.openai.enable-integration=false\n"),
                             "application.properties"));
@@ -105,7 +106,7 @@ public class AgenticSystemsPageUiTest {
                 Pattern.compile("^NewsletterWorkflow$")));
         assertThat(row).hasCount(1);
         assertThat(page.locator("vaadin-grid-cell-content", new Page.LocatorOptions().setHasText("declarative")))
-                .hasCount(5); // and the other fixtures (OptionsWorkflow, ApprovalWorkflow, ToolPlanner, CompareWorkflow)
+                .hasCount(6); // and the other fixtures
         assertThat(page.locator("vaadin-grid-cell-content",
                 new Page.LocatorOptions().setHasText(NewsletterWorkflow.class.getName() + "#write"))).hasCount(1);
     }
@@ -157,6 +158,28 @@ public class AgenticSystemsPageUiTest {
         assertThat(link).hasCount(1);
         assertEquals("file:///work/src/main/java/com/example/Researcher.java", link.getAttribute("fileName"));
         assertEquals("12", link.getAttribute("lineNumber"));
+    }
+
+    @Test
+    void wiringWarningsOnTheGraphAndThePage() {
+        page.navigate(PAGE);
+        page.locator("vaadin-grid-cell-content", new Page.LocatorOptions().setHasText(
+                Pattern.compile("^LoopingWorkflow$"))).click();
+        waitFor(() -> Boolean.TRUE.equals(graph().evaluate("g => g.layoutDone === true")), "graph laid out");
+        String root = LoopingWorkflow.class.getName() + "#rework";
+
+        Locator warnings = page.locator("qwc-agentic-systems [data-warnings]");
+        assertThat(warnings.locator("summary")).containsText("1 warning, 1 hint");
+        assertTrue(String.valueOf(graph().evaluate("(g, id) => g._cy.getElementById(id).data('label')", root)).endsWith("⚠"));
+        assertTrue(String.valueOf(graph().evaluate("(g, id) => g._cy.getElementById(id).data('label')", root + "/Reworder"))
+                .endsWith("ⓘ"));
+
+        warnings.locator("summary").click();
+        warnings.locator("[data-warning=\"key-never-written\"] a").click();
+        Locator details = page.locator("qwc-agentic-node-details");
+        assertThat(details.locator("[data-warning=\"key-never-written\"]")).containsText("'note'");
+        warnings.locator("[data-warning=\"loop-without-exit\"] a").click();
+        assertThat(details.locator("[data-warning=\"loop-without-exit\"]")).containsText("always runs its 10 iterations");
     }
 
     @Test

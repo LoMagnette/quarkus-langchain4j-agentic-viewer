@@ -68,6 +68,17 @@ export class QwcAgenticSystems extends LitElement {
             color: var(--lumo-secondary-text-color);
             font-size: var(--lumo-font-size-s);
         }
+        details.warnings {
+            margin: var(--lumo-space-xs) 0;
+            font-size: var(--lumo-font-size-s);
+        }
+        details.warnings summary {
+            cursor: pointer;
+            color: #b45309;
+        }
+        details.warnings ul {
+            margin: var(--lumo-space-xs) 0;
+        }
         .header {
             display: flex;
             align-items: center;
@@ -288,8 +299,26 @@ export class QwcAgenticSystems extends LitElement {
             </div>
             <div class="muted">${summary.origin.toLowerCase()} system defined in
                 ${summary.sourceRef?.className}#${summary.sourceRef?.methodName}</div>
+            ${system ? this._renderWarnings(system) : ''}
             ${this._systemError ? html`<div class="error">${this._systemError}</div>`
                 : !system ? html`<div class="muted">Loading the topology...</div>` : this._renderGraph(system)}`;
+    }
+
+    /** What the topology checks found, by node: a click opens the node's details. */
+    _renderWarnings(system) {
+        const warnings = system.warnings ?? [];
+        if (!warnings.length) {
+            return '';
+        }
+        const count = level => warnings.filter(w => w.level === level).length;
+        const parts = [count('WARNING') && `${count('WARNING')} warning${count('WARNING') === 1 ? '' : 's'}`,
+            count('HINT') && `${count('HINT')} hint${count('HINT') === 1 ? '' : 's'}`].filter(Boolean);
+        return html`<details class="warnings" data-warnings>
+            <summary>${count('WARNING') ? '⚠' : 'ⓘ'} ${parts.join(', ')} about the wiring</summary>
+            <ul>${warnings.map(w => html`<li data-warning=${w.code} data-node=${w.nodeId}>
+                <a href="#" @click=${e => { e.preventDefault(); this._selectNode(system, w.nodeId); }}>${findNode(system.root, w.nodeId)?.name ?? w.nodeId}</a>:
+                ${w.message}</li>`)}</ul>
+        </details>`;
     }
 
     _renderGraph(system) {
@@ -326,7 +355,7 @@ export class QwcAgenticSystems extends LitElement {
                             @close=${() => { this._compareRuns = undefined; this._side = this._runOpened ? 'run' : undefined; }}>
                         </qwc-agentic-run-compare>` : ''}
                     ${this._node ? html`<qwc-agentic-node-details ?hidden=${this._side !== 'details'} .node=${this._node}
-                            .systemId=${this._summary?.id} .rpc=${this.rpc}
+                            .systemId=${this._summary?.id} .rpc=${this.rpc} .warnings=${system.warnings}
                             @close=${this._closeDetails}></qwc-agentic-node-details>` : ''}
                 </div>
             </div>`;

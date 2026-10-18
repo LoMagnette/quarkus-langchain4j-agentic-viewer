@@ -118,6 +118,18 @@ export class QwcAgenticNodeDetails extends LitElement {
         .tool-ref, .tool-description {
             color: var(--lumo-secondary-text-color);
         }
+        ul.warnings {
+            margin: var(--lumo-space-xs) 0;
+            padding: 0;
+            list-style: none;
+            font-size: var(--lumo-font-size-s);
+        }
+        ul.warnings li.warning {
+            color: #b45309;
+        }
+        ul.warnings li.hint {
+            color: var(--lumo-secondary-text-color);
+        }
         ul.code {
             margin: 0;
             padding: 0;
@@ -143,6 +155,8 @@ export class QwcAgenticNodeDetails extends LitElement {
         node: { type: Object },
         /** id of the node's system, to ask for the node's code */
         systemId: { type: String },
+        /** the topology checks' warnings and hints of the system (those of this node are shown) */
+        warnings: { type: Array },
         /** the page's plain JSON-RPC adapter (getNodeSources) */
         rpc: { attribute: false },
         _sources: { state: true },
@@ -182,6 +196,7 @@ export class QwcAgenticNodeDetails extends LitElement {
                 </vaadin-button>
             </div>
             <div class="id">${node.id}</div>
+            ${this._renderWarnings(node)}
             <dl>
                 <dt>Description</dt><dd data-field="description">${node.description ?? this._none()}</dd>
                 <dt>Input keys</dt><dd data-field="inputKeys">${this._chips(node.inputKeys)}</dd>
@@ -200,6 +215,13 @@ export class QwcAgenticNodeDetails extends LitElement {
             ${node.kind === 'AI_AGENT' ? this._renderAiDetails(node.aiDetails) : nothing}
             ${node.remoteDetails ? this._renderRemoteDetails(node.kind, node.remoteDetails) : nothing}
             ${this._renderCode()}`;
+    }
+
+    _renderWarnings(node) {
+        const warnings = (this.warnings ?? []).filter(w => w.nodeId === node.id);
+        return warnings.length ? html`<ul class="warnings" data-field="warnings">${warnings.map(w => html`
+            <li class=${w.level.toLowerCase()} data-warning=${w.code}>${w.level === 'WARNING' ? '⚠' : 'ⓘ'} ${w.message}</li>`)}
+        </ul>` : nothing;
     }
 
     /**

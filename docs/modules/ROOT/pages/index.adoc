@@ -93,6 +93,22 @@ The data-flow view links the agents by the AgenticScope keys they share: an edge
 
 image::dataflow.png[The data flow of a supervisor]
 
+=== Wiring warnings
+
+Before any run, the page checks the wiring of each system and lists what it finds above the graph; the nodes concerned
+carry a badge (⚠ warning, ⓘ hint) and show it in their details:
+
+* warning: a `@ConditionalAgent` sub-agent without `@ActivationCondition` (langchain4j leaves it out, it never runs);
+* warning: a loop without exit condition and more iterations than `quarkus.langchain4j.agentic.dev-ui.loop-warning-iterations`
+  (5 by default): it always runs them all;
+* hint: an output key nothing in the system reads (agents, conditions, `@Output`);
+* hint: a key an agent reads that no agent of the system writes and that is no input of the system.
+
+Hints are left out under supervisors, planners and parallel mappers, whose agents get their arguments at runtime, and
+the second one in systems with a non-AI agent without output key (it may write the scope in code). quarkus-langchain4j
+already rejects keys no agent of the whole application writes; these checks look at one system. Builder systems are
+checked the same way (what their lambdas read is unknown: no "never read" hint for them).
+
 === Details
 
 Clicking a node opens its details: description, input and output keys, flags, the exit or activation condition, and

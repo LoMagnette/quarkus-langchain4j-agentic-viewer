@@ -6,6 +6,7 @@ import java.util.Map;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.builder.BuilderCandidate;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.builder.BuiltSystems;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.TopologyChecks;
 import io.quarkus.runtime.annotations.Recorder;
 
 /**
@@ -18,6 +19,7 @@ public class AgenticViewerRecorder {
     private static volatile List<String> topologyContributors = List.of();
     private static volatile List<BuilderCandidate> builderCandidates = List.of();
     private static volatile Map<String, String> declarativeAgents = Map.of();
+    private static volatile int loopWarningIterations = TopologyChecks.DEFAULT_LOOP_ITERATIONS;
 
     /**
      * Sets the agentic systems known at build time (declarative ones). Called first at the static init of each
@@ -49,6 +51,20 @@ public class AgenticViewerRecorder {
      */
     public void setDeclarativeAgents(Map<String, String> nodeIdsByAgentClass) {
         declarativeAgents = Map.copyOf(nodeIdsByAgentClass);
+    }
+
+    /**
+     * Sets the iterations above which a loop without exit condition is reported (loop-warning-iterations).
+     */
+    public void setLoopWarningIterations(int iterations) {
+        loopWarningIterations = iterations;
+    }
+
+    /**
+     * @return the iterations above which a loop without exit condition is reported, for builder systems
+     */
+    public static int getLoopWarningIterations() {
+        return loopWarningIterations;
     }
 
     /**

@@ -26,6 +26,7 @@ import dev.langchain4j.agentic.scope.AgenticScope;
 import dev.langchain4j.agentic.workflow.ConditionalAgentInstance;
 import dev.langchain4j.agentic.workflow.LoopAgentInstance;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.LangChain4jInternals;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerRecorder;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgentNode;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AiAgentDetails;
@@ -39,6 +40,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.RemoteAgentDet
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SourceRef;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemInput;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemOrigin;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.TopologyChecks;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.ToolInfo;
 
 /**
@@ -119,7 +121,9 @@ public final class BuilderTopology {
         });
         SystemOrigin origin = shared[0] || usesDeclarativeWorkflow(root) ? SystemOrigin.MIXED : SystemOrigin.BUILDER;
         rootNode = withCallSite(rootNode, sourceRef);
-        return new AgenticSystem(id, name, id, origin, sourceRef, inputs(root, rootNode), rootNode);
+        // the same checks as declarative systems; what the conditions and output functions (lambdas) read is unknown
+        return new AgenticSystem(id, name, id, origin, sourceRef, inputs(root, rootNode), rootNode,
+                TopologyChecks.check(rootNode, Map.of(), null, AgenticViewerRecorder.getLoopWarningIterations()));
     }
 
     /** Whether a workflow under the root is a declarative one. */
@@ -299,7 +303,9 @@ public final class BuilderTopology {
 
     private static Guard loopGuard(AgentInstance agent) {
         LoopAgentInstance loop = as(agent, LoopAgentInstance.class);
-        return loop == null ? null : Guard.loopExit(label(loop.exitCondition()), loop.maxIterations(), loop.testExitAtLoopEnd());
+        // no exit condition: no description (a lambda without one has "<unknown>")
+        return loop == null ? null : Guard.loopExit(loop.exitCondition() == null ? null : label(loop.exitCondition()),
+                loop.maxIterations(), loop.testExitAtLoopEnd());
     }
 
     /** The exit condition of a loop, with the activation condition of the branch it is, if any. */

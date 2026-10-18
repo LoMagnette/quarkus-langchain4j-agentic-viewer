@@ -3,8 +3,10 @@ package io.quarkiverse.langchain4j.agentic.viewer.deployment.topology;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentDescriptor;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentTree;
@@ -17,6 +19,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.PatternType;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.PlannerInfo;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SourceRef;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemOrigin;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.TopologyChecks;
 
 /**
  * Turns the declarative root systems found at build time into the shared topology model.
@@ -28,13 +31,22 @@ public class TopologyBuilder {
 
     /** Tells the planner behind a {@code @PlannerSupplier}; null: unknown (CUSTOM, no class). */
     private final PlannerTypeDetector plannerTypes;
+    private final int loopWarningIterations;
 
     public TopologyBuilder() {
         this(null);
     }
 
     public TopologyBuilder(PlannerTypeDetector plannerTypes) {
+        this(plannerTypes, TopologyChecks.DEFAULT_LOOP_ITERATIONS);
+    }
+
+    /**
+     * @param loopWarningIterations iterations above which a loop without exit condition is reported (TopologyChecks)
+     */
+    public TopologyBuilder(PlannerTypeDetector plannerTypes, int loopWarningIterations) {
         this.plannerTypes = plannerTypes;
+        this.loopWarningIterations = loopWarningIterations;
     }
 
     /**
@@ -46,6 +58,11 @@ public class TopologyBuilder {
         for (AgentTree root : roots) {
             AgentDescriptor descriptor = root.descriptor();
             AgentNode rootNode = node(descriptor.id(), root, null);
+            // what the shared checks cannot see in the topology: the branches langchain4j leaves out, and the keys the
+            // @Output and condition methods read
+            Map<String, List<String>> dropped = new LinkedHashMap<>();
+            Set<String> methodReads = new LinkedHashSet<>();
+            collectChecks(descriptor.id(), root, dropped, methodReads);
             systems.add(new AgenticSystem(
                     rootNode.id(),
                     simpleName(descriptor.declaringClass()),
@@ -53,7 +70,8 @@ public class TopologyBuilder {
                     SystemOrigin.DECLARATIVE,
                     new SourceRef(descriptor.declaringClass(), descriptor.methodName(), null),
                     descriptor.inputs(),
-                    rootNode));
+                    rootNode,
+                    TopologyChecks.check(rootNode, dropped, methodReads, loopWarningIterations)));
         }
         return systems;
     }
@@ -89,6 +107,22 @@ public class TopologyBuilder {
                 descriptor.aiDetails(),
                 descriptor.remoteDetails(),
                 descriptor.code());
+    }
+
+    private static void collectChecks(String id, AgentTree tree, Map<String, List<String>> dropped, Set<String> methodReads) {
+        AgentDescriptor descriptor = tree.descriptor();
+        if (descriptor == null) {
+            return;
+        }
+        methodReads.addAll(descriptor.methodReads());
+        if (descriptor.kind() == NodeKind.CONDITIONAL) {
+            List<String> without = descriptor.subAgents().stream()
+                    .filter(subAgent -> !descriptor.branchGuards().containsKey(subAgent)).distinct().toList();
+            if (!without.isEmpty()) {
+                dropped.put(id, without);
+            }
+        }
+        childIds(id, tree).forEach((childId, child) -> collectChecks(childId, child, dropped, methodReads));
     }
 
     /** The sub-agents of a node by their node id: {@code /<simple class name>}, {@code ~n} for a repeated sibling. */

@@ -199,7 +199,19 @@ public class AgenticAnnotationScanner {
                 inputs(index, method),
                 remoteDetails(method, annotation, kind),
                 null,
-                code(method, annotation, kind));
+                code(method, annotation, kind),
+                isWorkflow(kind) ? methodReads(method.declaringClass()) : List.of());
+    }
+
+    /** The scope keys the {@code @Output} and condition methods next to a workflow read (their parameters). */
+    private static List<String> methodReads(ClassInfo type) {
+        List<String> keys = new ArrayList<>();
+        type.methods().stream()
+                .filter(m -> m.hasDeclaredAnnotation(OUTPUT) || m.hasDeclaredAnnotation(EXIT_CONDITION)
+                        || m.hasDeclaredAnnotation(ACTIVATION_CONDITION))
+                .flatMap(m -> m.parameters().stream()).map(AgenticAnnotationScanner::scopeKey)
+                .filter(key -> key != null && !keys.contains(key)).forEach(keys::add);
+        return keys;
     }
 
     /**

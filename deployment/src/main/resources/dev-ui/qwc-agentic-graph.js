@@ -196,9 +196,11 @@ export function toGraph(system) {
 
     const visit = (node, parent) => {
         const compound = node.children?.length > 0;
+        const badge = warningBadge(system, node.id);
         nodes.push({
             id: node.id,
-            label: compound ? `${KIND_LABELS[node.kind] ?? node.kind} · ${node.name}` : node.name,
+            label: (compound ? `${KIND_LABELS[node.kind] ?? node.kind} · ${node.name}` : node.name) + badge,
+            warned: !!badge,
             kind: node.kind,
             parent,
             compound,
@@ -373,6 +375,12 @@ export function toDataFlowGraph(system) {
         }
     });
     return { nodes, edges, dataFlow: true };
+}
+
+/** " ⚠" for a node with warnings of the topology checks, " ⓘ" for one with hints only, "" otherwise. */
+export function warningBadge(system, nodeId) {
+    const levels = (system?.warnings ?? []).filter(w => w.nodeId === nodeId).map(w => w.level);
+    return levels.includes('WARNING') ? ' ⚠' : levels.length ? ' ⓘ' : '';
 }
 
 function labelWidth(label) {

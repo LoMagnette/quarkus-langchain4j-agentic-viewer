@@ -31,6 +31,12 @@ public interface AgenticViewerBuildConfig {
     @WithDefault("cdi")
     BuilderDiscovery builderDiscovery();
 
+    /**
+     * A loop without exit condition and more iterations than this is reported on the graph (it always runs them all).
+     */
+    @WithDefault("5")
+    int loopWarningIterations();
+
     enum BuilderDiscovery {
         /** Builder systems produced as CDI beans. */
         CDI,

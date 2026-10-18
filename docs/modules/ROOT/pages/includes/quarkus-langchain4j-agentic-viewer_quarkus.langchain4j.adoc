@@ -49,6 +49,27 @@ endif::add-copy-button-to-env-var[]
 a|`cdi`, `transform`, `none`
 |`+++cdi+++`
 
+a|icon:lock[title=Fixed at build time] [[quarkus-langchain4j-agentic-viewer_quarkus-langchain4j-agentic-dev-ui-loop-warning-iterations]] [.property-path]##link:#quarkus-langchain4j-agentic-viewer_quarkus-langchain4j-agentic-dev-ui-loop-warning-iterations[`+++quarkus.langchain4j.agentic.dev-ui.loop-warning-iterations+++`]##
+ifdef::add-copy-button-to-config-props[]
+config_property_copy_button:+++quarkus.langchain4j.agentic.dev-ui.loop-warning-iterations+++[]
+endif::add-copy-button-to-config-props[]
+
+
+[.description]
+--
+A loop without exit condition and more iterations than this is reported on the graph (it always runs them all).
+
+
+ifdef::add-copy-button-to-env-var[]
+Environment variable: env_var_with_copy_button:+++QUARKUS_LANGCHAIN4J_AGENTIC_DEV_UI_LOOP_WARNING_ITERATIONS+++[]
+endif::add-copy-button-to-env-var[]
+ifndef::add-copy-button-to-env-var[]
+Environment variable: `+++QUARKUS_LANGCHAIN4J_AGENTIC_DEV_UI_LOOP_WARNING_ITERATIONS+++`
+endif::add-copy-button-to-env-var[]
+--
+|int
+|`+++5+++`
+
 a| [[quarkus-langchain4j-agentic-viewer_quarkus-langchain4j-agentic-dev-ui-history-size]] [.property-path]##link:#quarkus-langchain4j-agentic-viewer_quarkus-langchain4j-agentic-dev-ui-history-size[`+++quarkus.langchain4j.agentic.dev-ui.history-size+++`]##
 ifdef::add-copy-button-to-config-props[]
 config_property_copy_button:+++quarkus.langchain4j.agentic.dev-ui.history-size+++[]
