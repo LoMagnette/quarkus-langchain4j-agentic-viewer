@@ -838,3 +838,18 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
 - Ideas for later recorded as drafts DRAFT-3..15 (run part of a system, pinned outputs, breakpoints, model request
   inspector, run comparison, run-to-test, topology warnings...).
 
+
+### Developer experience features — TASK-72..75 (Oct 18, 2026)
+
+- Idea drafts DRAFT-3..15 refined from three feasibility studies; the owner postponed those needing new internal
+  langchain4j hooks (DRAFT-3, 4, 5, 6, 7, 10: run part of a system, pinned outputs, breakpoints, model request
+  inspector, live tokens, run to test) and promoted four.
+- TASK-72 open in IDE: nodes carry their code (CodeRef: agent method, @Output, planner supplier, conditions, prompt
+  resources, builder call site); node details list it with file and line from the dev-mode sources (getNodeSources)
+  and open it through the Dev UI's IDE link.
+- TASK-73 compare two runs: invocations matched by node, iteration and item under the same parents; changed, only in
+  one run, possibly different when truncated; graph colored by difference.
+- TASK-74 wiring warnings: TopologyChecks shared by build time and runtime (branch without condition, loop without
+  exit above loop-warning-iterations; hints for outputs nobody reads and keys nothing in the system writes).
+- TASK-75 re-run after a reload (opt-in): last inputs run again once the system is known, compared with the run kept
+  in the page; runs right after a reload always get the Dev UI listener.
