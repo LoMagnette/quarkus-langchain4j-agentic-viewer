@@ -20,9 +20,12 @@ import dev.langchain4j.agentic.declarative.RegistryAgent;
 import dev.langchain4j.agentic.declarative.SequenceAgent;
 import dev.langchain4j.service.V;
 import io.quarkiverse.langchain4j.ModelName;
+import io.quarkiverse.langchain4j.ToolBox;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentDescriptor;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotationScanner;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.UpstreamAgents;
+import io.quarkiverse.langchain4j.mcp.runtime.McpToolBox;
+import io.quarkiverse.langchain4j.skills.Skills;
 
 /**
  * With quarkus-langchain4j-agentic's detection, the scanner describes the agents it detected, keeps what the viewer
@@ -59,6 +62,21 @@ class UpstreamSelectionTest {
     interface Flow {
         @SequenceAgent(outputKey = "review", subAgents = { StyleReviewer.class, LoudShouter.class, FromRegistry.class })
         String run(@V("draft") String draft);
+    }
+
+    /** Two overloaded AI agent methods with their own tool boxes, MCP clients and skills. */
+    interface Counter {
+        @Agent(outputKey = "balance")
+        @ToolBox(ScanFixtures.Ledger.class)
+        @McpToolBox("bank")
+        @Skills("billing")
+        String count(@V("account") String account);
+
+        @Agent(outputKey = "audit")
+        @ToolBox(ScanFixtures.AuditTools.class)
+        @McpToolBox("audit")
+        @Skills("auditing")
+        String count(@V("account") String account, @V("year") int year);
     }
 
     private static final List<Class<?>> FIXTURES = List.of(BaseReviewer.class, StyleReviewer.class, Shouter.class,
@@ -127,6 +145,32 @@ class UpstreamSelectionTest {
                 Shouter.class.getName() + "#shout: found by the viewer only, not shown"), result.disagreements());
         assertEquals(new AgenticAnnotationScanner().scan(index).size() - 2, result.descriptors().size(),
                 "the agents only the viewer finds are left out");
+    }
+
+    @Test
+    void overloadsKeepTheirOwnToolBoxesAndSkills() throws Exception {
+        Index index = Index.of(Counter.class, ScanFixtures.Ledger.class, ScanFixtures.AuditTools.class);
+        ClassInfo counter = index.getClassByName(DotName.createSimple(Counter.class.getName()));
+        List<MethodInfo> overloads = new ArrayList<>(counter.methods().stream()
+                .filter(method -> method.name().equals("count")).toList());
+        // listed in the other order than they are declared: a match by name would give both the first one's metadata
+        overloads.sort((a, b) -> Integer.compare(b.parametersCount(), a.parametersCount()));
+        UpstreamAgents upstream = new UpstreamAgents(Map.of(Counter.class.getName(), overloads),
+                Map.of(Counter.class.getName(), new UpstreamAgents.AiAgent(null, null, overloads, overloads, overloads)));
+        AgenticAnnotationScanner.Result result = new AgenticAnnotationScanner().scan(index, upstream);
+
+        assertEquals(List.of(), result.disagreements());
+        Map<String, AgentDescriptor> byMethod = new HashMap<>();
+        result.descriptors().forEach(d -> byMethod.put(d.methodName(), d));
+        AgentDescriptor one = byMethod.get("count(java.lang.String)");
+        AgentDescriptor two = byMethod.get("count(java.lang.String,int)");
+        assertEquals(List.of("billing"), one.aiDetails().skills());
+        assertEquals(List.of("mcp:bank"), one.aiDetails().runtimeToolSources());
+        assertEquals(List.of("balance_of", "debit", "audit"), one.aiDetails().tools().stream().map(t -> t.name()).toList());
+        assertEquals(List.of("auditing"), two.aiDetails().skills());
+        assertEquals(List.of("mcp:audit"), two.aiDetails().runtimeToolSources());
+        assertEquals(List.of("audit"), two.aiDetails().tools().stream().map(t -> t.name()).toList());
+        assertEquals(new AgenticAnnotationScanner().scan(index), result.descriptors(), "as the scanner reads them alone");
     }
 
     private static AgentDescriptor descriptor(AgenticAnnotationScanner.Result result, Class<?> type) {

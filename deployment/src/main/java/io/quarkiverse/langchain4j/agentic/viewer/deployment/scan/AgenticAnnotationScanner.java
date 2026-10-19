@@ -249,12 +249,9 @@ public class AgenticAnnotationScanner {
         if (upstream == null || ai == null || descriptor.kind() != NodeKind.AI_AGENT) {
             return descriptor;
         }
-        String methodName = descriptor.methodName().contains("(")
-                ? descriptor.methodName().substring(0, descriptor.methodName().indexOf('('))
-                : descriptor.methodName();
-        MethodInfo toolBox = forMethod(upstream.toolBoxMethods(), methodName);
-        MethodInfo mcpToolBox = forMethod(upstream.mcpToolBoxMethods(), methodName);
-        MethodInfo skills = forMethod(upstream.skillsMethods(), methodName);
+        MethodInfo toolBox = forMethod(upstream.toolBoxMethods(), descriptor);
+        MethodInfo mcpToolBox = forMethod(upstream.mcpToolBoxMethods(), descriptor);
+        MethodInfo skills = forMethod(upstream.skillsMethods(), descriptor);
         List<String> runtimeToolSources = new ArrayList<>(ai.runtimeToolSources().stream()
                 .filter(source -> !source.startsWith("mcp:")).toList());
         runtimeToolSources.addAll(mcpSources(mcpToolBox == null ? null : mcpToolBox.declaredAnnotation(MCP_TOOL_BOX)));
@@ -263,9 +260,14 @@ public class AgenticAnnotationScanner {
                 ai.streamingChatModelSupplier(), skills == null ? null : skills(skills.declaredAnnotation(SKILLS))));
     }
 
-    /** The agent method of that name among those upstream lists (they are agent methods), null when none. */
-    private static MethodInfo forMethod(List<MethodInfo> methods, String name) {
-        return methods.stream().filter(method -> method.name().equals(name)).findFirst().orElse(null);
+    /**
+     * The agent method of a descriptor among those upstream lists (they are agent methods), null when none: same
+     * name, and same parameter types for an overloaded one (the descriptor's method name is then its signature).
+     */
+    private static MethodInfo forMethod(List<MethodInfo> methods, AgentDescriptor descriptor) {
+        return methods.stream()
+                .filter(method -> (isOverloaded(method) ? signature(method) : method.name()).equals(descriptor.methodName()))
+                .findFirst().orElse(null);
     }
 
     /** The agents of the indexed subtypes of agent classes that declare no agent method of their own. */

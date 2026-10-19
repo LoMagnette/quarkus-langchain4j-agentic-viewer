@@ -21,8 +21,8 @@
     </modules>
 
     <properties>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
+        <!-- release, not source/target: compiles against the Java 21 API whatever JDK runs Maven -->
+        <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <quarkus.version>3.33.4</quarkus.version>
         <quarkus-langchain4j.version>1.14.2</quarkus-langchain4j.version>
