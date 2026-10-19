@@ -58,7 +58,8 @@ mvn install -pl docs
 
 Samples run on a scripted fake chat model (`integration-tests/.../it/fake/ScriptedChatModel`): declarative samples in
 `src/main/java/.../it/samples`, builder (`AgenticServices.*Builder()`) and mixed samples in `src/main/java/.../it/builder`
-(the produced ones are listed), patterns samples in `src/patterns/java` (profile `patterns`). Under Quarkus, a builder
+(the produced ones are listed), patterns samples in `src/patterns/java` (profile `patterns`; `FeatureDelivery` mixes everything: GOAP, voting and BDI
+planners nested in a sequence, a parallel, a loop and a conditional, a tool, a human step, `@Output`). Under Quarkus, a builder
 system needs its own agents, built from annotated interfaces with the app's chat model (`it.builder.Agents`): a
 langchain4j agent has one parent, so a builder given the agent beans of declarative systems re-parents and renames them
 and breaks those systems; a non-AI agent class (`@Agent` method on a class) must be an unremovable bean. To try a real model, use

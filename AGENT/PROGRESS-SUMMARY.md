@@ -869,3 +869,11 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   - 78.5 agent identity from quarkus-langchain4j-agentic's detected-agent build items, structure still scanned,
     disagreements logged in dev mode; upstream proposal U7 (Backlog doc-8). Found: 1.14.2 rejects a @RegistryAgent
     sub-agent; debaters cannot read the planner's debateContext as a parameter (build validation).
+
+### Follow-ups — TASK-79..81 (Oct 19, 2026)
+
+- TASK-79 second review: overloaded AI methods matched to upstream metadata by signature; `maven.compiler.release=21`.
+- TASK-80 pattern planners tagged with their pattern instead of "Planner" (graph title and legend, node details,
+  timeline, system list through `AgenticSystemSummary.plannerPatterns`).
+- TASK-81 `FeatureDelivery` sample (patterns profile, 24 nodes): GOAP, voting and BDI planners nested in workflows, with
+  a tool, a human step and `@Output`; tested called directly, as a Dev UI run, and for its planners' decisions.

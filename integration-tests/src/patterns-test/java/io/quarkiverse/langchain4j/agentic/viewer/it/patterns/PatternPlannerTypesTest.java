@@ -15,7 +15,9 @@ import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.RootSystemDetec
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.PlannerTypeDetector;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.TopologyBuilder;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticSystemSummary;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgentNode;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.PatternType;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.PlannerDesire;
 
@@ -30,7 +32,8 @@ class PatternPlannerTypesTest {
         Index index = Index.of(samples);
         List<AgenticSystem> systems = new TopologyBuilder(PlannerTypeDetector.of(index, getClass().getClassLoader()))
                 .build(new RootSystemDetector().detect(new AgenticAnnotationScanner().scan(index)));
-        Map<String, String> planners = systems.stream().collect(Collectors.toMap(AgenticSystem::name,
+        Map<String, String> planners = systems.stream().filter(s -> s.root().plannerInfo() != null)
+                .collect(Collectors.toMap(AgenticSystem::name,
                 s -> s.root().plannerInfo().patternType() + " " + s.root().plannerInfo().plannerClass()));
         assertEquals(Map.of(
                 "TripGoalPlanner", "GOAP dev.langchain4j.agentic.patterns.goap.GoalOrientedPlanner",
@@ -43,7 +46,7 @@ class PatternPlannerTypesTest {
         assertEquals(Map.of("TripGoalPlanner", List.of(PatternType.GOAP), "ResearchTeam", List.of(PatternType.P2P),
                 "IncidentResponder", List.of(PatternType.BLACKBOARD), "ReleaseCaptain", List.of(PatternType.BDI),
                 "DesignDebate", List.of(PatternType.DEBATE), "ReviewPanel", List.of(PatternType.VOTING)),
-                systems.stream().collect(Collectors.toMap(AgenticSystem::name,
+                systems.stream().filter(s -> s.root().plannerInfo() != null).collect(Collectors.toMap(AgenticSystem::name,
                         s -> AgenticSystemSummary.of(s).plannerPatterns())));
         AgenticSystem bdi = systems.stream().filter(s -> s.name().equals("ReleaseCaptain")).findFirst().orElseThrow();
         String root = bdi.root().id();
@@ -54,5 +57,34 @@ class PatternPlannerTypesTest {
                 bdi.root().plannerInfo().desires(), "desires read from the @PlannerSupplier");
         assertEquals(null, systems.stream().filter(s -> s.name().equals("DesignDebate")).findFirst().orElseThrow()
                 .root().plannerInfo().desires(), "only BDI planners have desires");
+    }
+
+    @Test
+    void plannersNestedInWorkflowsAreTagged() throws Exception {
+        File samples = new File(FeatureDelivery.class.getResource("FeatureDelivery.class").toURI()).getParentFile();
+        Index index = Index.of(samples);
+        AgenticSystem delivery = new TopologyBuilder(PlannerTypeDetector.of(index, getClass().getClassLoader()))
+                .build(new RootSystemDetector().detect(new AgenticAnnotationScanner().scan(index))).stream()
+                .filter(s -> s.name().equals("FeatureDelivery")).findFirst().orElseThrow();
+        Map<String, PatternType> nested = new java.util.TreeMap<>();
+        collectPlanners(delivery.root(), nested);
+        assertEquals(Map.of("CodeReview", PatternType.VOTING, "ReleaseTrain", PatternType.BDI, "SpecPlanner", PatternType.GOAP),
+                nested);
+        assertEquals(24, count(delivery.root()), "nodes");
+        AgenticSystemSummary summary = AgenticSystemSummary.of(delivery);
+        assertEquals(List.of(PatternType.GOAP, PatternType.VOTING, PatternType.BDI), summary.plannerPatterns(), "tree order");
+        assertEquals(List.of(NodeKind.SEQUENCE, NodeKind.PARALLEL, NodeKind.PLANNER, NodeKind.LOOP, NodeKind.HUMAN_IN_THE_LOOP,
+                NodeKind.CONDITIONAL), summary.patternKinds());
+    }
+
+    private static void collectPlanners(AgentNode node, Map<String, PatternType> planners) {
+        if (node.kind() == NodeKind.PLANNER) {
+            planners.put(node.id().substring(node.id().lastIndexOf('/') + 1), node.plannerInfo().patternType());
+        }
+        node.children().forEach(child -> collectPlanners(child, planners));
+    }
+
+    private static int count(AgentNode node) {
+        return 1 + node.children().stream().mapToInt(PatternPlannerTypesTest::count).sum();
     }
 }

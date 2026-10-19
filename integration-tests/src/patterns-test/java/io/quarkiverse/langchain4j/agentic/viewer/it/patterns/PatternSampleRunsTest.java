@@ -83,6 +83,13 @@ class PatternSampleRunsTest {
     }
 
     @Test
+    void featureDelivery() throws Exception {
+        // a Dev UI run without the Dev UI listener: the human step is called as is (HumanInput approves)
+        assertEquals("Released: Exports now stream (review: APPROVE)",
+                run("FeatureDelivery", Map.of("feature", "CSV export", "repository", "acme/billing")));
+    }
+
+    @Test
     void voting() throws Exception {
         assertEquals("APPROVE", run("ReviewPanel", Map.of("change", "Cache the invoices")));
     }

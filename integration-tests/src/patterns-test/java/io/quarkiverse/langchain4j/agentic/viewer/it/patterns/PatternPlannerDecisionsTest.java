@@ -5,10 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import org.jboss.jandex.Index;
 import org.junit.jupiter.api.AfterAll;
@@ -18,6 +20,8 @@ import org.junit.jupiter.api.Test;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotationScanner;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.RootSystemDetector;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.TopologyBuilder;
+import io.quarkiverse.langchain4j.agentic.viewer.it.samples.HumanInput;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AwaitingHumanInput;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.PlannerDecision;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.BdiAdapter;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.BlackboardAdapter;
@@ -139,5 +143,40 @@ class PatternPlannerDecisionsTest {
         assertEquals(List.of("APPROVE", "REJECT", "APPROVE"), done.extras().get("votes"));
         assertEquals("APPROVE", done.extras().get("result"));
         assertEquals(3, ((List<?>) done.extras().get("voted")).size());
+    }
+
+    @Test
+    void plannersNestedInWorkflows() throws Exception {
+        AgenticSystem system = systems.stream().filter(s -> s.name().equals("FeatureDelivery")).findFirst().orElseThrow();
+        // the Dev UI answers the product owner's step
+        runManager.addListener(event -> {
+            if (event instanceof AwaitingHumanInput waiting) {
+                runManager.provideHumanInput(waiting.runId(), HumanInput.DEFAULT_ANSWER);
+            }
+        });
+        Run run = runManager.run(runManager.startRun(system.id(), Map.of("feature", "CSV export", "repository", "acme/billing")))
+                .orElseThrow();
+        run.completion().get(30, TimeUnit.SECONDS);
+        assertEquals(RunStatus.SUCCEEDED, run.status(), () -> run.events().toString());
+        assertEquals("Released: Exports now stream (review: APPROVE)", run.output());
+
+        List<PlannerDecision> decisions = run.events().stream().filter(PlannerDecision.class::isInstance)
+                .map(PlannerDecision.class::cast).toList();
+        Set<String> nodes = nodeIds(system.root());
+        assertTrue(decisions.stream().allMatch(d -> nodes.contains(d.nodeId()) && nodes.containsAll(d.selectedNodeIds())),
+                "node ids from the topology " + decisions);
+        // per planner node: its pattern, then its decisions (the voting planner runs once per loop iteration)
+        Map<String, List<String>> byPlanner = decisions.stream().collect(Collectors.groupingBy(
+                d -> d.nodeId().substring(d.nodeId().lastIndexOf('/') + 1) + " " + d.extras().get("pattern"),
+                LinkedHashMap::new, Collectors.mapping(d -> d.extras().get("action") + " " + d.selectedNodeIds().stream()
+                        .map(id -> id.substring(id.lastIndexOf('/') + 1)).toList(), Collectors.toList())));
+        String voters = "call [ReadabilityReviewer, SecurityAuditor, PerformanceAuditor]";
+        assertEquals(Map.of(
+                "SpecPlanner GOAP", List.of("call [RequirementsWriter]", "call [RiskAssessor]", "call [SpecWriter]", "done []"),
+                "CodeReview VOTING", List.of(voters, "doneWithResult []", voters, "doneWithResult []"),
+                "ReleaseTrain BDI", List.of("call [RolloutPlanner]", "call [ChangelogWriter]", "call [ReleaseAnnouncer]", "done []")),
+                byPlanner);
+        assertEquals(List.of("REJECT", "APPROVE"), decisions.stream().filter(d -> "doneWithResult".equals(d.extras().get("action")))
+                .map(d -> d.extras().get("result")).toList(), "the reviewers reject version 1, approve version 2");
     }
 }

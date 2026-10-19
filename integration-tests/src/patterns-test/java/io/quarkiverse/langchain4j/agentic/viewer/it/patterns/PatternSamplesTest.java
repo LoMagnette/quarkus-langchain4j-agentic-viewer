@@ -6,10 +6,12 @@ import java.util.List;
 
 import jakarta.inject.Inject;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import io.quarkiverse.langchain4j.agentic.viewer.it.fake.ScriptedChatModel;
+import io.quarkiverse.langchain4j.agentic.viewer.it.samples.HumanInput;
 import io.quarkus.test.junit.QuarkusTest;
 
 /**
@@ -39,9 +41,17 @@ class PatternSamplesTest {
     @Inject
     ReviewPanel reviewPanel;
 
+    @Inject
+    FeatureDelivery featureDelivery;
+
     @BeforeEach
     void clearRequests() {
         model.clearRequests();
+    }
+
+    @AfterEach
+    void resetHumanInput() {
+        HumanInput.reset();
     }
 
     @Test
@@ -92,6 +102,47 @@ class PatternSamplesTest {
     void votingTakesTheMajority() {
         assertEquals("APPROVE", reviewPanel.review("Cache the invoices"));
         assertEquals(3, prompts().size());
+    }
+
+    @Test
+    void featureDeliveryNestsThePlannersInTheWorkflows() {
+        assertEquals("Released: Exports now stream (review: APPROVE)", featureDelivery.deliver("CSV export", "acme/billing"));
+
+        List<String> steps = prompts().stream().map(PatternSamplesTest::deliveryStep).toList();
+        // discovery in parallel, the scout asking the model twice (tool call, then the answer from its result)
+        assertEquals(List.of("interview", "scout", "scout"), steps.subList(0, 3).stream().sorted().toList(), steps::toString);
+        // GOAP: only what the spec needs (no estimate, no sketch); votes in parallel, rejected then approved; BDI
+        assertEquals(List.of("requirements", "risks", "spec", "implement"), steps.subList(3, 7), steps::toString);
+        assertEquals(List.of("performance", "readability", "security"), steps.subList(7, 10).stream().sorted().toList());
+        assertEquals("refactor", steps.get(10));
+        assertEquals(List.of("performance", "readability", "security"), steps.subList(11, 14).stream().sorted().toList());
+        assertEquals(List.of("rollout", "changelog", "announce"), steps.subList(14, steps.size()), steps::toString);
+        assertEquals(List.of("Ship Streaming export (v2)?"), HumanInput.prompts(), "the product owner signs off the approved code");
+    }
+
+    @Test
+    void featureDeliveryIsPostponedWithoutTheProductOwnersYes() {
+        HumanInput.answerWith(prompt -> "No, wait for the audit");
+        assertEquals("Postponed: No, wait for the audit (review: APPROVE)", featureDelivery.deliver("CSV export", "acme/billing"));
+        List<String> steps = prompts().stream().map(PatternSamplesTest::deliveryStep).toList();
+        assertEquals("postpone", steps.get(steps.size() - 1), steps::toString);
+        assertEquals(false, steps.contains("rollout"), "the release train does not run: " + steps);
+    }
+
+    private static String deliveryStep(String prompt) {
+        for (String[] step : new String[][] { { "Interview users", "interview" }, { "Scout the code base", "scout" },
+                { "Write the requirements", "requirements" }, { "Assess the delivery risks", "risks" },
+                { "Estimate the effort", "estimate" }, { "Sketch the screens", "sketch" }, { "Write the spec", "spec" },
+                { "Implement this spec", "implement" }, { "readability of the code", "readability" },
+                { "security of the code", "security" }, { "performance of the code", "performance" },
+                { "Refactor the code", "refactor" }, { "Plan a staged rollout", "rollout" },
+                { "Write the changelog", "changelog" }, { "Announce the feature release", "announce" },
+                { "is postponed", "postpone" } }) {
+            if (prompt.contains(step[0])) {
+                return step[1];
+            }
+        }
+        return prompt;
     }
 
     private List<String> prompts() {

@@ -26,4 +26,7 @@ public class PatternSampleWorkflows {
 
     @Inject
     ReviewPanel reviewPanel;
+
+    @Inject
+    FeatureDelivery featureDelivery;
 }
