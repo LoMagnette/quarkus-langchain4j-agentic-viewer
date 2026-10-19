@@ -6,14 +6,17 @@ import { devuiState } from 'devui-state';
 import { KIND_LABELS, KIND_STYLES } from './qwc-agentic-graph.js';
 import { shortRef } from './qwc-agentic-run-model.js';
 
-/** Display names of the langchain4j-agentic-patterns planners. */
 /** What a piece of code is for its node. */
 const CODE_ROLES = {
     AGENT: 'Agent', OUTPUT: '@Output', PLANNER_SUPPLIER: 'Planner supplier', EXIT_CONDITION: 'Exit condition',
     ACTIVATION_CONDITION: 'Activation condition', SYSTEM_MESSAGE: 'System message', USER_MESSAGE: 'User message',
     TOOL: 'Tool', CALL_SITE: 'Built at',
 };
-const PATTERN_LABELS = { GOAP: 'goal-oriented (GOAP)', P2P: 'peer-to-peer', BLACKBOARD: 'blackboard' };
+/** Display names of the langchain4j-agentic-patterns planners. */
+const PATTERN_LABELS = {
+    GOAP: 'goal-oriented (GOAP)', P2P: 'peer-to-peer', BLACKBOARD: 'blackboard', BDI: 'belief-desire-intention (BDI)',
+    DEBATE: 'debate', VOTING: 'voting',
+};
 
 /**
  * Details of one topology node (an AgentNode of the AgenticSystem): what the agent is and does, without opening the
@@ -130,6 +133,13 @@ export class QwcAgenticNodeDetails extends LitElement {
         ul.warnings li.hint {
             color: var(--lumo-secondary-text-color);
         }
+        ol.desires {
+            margin: 0;
+            padding-left: var(--lumo-space-m);
+            display: flex;
+            flex-direction: column;
+            gap: var(--lumo-space-xs);
+        }
         ul.code {
             margin: 0;
             padding: 0;
@@ -210,11 +220,41 @@ export class QwcAgenticNodeDetails extends LitElement {
                         ? shortRef(node.plannerInfo.plannerClass) : this._none()}</span>${node.plannerInfo.patternType
                         && node.plannerInfo.patternType !== 'CUSTOM' ? html` · ${PATTERN_LABELS[node.plannerInfo.patternType]
                         ?? node.plannerInfo.patternType} pattern` : nothing}${node.plannerInfo.extras?.supplier
-                        ? html`<div class="muted">from ${shortRef(node.plannerInfo.extras.supplier)}</div>` : nothing}</dd>` : nothing}
+                        ? html`<div class="muted">from ${shortRef(node.plannerInfo.extras.supplier)}</div>` : nothing}</dd>
+                    ${this._renderPatternRoles(node)}` : nothing}
             </dl>
             ${node.kind === 'AI_AGENT' ? this._renderAiDetails(node.aiDetails) : nothing}
             ${node.remoteDetails ? this._renderRemoteDetails(node.kind, node.remoteDetails) : nothing}
             ${this._renderCode()}`;
+    }
+
+    /** What the sub-agents of a BDI, debate or voting planner are for it. */
+    _renderPatternRoles(node) {
+        const name = id => node.children.find(child => child.id === id)?.name ?? id;
+        const names = children => children.map(child => child.name).join(', ');
+        switch (node.plannerInfo.patternType) {
+            case 'BDI':
+                return html`<dt>Desires</dt><dd data-field="desires">${node.plannerInfo.desires?.length
+                    ? html`<ol class="desires">${node.plannerInfo.desires.map(desire => html`<li>
+                        <strong>${desire.name}</strong>${desire.priority != null ? html` · priority ${desire.priority}` : nothing}
+                        <div class="muted">${desire.achievableKey ? html`achievable with ${this._chips([desire.achievableKey])}`
+                            : 'achievable: custom condition'} · ${desire.satisfiedKey
+                            ? html`satisfied by ${this._chips([desire.satisfiedKey])}` : 'satisfied: custom condition'}</div>
+                        <div>${desire.agents.map(name).join(' → ')}</div></li>`)}</ol>`
+                    : html`<span class="muted">unknown: only desires declared with literals in the planner supplier are
+                        read (a builder system's planner keeps them private)</span>`}</dd>`;
+            case 'DEBATE':
+                return node.children.length >= 3 ? html`
+                    <dt>Debaters</dt><dd data-field="debaters">${names(node.children.slice(0, -1))}</dd>
+                    <dt>Judge</dt><dd data-field="judge">${node.children[node.children.length - 1].name}
+                        <div class="muted">the last sub-agent; called once the debaters agree or after the last round</div></dd>`
+                    : nothing;
+            case 'VOTING':
+                return html`<dt>Voters</dt><dd data-field="voters">${names(node.children)}
+                    <div class="muted">all called at once; their outputs are aggregated by the planner's strategy</div></dd>`;
+            default:
+                return nothing;
+        }
     }
 
     _renderWarnings(node) {

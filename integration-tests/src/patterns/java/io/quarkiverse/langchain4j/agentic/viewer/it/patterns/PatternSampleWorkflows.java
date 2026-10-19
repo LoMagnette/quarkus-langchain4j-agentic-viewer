@@ -17,4 +17,13 @@ public class PatternSampleWorkflows {
 
     @Inject
     IncidentResponder incidentResponder;
+
+    @Inject
+    ReleaseCaptain releaseCaptain;
+
+    @Inject
+    DesignDebate designDebate;
+
+    @Inject
+    ReviewPanel reviewPanel;
 }

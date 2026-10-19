@@ -524,6 +524,76 @@ public class AgenticSystemsPageUiTest {
         assertEquals(List.of(2, 1), counts);
     }
 
+    /** A BDI, a debate and a voting planner (langchain4j-agentic-patterns), as the topology gives them. */
+    private static final String PATTERN_SYSTEM = "const agent = (id, outputKey) => ({ id, name: id.split('/').pop(), kind: 'AI_AGENT', "
+            + "outputKey, children: [] }); "
+            + "const planner = (id, patternType, children, desires) => ({ id, name: id.split('/').pop(), kind: 'PLANNER', "
+            + "outputKey: 'out', plannerInfo: { patternType, extras: {}, desires }, children }); "
+            + "const system = { id: 'r', name: 'r', root: { id: 'r', name: 'r', kind: 'SEQUENCE', children: [ "
+            + "planner('r/bdi', 'BDI', [agent('r/bdi/fixer', 'patch'), agent('r/bdi/writer', 'notes')], ["
+            + "{ name: 'announce', priority: 5, achievableKey: 'patch', satisfiedKey: 'notes', agents: ['r/bdi/writer'] }, "
+            + "{ name: 'fix', priority: 10, achievableKey: 'bug', satisfiedKey: 'patch', agents: ['r/bdi/fixer'] }]), "
+            + "planner('r/debate', 'DEBATE', [agent('r/debate/pro'), agent('r/debate/con'), agent('r/debate/judge')]), "
+            + "planner('r/vote', 'VOTING', [agent('r/vote/a', 'voteA'), agent('r/vote/b', 'voteB')]) ] } }; ";
+
+    @Test
+    void bdiDebateAndVotingPlannersShowTheRolesOfTheirAgents() {
+        openSystem();
+        Object graph = page.evaluate("async () => { " + PATTERN_SYSTEM
+                + "const graph = document.createElement('qwc-agentic-graph'); "
+                + "graph.style.cssText = 'position: fixed; top: 0; left: 0; width: 900px; height: 700px'; "
+                + "document.body.appendChild(graph); graph.system = system; "
+                + "for (let i = 0; i < 200 && !graph.layoutDone; i++) { await new Promise(r => setTimeout(r, 50)); } "
+                + "if (!graph._cy) { return 'graph failed'; } "
+                + "const edge = (s, t) => graph._cy.edges(`[source = \"${s}\"][target = \"${t}\"]`).map(e => e.classes()[0]).join(); "
+                + "const result = { "
+                // desires, highest priority first, linked to their agents
+                + "desires: graph._cy.nodes('.desire').map(n => n.data('label')), "
+                + "fix: edge('r/bdi::desire::1', 'r/bdi/fixer'), announce: edge('r/bdi::desire::0', 'r/bdi/writer'), "
+                // debaters between a fork and a join, a back-edge for the next round, the judge after them
+                + "round: edge('r/debate::join', 'r/debate::fork'), judge: edge('r/debate::join', 'r/debate/judge'), "
+                + "debater: edge('r/debate::fork', 'r/debate/pro'), "
+                // voters into the tally
+                + "tally: graph._cy.getElementById('r/vote::tally').data('label'), vote: edge('r/vote/b', 'r/vote::tally') }; "
+                + "graph.remove(); return result; }");
+        assertEquals(Map.of("desires", List.of("fix · priority 10", "announce · priority 5"), "fix", "depends",
+                "announce", "depends", "round", "back", "judge", "sequence", "debater", "fork", "tally", "vote · out",
+                "vote", "writes"), graph);
+
+        // the node details tell the roles
+        Object details = page.evaluate("async () => { " + PATTERN_SYSTEM
+                + "const details = document.createElement('qwc-agentic-node-details'); document.body.appendChild(details); "
+                + "const field = async (node, name) => { details.node = node; await details.updateComplete; "
+                + "return details.shadowRoot.querySelector(`[data-field=${name}]`).textContent.replace(/\\s+/g, ' ').trim(); }; "
+                + "const [bdi, debate, vote] = system.root.children; "
+                + "const result = { planner: await field(bdi, 'planner'), desires: await field(bdi, 'desires'), "
+                + "debaters: await field(debate, 'debaters'), judge: await field(debate, 'judge'), "
+                + "voters: await field(vote, 'voters') }; details.remove(); return result; }");
+        Map<?, ?> fields = (Map<?, ?>) details;
+        assertTrue(((String) fields.get("planner")).contains("belief-desire-intention (BDI) pattern"), fields::toString);
+        assertTrue(((String) fields.get("desires")).startsWith("announce · priority 5 achievable with patch · satisfied by notes"),
+                fields::toString);
+        assertEquals("pro, con", fields.get("debaters"));
+        assertTrue(((String) fields.get("judge")).startsWith("judge the last sub-agent"), fields::toString);
+        assertTrue(((String) fields.get("voters")).startsWith("a, b all called at once"), fields::toString);
+
+        // the timeline tells the desire, the round or the judge, the votes
+        Object decisions = page.evaluate("async () => { " + PATTERN_SYSTEM
+                + "const { buildTimeline } = await import(location.pathname.replace(/[^/]*$/, '') + 'qwc-agentic-timeline.js'); "
+                + "const decision = (nodeId, selectedNodeIds, extras, done = false) => ({ type: 'PlannerDecision', timestamp: 1, "
+                + "nodeId, invocationId: null, selectedNodeIds, done, extras }); "
+                + "const { rows } = buildTimeline([{ type: 'RunStarted', timestamp: 0, inputs: { bug: 'b' } }, "
+                + "decision('r/bdi', ['r/bdi/fixer'], { pattern: 'BDI', invocations: 1 }), "
+                + "{ type: 'ScopeStateChanged', timestamp: 1, key: 'patch' }, "
+                + "decision('r/bdi', ['r/bdi/writer'], { pattern: 'BDI', invocations: 2 }), "
+                + "decision('r/debate', ['r/debate/pro', 'r/debate/con'], { pattern: 'DEBATE', round: 1 }), "
+                + "decision('r/debate', ['r/debate/judge'], { pattern: 'DEBATE', round: 2 }), "
+                + "decision('r/vote', [], { pattern: 'VOTING', votes: ['yes', 'no'], action: 'doneWithResult' }, true)], 10, system); "
+                + "return rows.filter(row => row.kind === 'decision').map(row => row.decision); }");
+        assertEquals(List.of("→ fixer · desire: fix", "→ writer · desire: announce", "→ pro, con · round 1",
+                "→ judge · judge after round 2", "votes: yes, no"), decisions);
+    }
+
     @Test
     void theUserZoomIsKeptWhenTheGraphResizes() {
         openSystem();

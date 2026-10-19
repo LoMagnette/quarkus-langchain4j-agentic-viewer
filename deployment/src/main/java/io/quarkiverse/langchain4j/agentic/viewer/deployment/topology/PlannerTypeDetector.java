@@ -17,6 +17,7 @@ import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.PatternType;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.PlannerDesire;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.PlannerInfo;
 
 /**
@@ -30,7 +31,10 @@ public class PlannerTypeDetector {
     static final Map<String, PatternType> PATTERN_PLANNERS = Map.of(
             "dev.langchain4j.agentic.patterns.goap.GoalOrientedPlanner", PatternType.GOAP,
             "dev.langchain4j.agentic.patterns.p2p.P2PPlanner", PatternType.P2P,
-            "dev.langchain4j.agentic.patterns.blackboard.BlackboardPlanner", PatternType.BLACKBOARD);
+            "dev.langchain4j.agentic.patterns.blackboard.BlackboardPlanner", PatternType.BLACKBOARD,
+            "dev.langchain4j.agentic.patterns.bdi.BDIPlanner", PatternType.BDI,
+            "dev.langchain4j.agentic.patterns.debate.DebatePlanner", PatternType.DEBATE,
+            "dev.langchain4j.agentic.patterns.voting.VotingPlanner", PatternType.VOTING);
     private static final DotName PLANNER = DotName.createSimple("dev.langchain4j.agentic.planner.Planner");
 
     private final Function<String, InputStream> classBytes;
@@ -84,40 +88,71 @@ public class PlannerTypeDetector {
         return new PlannerInfo(plannerClass, pattern == null ? PatternType.CUSTOM : pattern, extras);
     }
 
+    /**
+     * @param supplier {@code Class#method} of the {@code @PlannerSupplier} of a BDI planner
+     * @param nodeIds the node id of a sub-agent of the planner by its class name, null when it is none
+     * @return the desires it declares literally, null when unknown (DesireReader) or when a desire names an agent
+     *         that is no sub-agent of the planner (langchain4j rejects it)
+     */
+    public List<PlannerDesire> desires(String supplier, Function<String, String> nodeIds) {
+        DesireReader reader = new DesireReader();
+        List<DesireReader.RawDesire> raw = supplier != null && readSupplier(supplier, reader) ? reader.desires() : null;
+        if (raw == null) {
+            return null;
+        }
+        List<PlannerDesire> desires = new ArrayList<>();
+        for (DesireReader.RawDesire desire : raw) {
+            List<String> agents = desire.agentClasses().stream().map(nodeIds).toList();
+            if (agents.contains(null)) {
+                return null;
+            }
+            desires.add(new PlannerDesire(desire.name(), desire.priority(), desire.achievableKey(), desire.satisfiedKey(),
+                    agents));
+        }
+        return desires;
+    }
+
     private String plannerClass(String supplier) {
+        List<String> constructed = new ArrayList<>();
+        boolean read = readSupplier(supplier, new MethodVisitor(Opcodes.ASM9) {
+            @Override
+            public void visitTypeInsn(int opcode, String type) {
+                if (opcode == Opcodes.NEW) {
+                    constructed.add(type.replace('/', '.'));
+                }
+            }
+        });
+        return read ? constructed.stream().filter(this::isPlannerOrPattern).findFirst().orElse(null) : null;
+    }
+
+    /**
+     * Visits the body of a supplier method: no argument, named after {@code Class#method}.
+     *
+     * @return false when the class could not be read
+     */
+    private boolean readSupplier(String supplier, MethodVisitor body) {
         int hash = supplier.indexOf('#');
         if (hash < 0) {
-            return null;
+            return false;
         }
         String className = supplier.substring(0, hash);
         String methodName = supplier.substring(hash + 1);
-        List<String> constructed = new ArrayList<>();
         try (InputStream bytes = classBytes.apply(className)) {
             if (bytes == null) {
-                return null;
+                return false;
             }
             new ClassReader(bytes).accept(new ClassVisitor(Opcodes.ASM9) {
                 @Override
                 public MethodVisitor visitMethod(int access, String name, String descriptor, String signature,
                         String[] exceptions) {
                     // the supplier takes no argument and returns a planner
-                    if (!name.equals(methodName) || !descriptor.startsWith("()")) {
-                        return null;
-                    }
-                    return new MethodVisitor(Opcodes.ASM9) {
-                        @Override
-                        public void visitTypeInsn(int opcode, String type) {
-                            if (opcode == Opcodes.NEW) {
-                                constructed.add(type.replace('/', '.'));
-                            }
-                        }
-                    };
+                    return name.equals(methodName) && descriptor.startsWith("()") ? body : null;
                 }
             }, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+            return true;
         } catch (IOException | RuntimeException e) {
-            return null;
+            return false;
         }
-        return constructed.stream().filter(this::isPlannerOrPattern).findFirst().orElse(null);
     }
 
     private boolean isPlannerOrPattern(String className) {

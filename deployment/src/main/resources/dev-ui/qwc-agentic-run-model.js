@@ -25,6 +25,56 @@ export function simpleClass(name) {
     return name ? name.substring(name.lastIndexOf('.') + 1) : 'error';
 }
 
+/** A value of a run in a few characters, for a one-line note. */
+function brief(value, max = 24) {
+    const text = typeof value === 'string' ? value : JSON.stringify(value) ?? String(value);
+    return text.length > max ? `${text.substring(0, max - 1)}…` : text;
+}
+
+/**
+ * The desire of a BDI planner a step pursues, as far as the desires its supplier declares tell (PlannerInfo.desires):
+ * among the desires whose intention has the chosen agent, the one of highest priority that is achievable and not
+ * satisfied with the keys written so far (a custom condition counts as possible).
+ *
+ * @param written the AgenticScope keys written so far (a Set or a Map by key)
+ * @return the desire's name, undefined when the desires are unknown
+ */
+export function pursuedDesire(plannerNode, agentId, written) {
+    const desires = (plannerNode?.plannerInfo?.desires ?? []).filter(desire => desire.agents.includes(agentId));
+    const possible = desires.filter(desire => (!desire.achievableKey || written.has(desire.achievableKey))
+        && (!desire.satisfiedKey || !written.has(desire.satisfiedKey)));
+    return [...(possible.length ? possible : desires)].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))[0]?.name;
+}
+
+/**
+ * What a decision of a BDI, debate or voting planner adds to its step: the desire pursued, the round or the judge,
+ * the votes. Empty for the other planners.
+ *
+ * @param plannerNode the planner's topology node, undefined when unknown
+ * @param written the AgenticScope keys written so far (a Set or a Map by key)
+ */
+export function patternNote(event, plannerNode, written) {
+    const extras = event.extras ?? {};
+    const selected = event.selectedNodeIds ?? [];
+    switch (extras.pattern) {
+        case 'BDI': {
+            const desire = selected.map(id => pursuedDesire(plannerNode, id, written)).find(Boolean);
+            return desire ? `desire: ${desire}` : '';
+        }
+        case 'DEBATE': {
+            const round = extras.round != null ? `round ${extras.round}` : '';
+            const judge = plannerNode?.children?.length >= 3 ? plannerNode.children[plannerNode.children.length - 1].id : undefined;
+            return event.done ? (round ? `after ${round}` : '')
+                : judge && selected.includes(judge) ? `judge${round ? ` after ${round}` : ''}` : round;
+        }
+        case 'VOTING':
+            return event.done && Array.isArray(extras.votes) ? `votes: ${extras.votes.map(vote => brief(vote, 16)).join(', ')}`
+                : !event.done && extras.voters != null ? `${extras.voters} voters` : '';
+        default:
+            return '';
+    }
+}
+
 /** Why a peer-to-peer planner stopped. */
 export const TERMINATIONS = {
     EXIT_CONDITION: 'exit condition met',
@@ -102,6 +152,8 @@ export class LiveRun {
         this.calls = new Map();
         /** decisions of each supervisor or planner, in order: node id -> [{ selected, done, action }] */
         this.decisions = new Map();
+        /** BDI, debate and voting planners: node id -> what their last decision tells (patternNote) */
+        this.notes = new Map();
     }
 
     /** @return the AwaitingHumanInput event of the oldest step waiting for an answer (the one provideHumanInput answers) */
@@ -123,6 +175,10 @@ export class LiveRun {
 
     apply(event) {
         switch (event.type) {
+            case 'RunStarted':
+                // the inputs are in the scope from the start (a BDI desire may be achievable with one)
+                Object.keys(event.inputs ?? {}).forEach(key => this.written.has(key) || this.written.set(key, 0));
+                break;
             case 'AgentStarted': {
                 this.running.set(event.nodeId, (this.running.get(event.nodeId) ?? 0) + 1);
                 this.graph?.highlight(event.nodeId, 'running');
@@ -246,6 +302,18 @@ export class LiveRun {
                         }
                     });
                 }
+                if (['BDI', 'DEBATE', 'VOTING'].includes(event.extras?.pattern)) {
+                    const planner = this.nodes.get(event.nodeId);
+                    let note = patternNote(event, planner, this.written);
+                    if (event.done && event.extras.pattern === 'BDI') {
+                        // the desires satisfied in the end, among those with a known satisfaction key
+                        const known = (planner?.plannerInfo?.desires ?? []).filter(desire => desire.satisfiedKey);
+                        note = known.length ? `${known.filter(desire => this.written.has(desire.satisfiedKey)).length}/${known.length} desires satisfied` : '';
+                    } else if (event.done && event.extras.pattern === 'VOTING' && event.extras.result !== undefined) {
+                        note = `${event.extras.votes?.length ?? '?'} votes → ${brief(event.extras.result)}`;
+                    }
+                    this.notes.set(event.nodeId, note);
+                }
                 // the path taken, step by step: each chosen sub-agent gets the numbers of the steps that chose it
                 const steps = this.decisions.get(event.nodeId) ?? [];
                 steps.push({ selected: event.selectedNodeIds ?? [], done: event.done, action: event.extras?.action });
@@ -310,6 +378,9 @@ export class LiveRun {
             parts.push(peer.termination ? `stopped: ${TERMINATIONS[peer.termination] ?? peer.termination}`
                 : `invocations ${peer.invocations}${peer.max != null ? `/${peer.max}` : ''}`
                     + (peer.goalReached === false ? ' · goal not reached' : ''));
+        }
+        if (this.notes.get(nodeId)) {
+            parts.push(this.notes.get(nodeId));
         }
         if (this.planned.has(nodeId) && (this.running.get(nodeId) ?? 0) === 0 && !this.stats.has(nodeId)) {
             parts.push(`planned ${this.planned.get(nodeId)}`);

@@ -23,7 +23,8 @@ class PatternAdaptersSelectionTest {
 
     @Test
     void allWithTheModule() {
-        assertEquals(List.of(PATTERNS + "BlackboardAdapter", PATTERNS + "GoapAdapter", PATTERNS + "P2PAdapter"),
+        assertEquals(List.of(PATTERNS + "BdiAdapter", PATTERNS + "BlackboardAdapter", PATTERNS + "DebateAdapter",
+                PATTERNS + "GoapAdapter", PATTERNS + "P2PAdapter", PATTERNS + "VotingAdapter"),
                 AgenticViewerProcessor.patternAdapters(className -> className.startsWith("dev.langchain4j.agentic.patterns.")));
     }
 

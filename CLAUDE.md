@@ -7,8 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A Quarkus extension adding an "Agentic Systems" page to the Dev UI for LangChain4j agentic systems: it finds the
 declarative systems at build time and shows them as interactive graphs (structure, data flow, node details), runs them
 from the Dev UI with live highlighting, a timeline, the AgenticScope state and tool calls, answers `@HumanInTheLoop`
-steps, shows supervisor and planner decisions step by step, and has dedicated views for the GOAP, peer-to-peer and
-blackboard planners of `langchain4j-agentic-patterns`. Dev mode only: nothing of it reaches prod or native builds.
+steps, shows supervisor and planner decisions step by step, and has dedicated views for the GOAP, peer-to-peer,
+blackboard, BDI, debate and voting planners of `langchain4j-agentic-patterns`. Dev mode only: nothing of it reaches
+prod or native builds.
 User documentation: `docs/modules/ROOT/pages/index.adoc`.
 
 ## Build Commands
@@ -176,7 +177,12 @@ their planner class is present (`AgenticViewerProcessor.patternAdapters`, names 
 without the module. Per decision an adapter gives an `Insight` (extras + named agent lists mapped to node ids):
 `GoapAdapter` runs the module's own `GoalOrientedSearchGraph` (`previewGoalPath`, `extras.path`); `P2PAdapter` tells
 invocations, ready agents and the termination reason; `BlackboardAdapter` the candidates, strategy, goal status and
-termination (private planner state read by reflection).
+termination (private planner state read by reflection). BDI, debate and voting (TASK-78.2) use public API only:
+`BdiAdapter` the invocations, `DebateAdapter` the round and the debaters' messages (`executionState`), `VotingAdapter`
+the votes (last invocation of each voter in the scope); the UI tells the BDI desire of a step (`pursuedDesire`, from
+`PlannerInfo.desires`, read at build time from literal `Desire.of(...)` calls of the `@PlannerSupplier` by
+`deployment/.../topology/DesireReader`) and the debate judge (the last sub-agent). quarkus-langchain4j rejects at build
+time an agent parameter no agent writes, so a debater cannot read the planner's `debateContext` as a parameter.
 
 Topology contributor SPI (`runtime/.../spi/AgenticTopologyContributor`): implementations are found with Jandex at build
 time, created in runtime-dev (`TopologyContributions`, no-arg constructor) and matched to PLANNER nodes by the class of

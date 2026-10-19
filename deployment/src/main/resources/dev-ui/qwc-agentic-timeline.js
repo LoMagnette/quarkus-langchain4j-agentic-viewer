@@ -1,5 +1,5 @@
 import { LitElement, html, css, nothing } from 'lit';
-import { formatDuration, TERMINATIONS } from './qwc-agentic-run-model.js';
+import { formatDuration, indexNodes, patternNote, TERMINATIONS } from './qwc-agentic-run-model.js';
 import { KIND_LABELS, KIND_STYLES } from './qwc-agentic-graph.js';
 import './qwc-agentic-value.js';
 
@@ -9,9 +9,10 @@ import './qwc-agentic-value.js';
  * rows under the invocation that made them, and planner decisions numbered steps under the planner's invocation.
  *
  * @param now time to use as the end of what is still running (ms since the epoch)
+ * @param system the run's system, for what a BDI or debate planner's step means (its desires, its judge); optional
  * @return {{rows: Array, start: number, end: number}} rows depth-first, start and end of the run (ms since the epoch)
  */
-export function buildTimeline(events, now = Date.now()) {
+export function buildTimeline(events, now = Date.now(), system = undefined) {
     const runStart = events.find(e => e.type === 'RunStarted')?.timestamp ?? events[0]?.timestamp ?? now;
     const runEnd = events.find(e => e.type === 'RunFinished' || e.type === 'RunFailed')?.timestamp;
     const invocations = new Map();
@@ -21,8 +22,14 @@ export function buildTimeline(events, now = Date.now()) {
     // agent names by node, to name the agents a planner chose (they start after the decision)
     const agentNames = new Map(events.filter(e => e.type === 'AgentStarted').map(e => [e.nodeId, e.agentName]));
     const agentName = id => agentNames.get(id) ?? id.substring(id.lastIndexOf('/') + 1).replace(/~\d+$/, '');
+    const nodes = indexNodes(system?.root);
+    // the scope keys written so far, inputs included (what a BDI step pursues depends on them)
+    const written = new Set(Object.keys(events.find(e => e.type === 'RunStarted')?.inputs ?? {}));
     for (const event of events) {
         switch (event.type) {
+            case 'ScopeStateChanged':
+                written.add(event.key);
+                break;
             case 'AgentStarted': {
                 const invocation = {
                     kind: 'agent', id: event.invocationId, nodeId: event.nodeId, name: event.agentName,
@@ -70,6 +77,7 @@ export function buildTimeline(events, now = Date.now()) {
             case 'PlannerDecision': {
                 // numbered steps are the agents chosen; ending the workflow is not a step
                 const chosen = (event.selectedNodeIds ?? []).map(agentName);
+                const note = patternNote(event, nodes.get(event.nodeId), written);
                 const step = (steps.get(event.invocationId) ?? 0) + (chosen.length > 0 ? 1 : 0);
                 steps.set(event.invocationId, step);
                 const row = {
@@ -80,7 +88,8 @@ export function buildTimeline(events, now = Date.now()) {
                         // a blackboard step: the candidates it picked from, and how
                         + (event.extras?.candidates ? ` of ${event.extras.candidates.map(agentName).join(', ')}` : '')
                         + (event.extras?.strategy ? ` · ${event.extras.strategy}` : '')
-                        : TERMINATIONS[event.extras?.termination],
+                        + (note ? ` · ${note}` : '')
+                        : [TERMINATIONS[event.extras?.termination], note].filter(Boolean).join(' · ') || undefined,
                     start: event.timestamp, end: event.timestamp, duration: 0, status: 'done', children: [],
                 };
                 const planner = invocations.get(event.invocationId);
@@ -294,7 +303,7 @@ export class QwcAgenticTimeline extends LitElement {
     }
 
     render() {
-        const { rows, start, end } = buildTimeline(this.events ?? []);
+        const { rows, start, end } = buildTimeline(this.events ?? [], Date.now(), this.system);
         if (rows.length === 0) {
             return html`<div class="empty">No invocation yet.</div>`;
         }

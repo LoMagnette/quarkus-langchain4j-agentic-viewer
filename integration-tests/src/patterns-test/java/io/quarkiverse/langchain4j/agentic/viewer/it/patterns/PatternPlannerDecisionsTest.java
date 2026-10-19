@@ -19,10 +19,13 @@ import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotati
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.RootSystemDetector;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.TopologyBuilder;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.PlannerDecision;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.BdiAdapter;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.BlackboardAdapter;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.DebateAdapter;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.GoapAdapter;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.P2PAdapter;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.PatternAdapters;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.VotingAdapter;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.CdiRunInvoker;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.DevUiAgentListener;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RootListeners;
@@ -34,7 +37,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
 import io.quarkus.test.junit.QuarkusTest;
 
 /**
- * The planners of langchain4j-agentic-patterns (GOAP, P2P, blackboard) report their decisions in Dev UI runs (T3.2)
+ * The planners of langchain4j-agentic-patterns (GOAP, P2P, blackboard, BDI, debate, voting) report their decisions in Dev UI runs (T3.2)
  * and still give the same results.
  */
 @QuarkusTest
@@ -51,7 +54,8 @@ class PatternPlannerDecisionsTest {
         runManager = new RunManager(id -> systems.stream().filter(s -> s.id().equals(id)).findFirst(),
                 new CdiRunInvoker());
         RootListeners.attach(systems, new DevUiAgentListener(runManager,
-                new PatternAdapters(List.of(new GoapAdapter(), new P2PAdapter(), new BlackboardAdapter()))));
+                new PatternAdapters(List.of(new GoapAdapter(), new P2PAdapter(), new BlackboardAdapter(),
+                        new BdiAdapter(), new DebateAdapter(), new VotingAdapter()))));
     }
 
     @AfterAll
@@ -66,8 +70,8 @@ class PatternPlannerDecisionsTest {
         return ids;
     }
 
-    private static void assertDecisions(String name, Map<String, Object> inputs, String output, String pattern,
-            List<String> expected) throws Exception {
+    private static List<PlannerDecision> assertDecisions(String name, Map<String, Object> inputs, String output,
+            String pattern, List<String> expected) throws Exception {
         AgenticSystem system = systems.stream().filter(s -> s.name().equals(name)).findFirst().orElseThrow();
         Run run = runManager.run(runManager.startRun(system.id(), inputs)).orElseThrow();
         run.completion().get(30, TimeUnit.SECONDS);
@@ -84,6 +88,7 @@ class PatternPlannerDecisionsTest {
         assertTrue(decisions.stream().allMatch(d -> nodes.contains(d.nodeId())
                 && nodes.containsAll(d.selectedNodeIds())), name + ": node ids from the topology " + decisions);
         assertTrue(decisions.stream().anyMatch(d -> !d.selectedNodeIds().isEmpty()), name + ": agents chosen");
+        return decisions;
     }
 
     @Test
@@ -105,5 +110,34 @@ class PatternPlannerDecisionsTest {
         assertDecisions("IncidentResponder", Map.of("incident", "Checkout fails since 10:00"),
                 "Bound the order cache to 10,000 entries", "BLACKBOARD", List.of("call [MetricsAnalyzer]", "call [LogAnalyzer]",
                         "call [Diagnoser]", "call [FixProposer]", "done []"));
+    }
+
+    @Test
+    void bdi() throws Exception {
+        List<PlannerDecision> decisions = assertDecisions("ReleaseCaptain", Map.of("bugReport", "Invoice export fails"),
+                "Version 1.2.1 is out: it fixes the invoice export", "BDI",
+                List.of("call [BugFixer]", "call [NotesWriter]", "call [Announcer]", "done []"));
+        // the invocations so far (public executionState): counted when the planner dispatches an agent
+        assertEquals(List.of(1, 2, 3, 3), decisions.stream().map(d -> d.extras().get("invocations")).toList());
+    }
+
+    @Test
+    void debate() throws Exception {
+        List<PlannerDecision> decisions = assertDecisions("DesignDebate", Map.of("proposal", "one queue"),
+                "Adopt one queue per region", "DEBATE", List.of("call [Advocate, Critic]", "call [Advocate, Critic]",
+                        "call [Judge]", "doneWithResult []"));
+        assertEquals(List.of(1, 2, 2, 2), decisions.stream().map(d -> d.extras().get("round")).toList());
+        assertEquals(2, decisions.get(2).extras().get("messages"), "the judge sees both debaters' last messages");
+    }
+
+    @Test
+    void voting() throws Exception {
+        List<PlannerDecision> decisions = assertDecisions("ReviewPanel", Map.of("change", "Cache the invoices"), "APPROVE",
+                "VOTING", List.of("call [StyleReviewer, SecurityReviewer, PerformanceReviewer]", "doneWithResult []"));
+        assertEquals(3, decisions.get(0).extras().get("voters"));
+        PlannerDecision done = decisions.get(1);
+        assertEquals(List.of("APPROVE", "REJECT", "APPROVE"), done.extras().get("votes"));
+        assertEquals("APPROVE", done.extras().get("result"));
+        assertEquals(3, ((List<?>) done.extras().get("voted")).size());
     }
 }

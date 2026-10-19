@@ -103,7 +103,7 @@ public class TopologyBuilder {
                 descriptor.kind() == NodeKind.LOOP && descriptor.loopGuard() != null
                         ? descriptor.loopGuard().withActivation(guard)
                         : guard,
-                plannerInfo(descriptor),
+                plannerInfo(id, tree),
                 descriptor.aiDetails(),
                 descriptor.remoteDetails(),
                 descriptor.code());
@@ -154,12 +154,20 @@ public class TopologyBuilder {
     /**
      * The planner a declarative {@code @PlannerSupplier} creates, as far as its bytecode tells (PlannerTypeDetector).
      */
-    private PlannerInfo plannerInfo(AgentDescriptor descriptor) {
+    private PlannerInfo plannerInfo(String id, AgentTree tree) {
+        AgentDescriptor descriptor = tree.descriptor();
         if (descriptor.kind() != NodeKind.PLANNER) {
             return null;
         }
         if (plannerTypes != null && descriptor.plannerSupplier() != null) {
-            return plannerTypes.detect(descriptor.plannerSupplier());
+            PlannerInfo info = plannerTypes.detect(descriptor.plannerSupplier());
+            if (info.patternType() != PatternType.BDI) {
+                return info;
+            }
+            // a desire names its agents by class: the first sub-agent of that class (langchain4j keeps one per type)
+            Map<String, String> nodeIds = new HashMap<>();
+            childIds(id, tree).forEach((childId, child) -> nodeIds.putIfAbsent(child.agentClass(), childId));
+            return info.withDesires(plannerTypes.desires(descriptor.plannerSupplier(), nodeIds::get));
         }
         return new PlannerInfo(null, PatternType.CUSTOM,
                 descriptor.plannerSupplier() == null ? Map.of() : Map.of("supplier", descriptor.plannerSupplier()));

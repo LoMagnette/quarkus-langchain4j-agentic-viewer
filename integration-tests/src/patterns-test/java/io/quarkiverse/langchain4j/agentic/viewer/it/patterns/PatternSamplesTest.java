@@ -30,6 +30,15 @@ class PatternSamplesTest {
     @Inject
     IncidentResponder incidentResponder;
 
+    @Inject
+    ReleaseCaptain releaseCaptain;
+
+    @Inject
+    DesignDebate designDebate;
+
+    @Inject
+    ReviewPanel reviewPanel;
+
     @BeforeEach
     void clearRequests() {
         model.clearRequests();
@@ -57,6 +66,32 @@ class PatternSamplesTest {
         assertEquals("Bound the order cache to 10,000 entries", incidentResponder.respond("Checkout fails since 10:00"));
         assertEquals(List.of("metrics", "logs", "diagnose", "fix"),
                 prompts().stream().map(PatternSamplesTest::step).toList());
+    }
+
+    @Test
+    void bdiPursuesTheDesiresByPriority() {
+        assertEquals("Version 1.2.1 is out: it fixes the invoice export", releaseCaptain.release("Invoice export fails"));
+        assertEquals(List.of("Write a patch", "Write release notes", "Announce the release"), prompts().stream()
+                .map(p -> p.startsWith("Write a patch") ? "Write a patch" : p.startsWith("Write release notes")
+                        ? "Write release notes" : p.startsWith("Announce the release") ? "Announce the release" : p)
+                .toList());
+    }
+
+    @Test
+    void debateRunsItsRoundsThenTheJudge() {
+        assertEquals("Adopt one queue per region", designDebate.debate("one queue"));
+        List<String> prompts = prompts().stream().map(p -> p.substring(0, p.indexOf(" the proposal"))).toList();
+        assertEquals(5, prompts.size(), "two rounds of two debaters, then the judge: " + prompts);
+        // the debaters of a round run in parallel
+        assertEquals(List.of("Argue against", "Argue for"), prompts.subList(0, 2).stream().sorted().toList());
+        assertEquals(List.of("Argue against", "Argue for"), prompts.subList(2, 4).stream().sorted().toList());
+        assertEquals("Decide on", prompts.get(4));
+    }
+
+    @Test
+    void votingTakesTheMajority() {
+        assertEquals("APPROVE", reviewPanel.review("Cache the invoices"));
+        assertEquals(3, prompts().size());
     }
 
     private List<String> prompts() {

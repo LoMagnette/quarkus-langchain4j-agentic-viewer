@@ -17,7 +17,7 @@ import io.quarkus.devui.tests.DevUIJsonRPCTest;
 import io.quarkus.test.QuarkusDevModeTest;
 
 /**
- * With langchain4j-agentic-patterns on the class path (profile "patterns"), dev mode registers the three pattern
+ * With langchain4j-agentic-patterns on the class path (profile "patterns"), dev mode registers the six pattern
  * adapters and the topology tags the planners (mirror of AgenticSystemsDevModeTest.noPatternAdapterWithoutTheModule).
  */
 public class PatternAdaptersDevModeTest extends DevUIJsonRPCTest {
@@ -38,7 +38,8 @@ public class PatternAdaptersDevModeTest extends DevUIJsonRPCTest {
         }.getBuildTimeData("beans");
         List<String> classes = new ArrayList<>();
         beans.findValues("providerType").forEach(type -> classes.add(type.toString()));
-        for (String adapter : List.of("GoapAdapter", "P2PAdapter", "BlackboardAdapter")) {
+        for (String adapter : List.of("GoapAdapter", "P2PAdapter", "BlackboardAdapter", "BdiAdapter", "DebateAdapter",
+                "VotingAdapter")) {
             assertTrue(classes.stream().anyMatch(type -> type.contains(adapter)), () -> adapter + " in " + classes);
         }
     }

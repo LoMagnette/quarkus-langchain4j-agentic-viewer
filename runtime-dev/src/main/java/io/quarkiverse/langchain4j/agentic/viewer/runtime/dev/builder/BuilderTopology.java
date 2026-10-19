@@ -92,7 +92,10 @@ public final class BuilderTopology {
     private static final Map<String, PatternType> PATTERN_PLANNERS = Map.of(
             "dev.langchain4j.agentic.patterns.goap.GoalOrientedPlanner", PatternType.GOAP,
             "dev.langchain4j.agentic.patterns.p2p.P2PPlanner", PatternType.P2P,
-            "dev.langchain4j.agentic.patterns.blackboard.BlackboardPlanner", PatternType.BLACKBOARD);
+            "dev.langchain4j.agentic.patterns.blackboard.BlackboardPlanner", PatternType.BLACKBOARD,
+            "dev.langchain4j.agentic.patterns.bdi.BDIPlanner", PatternType.BDI,
+            "dev.langchain4j.agentic.patterns.debate.DebatePlanner", PatternType.DEBATE,
+            "dev.langchain4j.agentic.patterns.voting.VotingPlanner", PatternType.VOTING);
 
     private BuilderTopology() {
     }

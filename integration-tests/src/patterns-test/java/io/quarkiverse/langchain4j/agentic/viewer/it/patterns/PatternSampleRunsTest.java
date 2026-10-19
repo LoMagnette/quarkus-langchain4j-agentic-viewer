@@ -70,4 +70,20 @@ class PatternSampleRunsTest {
         assertEquals("Bound the order cache to 10,000 entries",
                 run("IncidentResponder", Map.of("incident", "Checkout fails since 10:00")));
     }
+
+    @Test
+    void bdi() throws Exception {
+        assertEquals("Version 1.2.1 is out: it fixes the invoice export",
+                run("ReleaseCaptain", Map.of("bugReport", "Invoice export fails")));
+    }
+
+    @Test
+    void debate() throws Exception {
+        assertEquals("Adopt one queue per region", run("DesignDebate", Map.of("proposal", "one queue")));
+    }
+
+    @Test
+    void voting() throws Exception {
+        assertEquals("APPROVE", run("ReviewPanel", Map.of("change", "Cache the invoices")));
+    }
 }

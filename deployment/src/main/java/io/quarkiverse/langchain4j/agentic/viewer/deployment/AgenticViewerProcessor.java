@@ -177,7 +177,10 @@ public class AgenticViewerProcessor {
     static final Map<String, String> PATTERN_ADAPTERS = Map.of(
             "dev.langchain4j.agentic.patterns.goap.GoalOrientedPlanner", PATTERNS_PACKAGE + "GoapAdapter",
             "dev.langchain4j.agentic.patterns.p2p.P2PPlanner", PATTERNS_PACKAGE + "P2PAdapter",
-            "dev.langchain4j.agentic.patterns.blackboard.BlackboardPlanner", PATTERNS_PACKAGE + "BlackboardAdapter");
+            "dev.langchain4j.agentic.patterns.blackboard.BlackboardPlanner", PATTERNS_PACKAGE + "BlackboardAdapter",
+            "dev.langchain4j.agentic.patterns.bdi.BDIPlanner", PATTERNS_PACKAGE + "BdiAdapter",
+            "dev.langchain4j.agentic.patterns.debate.DebatePlanner", PATTERNS_PACKAGE + "DebateAdapter",
+            "dev.langchain4j.agentic.patterns.voting.VotingPlanner", PATTERNS_PACKAGE + "VotingAdapter");
 
     /**
      * @param present whether a class is on the application class path

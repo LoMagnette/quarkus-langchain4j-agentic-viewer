@@ -24,6 +24,7 @@ class PatternDetectionTest {
     @Test
     void plannersAreTaggedWithTheirPattern() throws Exception {
         Index index = Index.of(PatternSystems.Goal.class, PatternSystems.Peers.class, PatternSystems.Board.class,
+                PatternSystems.Beliefs.class, PatternSystems.Debate.class, PatternSystems.Vote.class,
                 PatternSystems.Writer.class);
         List<AgenticSystem> systems = new TopologyBuilder(PlannerTypeDetector.of(index, getClass().getClassLoader()))
                 .build(new RootSystemDetector().detect(new AgenticAnnotationScanner().scan(index)));
@@ -32,6 +33,9 @@ class PatternDetectionTest {
         assertEquals(Map.of(
                 "Goal", "GOAP dev.langchain4j.agentic.patterns.goap.GoalOrientedPlanner",
                 "Peers", "P2P dev.langchain4j.agentic.patterns.p2p.P2PPlanner",
-                "Board", "BLACKBOARD dev.langchain4j.agentic.patterns.blackboard.BlackboardPlanner"), planners);
+                "Board", "BLACKBOARD dev.langchain4j.agentic.patterns.blackboard.BlackboardPlanner",
+                "Beliefs", "BDI dev.langchain4j.agentic.patterns.bdi.BDIPlanner",
+                "Debate", "DEBATE dev.langchain4j.agentic.patterns.debate.DebatePlanner",
+                "Vote", "VOTING dev.langchain4j.agentic.patterns.voting.VotingPlanner"), planners);
     }
 }

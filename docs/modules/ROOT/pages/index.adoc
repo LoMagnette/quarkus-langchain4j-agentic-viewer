@@ -207,6 +207,21 @@ no agent could fire.
 +
 image::blackboard.png[A blackboard run]
 
+BDI (belief-desire-intention):: The planner node shows its desires, highest priority first, each linked to the agents
+it calls in order; the node details tell when each desire is achievable and satisfied. Each step of a run tells the
+desire it pursues, and the end how many desires are satisfied. The desires are read from the `@PlannerSupplier` when it
+declares them with literals (`Desire.of("name", 10, "achievableKey", "satisfiedKey", Agent.class)`, or predicates,
+whose conditions then show as custom); desires built elsewhere, and those of a builder system (the planner keeps them
+private), are not shown.
+
+Debate:: The debaters (every sub-agent but the last) are drawn side by side with a back-edge for the next round, and
+the judge (the last sub-agent) after them. Each step of a run tells the round, and when the judge is called. Why the
+judge was called (the debaters agreed, or the last round was reached) is not told: the maximum of rounds and the
+convergence strategy are private to the planner.
+
+Voting:: The voters are drawn side by side, their outputs going into the tally. The end of a run tells each vote and
+the result; the voting strategy is private to the planner and not told.
+
 == Describing a custom planner
 
 A custom planner's structure is in its code: by default the viewer draws its sub-agents as candidates. To draw what it

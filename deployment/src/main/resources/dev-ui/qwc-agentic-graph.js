@@ -46,6 +46,8 @@ export const KIND_LABELS = {
     GOAL: 'Goal key',
     STATE_KEY: 'State key',
     BOARD: 'Blackboard',
+    DESIRE: 'Desire',
+    TALLY: 'Vote',
 };
 
 /**
@@ -73,6 +75,8 @@ export const KIND_STYLES = {
     GOAL: { shape: 'round-tag', color: '#d946ef', border: 'double' },
     STATE_KEY: { shape: 'round-tag', color: '#94a3b8', border: 'solid' },
     BOARD: { shape: 'round-rectangle', color: '#d946ef', border: 'double' },
+    DESIRE: { shape: 'round-tag', color: '#d946ef', border: 'dotted' },
+    TALLY: { shape: 'round-rectangle', color: '#d946ef', border: 'double' },
 };
 
 /** Separates a topology node id from the role of a helper node drawn for it (never used in topology ids). */
@@ -80,6 +84,8 @@ const HELPER_SEPARATOR = '::';
 const HELPER_SIZE = 14;
 /** Gap between the right side of a loop body and its back-edge bracket. */
 const BACK_EDGE_GAP = 24;
+/** The back-edge of a debate: the debaters argue again while they disagree. */
+const DEBATE_ROUND_LABEL = 'next round\nuntil they agree';
 /** Approximate width of a character of an edge label (font size 10). */
 const EDGE_LABEL_CHAR_WIDTH = 5;
 
@@ -194,6 +200,63 @@ export function toGraph(system) {
         });
     };
 
+    /**
+     * A BDI planner pursues the achievable, unsatisfied desire of highest priority by calling its agents in order (its
+     * intention): one node per desire its supplier declares, highest priority first, linked to its agents (numbered
+     * when the intention has several). Desires unknown (declared elsewhere, a builder system): the generic hub.
+     */
+    const desireGraph = node => {
+        const desires = [...node.plannerInfo.desires].map((desire, i) => ({ desire, i }))
+            .sort((a, b) => (b.desire.priority ?? 0) - (a.desire.priority ?? 0) || a.i - b.i);
+        desires.forEach(({ desire, i }) => {
+            const label = desireLabel(desire);
+            nodes.push({ id: node.id + HELPER_SEPARATOR + 'desire' + HELPER_SEPARATOR + i, label, kind: 'DESIRE',
+                parent: node.id, compound: false, width: Math.max(90, label.length * 7 + 30), height: 30 });
+        });
+        node.children.forEach(child => visit(child, node.id));
+        desires.forEach(({ desire, i }) => desire.agents.forEach((agent, step) => edge(
+            node.id + HELPER_SEPARATOR + 'desire' + HELPER_SEPARATOR + i, agent, 'DEPENDS',
+            desire.agents.length > 1 ? String(step + 1) : undefined)));
+        // an agent no desire names is never called: left unlinked
+    };
+
+    /**
+     * A debate planner calls its debaters (every sub-agent but the last) each round until they agree or the maximum
+     * of rounds is reached, then its judge (the last sub-agent): the debaters side by side between a fork and a join,
+     * a back-edge for the next round, the judge after them.
+     */
+    const debateGraph = node => {
+        const debaters = node.children.slice(0, -1);
+        const judge = node.children[node.children.length - 1];
+        const fork = helper(node, 'fork');
+        debaters.forEach(child => visit(child, node.id));
+        const join = helper(node, 'join');
+        visit(judge, node.id);
+        debaters.forEach(child => {
+            edge(fork, child.id, 'FORK');
+            edge(child.id, join, 'JOIN');
+        });
+        edge(join, judge.id, 'SEQUENCE', 'judge');
+        edge(join, fork, 'BACK', DEBATE_ROUND_LABEL);
+    };
+
+    /**
+     * A voting planner calls all its sub-agents (voters) at once, then aggregates their outputs (votes) with its
+     * strategy into its result: the voters between a fork and the tally, each vote labelled with its key.
+     */
+    const votingGraph = node => {
+        const fork = helper(node, 'fork');
+        node.children.forEach(child => visit(child, node.id));
+        const tally = node.id + HELPER_SEPARATOR + 'tally';
+        const label = node.outputKey ? `vote · ${node.outputKey}` : 'vote';
+        nodes.push({ id: tally, label, kind: 'TALLY', parent: node.id, compound: false,
+            width: Math.max(90, label.length * 7 + 30), height: 30 });
+        node.children.forEach(child => {
+            edge(fork, child.id, 'FORK');
+            edge(child.id, tally, 'WRITES', child.outputKey);
+        });
+    };
+
     const visit = (node, parent) => {
         const compound = node.children?.length > 0;
         const badge = warningBadge(system, node.id);
@@ -205,9 +268,10 @@ export function toGraph(system) {
             parent,
             compound,
             // extra layout room: a loop draws its back-edge and label on the right, conditional guards label the fan-out
-            paddingRight: compound && node.kind === 'LOOP' ? BACK_EDGE_GAP + labelWidth(loopLabel(node.guard)) + 12 : undefined,
+            paddingRight: compound && node.kind === 'LOOP' ? BACK_EDGE_GAP + labelWidth(loopLabel(node.guard)) + 12
+                : compound && isDebate(node) ? BACK_EDGE_GAP + labelWidth(DEBATE_ROUND_LABEL) + 12 : undefined,
             layerSpacing: compound && (node.kind === 'CONDITIONAL' || system.contributions?.[node.id]
-                || node.plannerInfo?.patternType === 'GOAP') ? 70
+                || node.plannerInfo?.patternType === 'GOAP' || node.plannerInfo?.patternType === 'BDI') ? 70
                 : compound && node.plannerInfo?.patternType === 'P2P' ? 40
                 // reads and writes between the board and each agent carry key labels both ways
                 : compound && node.plannerInfo?.patternType === 'BLACKBOARD' ? 110 : undefined,
@@ -269,6 +333,18 @@ export function toGraph(system) {
                 }
                 if (node.plannerInfo?.patternType === 'BLACKBOARD') {
                     boardGraph(node);
+                    break;
+                }
+                if (node.plannerInfo?.patternType === 'BDI' && node.plannerInfo.desires?.length) {
+                    desireGraph(node);
+                    break;
+                }
+                if (isDebate(node)) {
+                    debateGraph(node);
+                    break;
+                }
+                if (node.plannerInfo?.patternType === 'VOTING') {
+                    votingGraph(node);
                     break;
                 }
                 // sub-agents are chosen at runtime: candidates of a hub, with no order between them
@@ -388,6 +464,16 @@ function labelWidth(label) {
 }
 
 /** "max 5", then the exit condition and when it is tested, one per line. */
+/** A debate planner draws its debaters and judge; it needs at least two debaters and a judge (as DebatePlanner). */
+function isDebate(node) {
+    return node.plannerInfo?.patternType === 'DEBATE' && node.children?.length >= 3;
+}
+
+/** A desire of a BDI planner, as drawn: its name and priority. */
+export function desireLabel(desire) {
+    return desire.priority != null ? `${desire.name} · priority ${desire.priority}` : desire.name;
+}
+
 function loopLabel(guard) {
     if (!guard) {
         return undefined;
@@ -1063,6 +1149,9 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             } },
             { selector: 'edge.reads, edge.writes', style: {
                 'text-rotation': 'none', 'font-family': 'monospace', 'text-wrap': 'wrap',
+            } },
+            { selector: 'node.desire, node.tally', style: {
+                'width': 'data(width)', 'height': 'data(height)', 'font-weight': 'bold', 'background-color': base,
             } },
             { selector: 'node.goal', style: {
                 'width': 'data(width)', 'height': 'data(height)', 'font-weight': 'bold', 'background-color': base,
