@@ -595,6 +595,39 @@ public class AgenticSystemsPageUiTest {
     }
 
     @Test
+    void patternPlannersAreTaggedWithTheirPattern() {
+        openSystem();
+        Object tags = page.evaluate("async () => { " + PATTERN_SYSTEM
+                + "system.root.children.push(planner('r/custom', 'CUSTOM', [agent('r/custom/x')])); "
+                // the group title in the graph
+                + "const graph = document.createElement('qwc-agentic-graph'); "
+                + "graph.style.cssText = 'position: fixed; top: 0; left: 0; width: 900px; height: 700px'; "
+                + "document.body.appendChild(graph); graph.system = system; "
+                + "for (let i = 0; i < 200 && !graph._cy; i++) { await new Promise(r => setTimeout(r, 50)); } "
+                + "const titles = ['r/bdi', 'r/debate', 'r/vote', 'r/custom'].map(id => graph._cy.getElementById(id).data('label')); "
+                + "graph.remove(); "
+                // the badge of the node details, the planner kind kept in its title
+                + "const details = document.createElement('qwc-agentic-node-details'); document.body.appendChild(details); "
+                + "details.node = system.root.children[0]; await details.updateComplete; "
+                + "const badge = details.shadowRoot.querySelector('.kind'); "
+                + "const detailsTag = badge.textContent.trim() + ' / ' + badge.title; details.remove(); "
+                // the tag of a timeline row
+                + "const timeline = document.createElement('qwc-agentic-timeline'); document.body.appendChild(timeline); "
+                + "timeline.system = system; timeline.events = [{ type: 'RunStarted', timestamp: 0, inputs: {} }, "
+                + "{ type: 'AgentStarted', timestamp: 1, nodeId: 'r/vote', invocationId: 'i1', agentName: 'vote' }]; "
+                + "await timeline.updateComplete; "
+                + "const timelineTag = timeline.shadowRoot.querySelector('.row .kind').textContent.trim(); timeline.remove(); "
+                // the Patterns column of the system list
+                + "const { render } = await import('lit'); const cell = document.createElement('div'); "
+                + "render(document.createElement('qwc-agentic-systems')._renderKinds({ patternKinds: ['SEQUENCE', 'PLANNER'], "
+                + "plannerPatterns: ['BDI', 'CUSTOM'] }), cell); "
+                + "const list = [...cell.querySelectorAll('.kind')].map(chip => chip.textContent.trim()); "
+                + "return { titles, detailsTag, timelineTag, list }; }");
+        assertEquals(Map.of("titles", List.of("BDI · bdi", "Debate · debate", "Voting · vote", "Planner · custom"),
+                "detailsTag", "BDI / Planner", "timelineTag", "Voting", "list", List.of("Sequence", "BDI", "Planner")), tags);
+    }
+
+    @Test
     void agentSettingsAreShownAndSupervisorDefaultsMarked() {
         openSystem();
         Object fields = page.evaluate("async () => { "

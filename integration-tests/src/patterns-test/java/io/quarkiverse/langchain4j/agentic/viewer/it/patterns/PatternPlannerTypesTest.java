@@ -14,7 +14,9 @@ import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotati
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.RootSystemDetector;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.PlannerTypeDetector;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.TopologyBuilder;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticSystemSummary;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.PatternType;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.PlannerDesire;
 
 /**
@@ -37,6 +39,12 @@ class PatternPlannerTypesTest {
                 "ReleaseCaptain", "BDI dev.langchain4j.agentic.patterns.bdi.BDIPlanner",
                 "DesignDebate", "DEBATE dev.langchain4j.agentic.patterns.debate.DebatePlanner",
                 "ReviewPanel", "VOTING dev.langchain4j.agentic.patterns.voting.VotingPlanner"), planners);
+        // the system list tags each with its pattern (TASK-80)
+        assertEquals(Map.of("TripGoalPlanner", List.of(PatternType.GOAP), "ResearchTeam", List.of(PatternType.P2P),
+                "IncidentResponder", List.of(PatternType.BLACKBOARD), "ReleaseCaptain", List.of(PatternType.BDI),
+                "DesignDebate", List.of(PatternType.DEBATE), "ReviewPanel", List.of(PatternType.VOTING)),
+                systems.stream().collect(Collectors.toMap(AgenticSystem::name,
+                        s -> AgenticSystemSummary.of(s).plannerPatterns())));
         AgenticSystem bdi = systems.stream().filter(s -> s.name().equals("ReleaseCaptain")).findFirst().orElseThrow();
         String root = bdi.root().id();
         assertEquals(List.of(

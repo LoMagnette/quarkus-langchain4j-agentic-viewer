@@ -4,7 +4,7 @@ import '@vaadin/grid';
 import { columnBodyRenderer } from '@vaadin/grid/lit.js';
 import '@vaadin/button';
 import '@vaadin/icon';
-import { KIND_LABELS } from './qwc-agentic-graph.js';
+import { KIND_LABELS, kindLabel } from './qwc-agentic-graph.js';
 import { findNode } from './qwc-agentic-run-model.js';
 import './qwc-agentic-node-details.js';
 import './qwc-agentic-run-panel.js';
@@ -225,7 +225,10 @@ export class QwcAgenticSystems extends LitElement {
         if (kinds.length === 0) {
             return html`<span class="kind agent">single ${KIND_LABELS[summary.rootKind] ?? summary.rootKind}</span>`;
         }
-        return html`<span class="kinds">${kinds.map(kind => html`<span class="kind">${KIND_LABELS[kind] ?? kind}</span>`)}</span>`;
+        // a planner reads as its pattern (one tag per pattern used) when it is a langchain4j-agentic-patterns one
+        const labels = kinds.flatMap(kind => kind === 'PLANNER' && summary.plannerPatterns?.length
+                ? summary.plannerPatterns.map(pattern => kindLabel(kind, pattern)) : [KIND_LABELS[kind] ?? kind]);
+        return html`<span class="kinds">${labels.map(label => html`<span class="kind">${label}</span>`)}</span>`;
     }
 
     _closeDetails() {

@@ -3,7 +3,7 @@ import '@vaadin/button';
 import '@vaadin/icon';
 import 'qui-ide-link';
 import { devuiState } from 'devui-state';
-import { KIND_LABELS, KIND_STYLES } from './qwc-agentic-graph.js';
+import { KIND_LABELS, KIND_STYLES, kindLabel } from './qwc-agentic-graph.js';
 import { shortRef } from './qwc-agentic-run-model.js';
 
 /** What a piece of code is for its node. */
@@ -204,7 +204,8 @@ export class QwcAgenticNodeDetails extends LitElement {
         return html`
             <div class="title">
                 <h4>${node.name}</h4>
-                <span class="kind" style="border-color: ${style?.color ?? 'currentColor'}">${KIND_LABELS[node.kind] ?? node.kind}</span>
+                <span class="kind" style="border-color: ${style?.color ?? 'currentColor'}"
+                      title=${KIND_LABELS[node.kind] ?? node.kind}>${kindLabel(node.kind, node.plannerInfo?.patternType)}</span>
                 <vaadin-button theme="tertiary icon small" aria-label="Close" title="Close"
                                @click=${() => this.dispatchEvent(new CustomEvent('close'))}>
                     <vaadin-icon icon="font-awesome-solid:xmark"></vaadin-icon>

@@ -50,6 +50,16 @@ export const KIND_LABELS = {
     TALLY: 'Vote',
 };
 
+/** Tags of the langchain4j-agentic-patterns planners, shown instead of 'Planner' on their nodes. */
+export const PATTERN_TAGS = {
+    GOAP: 'GOAP', P2P: 'Peer-to-peer', BLACKBOARD: 'Blackboard', BDI: 'BDI', DEBATE: 'Debate', VOTING: 'Voting',
+};
+
+/** Display label of a node kind: the pattern for a planner of langchain4j-agentic-patterns. */
+export function kindLabel(kind, patternType) {
+    return (kind === 'PLANNER' && PATTERN_TAGS[patternType]) || KIND_LABELS[kind] || kind;
+}
+
 /**
  * How each node kind is drawn; the graph style and the legend both use it. Agents are leaf shapes, workflows are
  * boxes told apart by their border. Hues are mid-saturation so they read on light and dark themes.
@@ -262,7 +272,7 @@ export function toGraph(system) {
         const badge = warningBadge(system, node.id);
         nodes.push({
             id: node.id,
-            label: (compound ? `${KIND_LABELS[node.kind] ?? node.kind} · ${node.name}` : node.name) + badge,
+            label: (compound ? `${kindLabel(node.kind, node.plannerInfo?.patternType)} · ${node.name}` : node.name) + badge,
             warned: !!badge,
             kind: node.kind,
             parent,

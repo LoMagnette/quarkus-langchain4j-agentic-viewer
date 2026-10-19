@@ -101,6 +101,7 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
         assertEquals("DECLARATIVE", summary.get("origin").asText());
         assertEquals("SEQUENCE", summary.get("rootKind").asText());
         assertEquals("[\"SEQUENCE\"]", summary.get("patternKinds").toString());
+        assertEquals("[]", summary.get("plannerPatterns").toString());
         assertEquals(1, summary.get("inputCount").asInt());
         assertEquals(StoryWorkflow.class.getName(), summary.get("sourceRef").get("className").asText());
     }

@@ -1,6 +1,6 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { formatDuration, indexNodes, patternNote, TERMINATIONS } from './qwc-agentic-run-model.js';
-import { KIND_LABELS, KIND_STYLES } from './qwc-agentic-graph.js';
+import { KIND_LABELS, KIND_STYLES, kindLabel } from './qwc-agentic-graph.js';
 import './qwc-agentic-value.js';
 
 /**
@@ -308,12 +308,12 @@ export class QwcAgenticTimeline extends LitElement {
             return html`<div class="empty">No invocation yet.</div>`;
         }
         const span = Math.max(1, end - start);
-        const kinds = this._kinds();
+        const nodes = this._nodes();
         return html`${rows.map(row => html`
             <div class="row ${row.kind}" data-row=${row.id} data-depth=${row.depth}
                     @click=${['tool', 'agent'].includes(row.kind) ? () => this._toggle(row.id) : undefined}>
                 <span class="label" style="padding-left: ${row.depth * 14}px" title=${row.kind === 'decision' ? `${row.name} ${row.decision ?? ''}` : row.nodeId ?? row.name}>
-                    ${row.kind === 'tool' ? '🔧 ' : row.kind === 'error' ? '⚠ ' : row.kind === 'decision' ? '◆ ' : ''}${this._kind(kinds.get(row.nodeId))}${row.name}${this._detail(row)}
+                    ${row.kind === 'tool' ? '🔧 ' : row.kind === 'error' ? '⚠ ' : row.kind === 'decision' ? '◆ ' : ''}${this._kind(nodes.get(row.nodeId))}${row.name}${this._detail(row)}
                 </span>
                 <span class="track">
                     <span class="bar ${row.kind === 'tool' || row.kind === 'decision' ? row.kind : row.status}"
@@ -328,25 +328,27 @@ result: ${row.result ?? '(running)'}</div>` : nothing}
             ${row.kind !== 'tool' && this._open.has(row.id) ? this._details(row) : nothing}`)}`;
     }
 
-    /** Kind of each node of the system, by node id. */
-    _kinds() {
-        const kinds = new Map();
+    /** Each node of the system, by node id. */
+    _nodes() {
+        const nodes = new Map();
         const visit = node => {
-            kinds.set(node.id, node.kind);
+            nodes.set(node.id, node);
             (node.children ?? []).forEach(visit);
         };
         if (this.system?.root) {
             visit(this.system.root);
         }
-        return kinds;
+        return nodes;
     }
 
-    _kind(kind) {
-        if (!kind) {
+    _kind(node) {
+        if (!node?.kind) {
             return nothing;
         }
+        const kind = node.kind;
         const color = KIND_STYLES[kind]?.color ?? 'var(--lumo-contrast-50pct)';
-        return html`<span class="kind" data-kind=${kind} style="color: ${color}; border-color: ${color}">${KIND_LABELS[kind] ?? kind}</span>`;
+        return html`<span class="kind" data-kind=${kind} style="color: ${color}; border-color: ${color}"
+                          title=${KIND_LABELS[kind] ?? kind}>${kindLabel(kind, node.plannerInfo?.patternType)}</span>`;
     }
 
     /** What an agent got and gave, side by side when there is room. */
