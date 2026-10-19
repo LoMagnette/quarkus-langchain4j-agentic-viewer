@@ -1,11 +1,11 @@
 ---
 id: TASK-78
 title: 'Agentic API coverage: follow-ups of an independent review (2026-10-19)'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-10-19 07:44'
-updated_date: '2026-10-19 07:45'
+updated_date: '2026-10-19 10:46'
 labels:
   - review
 dependencies: []
@@ -26,6 +26,12 @@ No new access to internal langchain4j hooks for now (owner decision): what needs
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Every subtask is Done, or explicitly postponed with the reason recorded
-- [ ] #2 Both CI configurations (default and -Ppatterns) and the UI tests pass at the end
+- [x] #1 Every subtask is Done, or explicitly postponed with the reason recorded
+- [x] #2 Both CI configurations (default and -Ppatterns) and the UI tests pass at the end
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+All five findings of the 2026-10-19 review checked against the pinned versions and addressed: dev-only discovery (78.1), BDI / debate / voting planners (78.2), behaviour settings in the topology (78.3), model suppliers, skills and suppliers in the AI details (78.4), agent identity from quarkus-langchain4j's detected-agent build items with a dev-mode disagreement log (78.5). Without new internal langchain4j access: what needs it is documented as not shown. Both CI configurations and the 30 UI tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->

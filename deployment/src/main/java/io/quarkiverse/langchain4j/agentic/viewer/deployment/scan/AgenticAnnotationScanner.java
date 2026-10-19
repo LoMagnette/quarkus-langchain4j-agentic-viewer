@@ -152,6 +152,122 @@ public class AgenticAnnotationScanner {
         return descriptors;
     }
 
+    /**
+     * What the scan gives with quarkus-langchain4j's detection.
+     *
+     * @param descriptors one descriptor per agent method, sorted by id
+     * @param disagreements the agent methods quarkus-langchain4j and the scanner's own rules do not agree on, beyond
+     *        those the viewer knows it adds (registry agents, agents inherited by a subclass); empty when they agree.
+     *        Those found by the viewer only are not described
+     */
+    public record Result(List<AgentDescriptor> descriptors, List<String> disagreements) {
+    }
+
+    /**
+     * Describes the agents quarkus-langchain4j-agentic detected (the ones it builds), with what it resolved for each AI
+     * agent (model name, chat model supplier, the methods with @ToolBox, @McpToolBox and @Skills); the structure is
+     * read from the index as in {@link #scan(IndexView)}. The scanner's own rules still add what quarkus-langchain4j
+     * does not detect but langchain4j runs: registry agents and the agent methods a subclass inherits (langchain4j
+     * reads {@code getMethods()}). Any other difference between the two is reported; an agent only the viewer finds is
+     * left out.
+     */
+    public Result scan(IndexView index, UpstreamAgents upstream) {
+        Map<String, AgentDescriptor> byId = new LinkedHashMap<>();
+        scan(index).forEach(descriptor -> byId.put(descriptor.id(), descriptor));
+        Map<String, AgentDescriptor> fromUpstream = new LinkedHashMap<>();
+        List<String> disagreements = new ArrayList<>();
+        upstream.agentMethods().forEach((className, methods) -> {
+            ClassInfo type = index.getClassByName(DotName.createSimple(className));
+            if (type == null || className.startsWith(LANGCHAIN4J_PACKAGE_PREFIX)) {
+                return;
+            }
+            // like langchain4j, an agent class with agent methods of its own uses them, not the inherited ones
+            boolean declaresOwn = methods.stream().anyMatch(method -> method.declaringClass().name().equals(type.name()));
+            for (MethodInfo method : methods) {
+                boolean inherited = !method.declaringClass().name().equals(type.name());
+                if (inherited && declaresOwn) {
+                    continue;
+                }
+                AnnotationInstance annotation = agentAnnotation(method);
+                if (annotation == null) {
+                    disagreements.add(className + "#" + method.name() + ": detected by quarkus-langchain4j-agentic with no "
+                            + "agent annotation the viewer knows");
+                    continue;
+                }
+                NodeKind kind = annotation.name().equals(AGENT) ? agentKind(method) : WORKFLOW_ANNOTATIONS.get(annotation.name());
+                AgentDescriptor descriptor = describe(index, method, annotation, kind);
+                fromUpstream.putIfAbsent(inherited ? descriptor.inheritedBy(className).id() : descriptor.id(),
+                        inherited ? descriptor.inheritedBy(className) : descriptor);
+            }
+        });
+        fromUpstream.forEach((id, descriptor) -> {
+            if (byId.putIfAbsent(id, descriptor) == null) {
+                disagreements.add(id + ": detected by quarkus-langchain4j-agentic only");
+            }
+        });
+        List<AgentDescriptor> descriptors = new ArrayList<>();
+        for (AgentDescriptor descriptor : byId.values()) {
+            if (fromUpstream.containsKey(descriptor.id()) || viewerOnly(index, descriptor)) {
+                descriptors.add(withUpstreamAi(index, descriptor, upstream.aiAgents().get(descriptor.declaringClass())));
+            } else {
+                disagreements.add(descriptor.id() + ": found by the viewer only, not shown");
+            }
+        }
+        descriptors.sort(Comparator.comparing(AgentDescriptor::id));
+        return new Result(descriptors, disagreements.stream().sorted().toList());
+    }
+
+    /** The first agent annotation of a method, in the scanner's order ({@code @Agent}, then the workflow ones). */
+    private static AnnotationInstance agentAnnotation(MethodInfo method) {
+        AnnotationInstance agent = method.declaredAnnotation(AGENT);
+        if (agent != null) {
+            return agent;
+        }
+        return WORKFLOW_ANNOTATIONS.keySet().stream().map(method::declaredAnnotation).filter(a -> a != null)
+                .findFirst().orElse(null);
+    }
+
+    /**
+     * What the viewer adds knowingly: registry agents (quarkus-langchain4j-agentic does not detect
+     * {@code @RegistryAgent}) and the agents a class inherits from an agent superclass.
+     */
+    private static boolean viewerOnly(IndexView index, AgentDescriptor descriptor) {
+        if (descriptor.kind() == NodeKind.REGISTRY_AGENT) {
+            return true;
+        }
+        ClassInfo type = index.getClassByName(DotName.createSimple(descriptor.declaringClass()));
+        return descriptor.inheritedFrom() != null && type != null && !type.isInterface();
+    }
+
+    /**
+     * What quarkus-langchain4j resolved for an AI agent: its model name and chat model supplier, and the methods
+     * carrying its tool boxes and skills (their values are read from those annotations).
+     */
+    private static AgentDescriptor withUpstreamAi(IndexView index, AgentDescriptor descriptor,
+            UpstreamAgents.AiAgent upstream) {
+        AiAgentDetails ai = descriptor.aiDetails();
+        if (upstream == null || ai == null || descriptor.kind() != NodeKind.AI_AGENT) {
+            return descriptor;
+        }
+        String methodName = descriptor.methodName().contains("(")
+                ? descriptor.methodName().substring(0, descriptor.methodName().indexOf('('))
+                : descriptor.methodName();
+        MethodInfo toolBox = forMethod(upstream.toolBoxMethods(), methodName);
+        MethodInfo mcpToolBox = forMethod(upstream.mcpToolBoxMethods(), methodName);
+        MethodInfo skills = forMethod(upstream.skillsMethods(), methodName);
+        List<String> runtimeToolSources = new ArrayList<>(ai.runtimeToolSources().stream()
+                .filter(source -> !source.startsWith("mcp:")).toList());
+        runtimeToolSources.addAll(mcpSources(mcpToolBox == null ? null : mcpToolBox.declaredAnnotation(MCP_TOOL_BOX)));
+        return descriptor.withAiDetails(new AiAgentDetails(ai.systemMessage(), ai.userMessage(), upstream.modelName(),
+                toolBox == null ? List.of() : tools(index, toolBox), runtimeToolSources, upstream.chatModelSupplier(),
+                ai.streamingChatModelSupplier(), skills == null ? null : skills(skills.declaredAnnotation(SKILLS))));
+    }
+
+    /** The agent method of that name among those upstream lists (they are agent methods), null when none. */
+    private static MethodInfo forMethod(List<MethodInfo> methods, String name) {
+        return methods.stream().filter(method -> method.name().equals(name)).findFirst().orElse(null);
+    }
+
     /** The agents of the indexed subtypes of agent classes that declare no agent method of their own. */
     private static List<AgentDescriptor> inherited(IndexView index, List<AgentDescriptor> declared) {
         Map<String, List<AgentDescriptor>> byClass = new LinkedHashMap<>();
@@ -413,18 +529,20 @@ public class AgenticAnnotationScanner {
                 sources.add(ref);
             }
         }
-        AnnotationInstance mcpToolBox = method.declaredAnnotation(MCP_TOOL_BOX);
-        if (mcpToolBox != null) {
-            AnnotationValue clients = mcpToolBox.value();
-            if (clients == null || clients.asStringArray().length == 0) {
-                sources.add("mcp:*"); // every configured MCP client
-            } else {
-                for (String client : clients.asStringArray()) {
-                    sources.add("mcp:" + client);
-                }
-            }
-        }
+        sources.addAll(mcpSources(method.declaredAnnotation(MCP_TOOL_BOX)));
         return sources;
+    }
+
+    /** {@code mcp:<client>} per client of an {@code @McpToolBox}, {@code mcp:*} for all of them. */
+    private static List<String> mcpSources(AnnotationInstance mcpToolBox) {
+        if (mcpToolBox == null) {
+            return List.of();
+        }
+        AnnotationValue clients = mcpToolBox.value();
+        if (clients == null || clients.asStringArray().length == 0) {
+            return List.of("mcp:*"); // every configured MCP client
+        }
+        return Arrays.stream(clients.asStringArray()).map(client -> "mcp:" + client).toList();
     }
 
     /**

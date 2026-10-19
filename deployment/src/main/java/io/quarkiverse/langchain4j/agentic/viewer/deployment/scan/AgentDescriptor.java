@@ -77,6 +77,13 @@ public record AgentDescriptor(
                 null, List.of(), List.of(), null);
     }
 
+    /** The same agent with other AI details. */
+    public AgentDescriptor withAiDetails(AiAgentDetails aiDetails) {
+        return new AgentDescriptor(id, declaringClass, methodName, kind, name, description, outputKey, inputKeys, subAgents,
+                itemsProvider, plannerSupplier, loopGuard, branchGuards, outputMethod, optional, async, aiDetails, inputs,
+                remoteDetails, inheritedFrom, code, methodReads, settings);
+    }
+
     /** The same agent, for a class that inherits its method (langchain4j reads {@code Class.getMethods()}). */
     public AgentDescriptor inheritedBy(String agentClass) {
         String method = id.substring(id.indexOf('#') + 1);

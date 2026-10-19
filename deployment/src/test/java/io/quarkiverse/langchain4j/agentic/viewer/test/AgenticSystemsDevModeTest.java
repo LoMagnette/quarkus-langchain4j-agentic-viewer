@@ -65,6 +65,13 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
                 .contains("lacks internal parts")), "LangChain4jInternals check at startup");
     }
 
+    /** The agents quarkus-langchain4j-agentic detected are the ones the viewer shows: no disagreement logged. */
+    @Test
+    void quarkusLangChain4jAndTheViewerAgreeOnTheAgents() {
+        assertTrue(config.getLogRecords().stream().noneMatch(record -> String.valueOf(record.getMessage())
+                .contains("do not agree on these agents")), "AgenticAnnotationScanner.Result.disagreements");
+    }
+
     /** Without langchain4j-agentic-patterns: no adapter bean, no goal path preview, nothing about patterns logged. */
     @Test
     void noPatternAdapterWithoutTheModule() throws Exception {
@@ -76,7 +83,7 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
         List<String> classes = new ArrayList<>();
         beans.findValues("providerType").forEach(type -> classes.add(type.toString()));
         assertTrue(classes.stream().anyMatch(type -> type.contains("PatternAdapters")), () -> "registry bean in " + classes);
-        assertTrue(classes.stream().noneMatch(type -> type.matches(".*(Goap|P2P|Blackboard)Adapter.*")), classes::toString);
+        assertTrue(classes.stream().noneMatch(type -> type.matches(".*(Goap|P2P|Blackboard|Bdi|Debate|Voting)Adapter.*")), classes::toString);
         assertEquals(0, executeJsonRPCMethod("previewGoalPath", Map.of("systemId", ROOT, "inputKeys", List.of("topic")))
                 .size(), "no goal path preview without the module");
         assertTrue(config.getLogRecords().stream().noneMatch(record -> record.getLoggerName().contains(".patterns")

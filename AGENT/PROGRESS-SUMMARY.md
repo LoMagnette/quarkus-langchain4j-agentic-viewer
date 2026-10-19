@@ -853,3 +853,19 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   exit above loop-warning-iterations; hints for outputs nobody reads and keys nothing in the system writes).
 - TASK-75 re-run after a reload (opt-in): last inputs run again once the system is known, compared with the run kept
   in the page; runs right after a reload always get the Dev UI listener.
+
+
+### Agentic API coverage — TASK-76..78 (Oct 18-19, 2026)
+
+- TASK-76 review follow-ups: run history bounded once runs end, runs keep a copy of their inputs, a late input schema
+  error no longer shows on another system.
+- TASK-77 (To Do): show input and output guardrails of AI agents.
+- TASK-78 independent review of the agentic API coverage, each finding checked against the pinned versions:
+  - 78.1 discovery build steps dev mode only (test-mode build-step test turned into a scanner test).
+  - 78.2 BDI, debate and voting planners of agentic-patterns, public API only: BDI desires read at build time from
+    literal Desire.of calls (DesireReader), dedicated graph views, run notes and timeline steps; three samples.
+  - 78.3 settings in the topology: compensateOnError, summarizedContext, supervisor max invocations and strategies.
+  - 78.4 AI details: chat / streaming model suppliers, @Skills, every supplier and @BeforeCall in the node's code.
+  - 78.5 agent identity from quarkus-langchain4j-agentic's detected-agent build items, structure still scanned,
+    disagreements logged in dev mode; upstream proposal U7 (Backlog doc-8). Found: 1.14.2 rejects a @RegistryAgent
+    sub-agent; debaters cannot read the planner's debateContext as a parameter (build validation).

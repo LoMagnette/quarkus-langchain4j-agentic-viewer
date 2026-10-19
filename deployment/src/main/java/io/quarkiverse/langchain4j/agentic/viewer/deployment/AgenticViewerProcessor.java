@@ -9,7 +9,11 @@ import java.util.Set;
 import java.util.function.Predicate;
 
 import org.jboss.jandex.DotName;
+import org.jboss.logging.Logger;
 
+import io.quarkiverse.langchain4j.agentic.deployment.DetectedAiAgentAsMapBuildItem;
+import io.quarkiverse.langchain4j.agentic.deployment.DetectedAiAgentBuildItem;
+import io.quarkiverse.langchain4j.agentic.deployment.DetectedNonAiAgentAsMapBuildItem;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.builder.BuildCallTransformer;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.builder.BuilderSystemBeans;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.builder.BuilderSystemBeansBuildItem;
@@ -18,6 +22,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotati
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticDescriptorsBuildItem;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticRootsBuildItem;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.RootSystemDetector;
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.UpstreamAgents;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.AgenticSystemsBuildItem;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.PlannerTypeDetector;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.TopologyBuilder;
@@ -58,18 +63,30 @@ public class AgenticViewerProcessor {
 
     private static final String FEATURE = "langchain4j-agentic-viewer";
 
+    private static final Logger LOG = Logger.getLogger(AgenticViewerProcessor.class);
+
     @BuildStep
     FeatureBuildItem feature() {
         return new FeatureBuildItem(FEATURE);
     }
 
     /**
-     * Describes every agent method of the application (T1.2). Like every step below, dev mode only: nothing of the
-     * discovery reaches a prod augmentation, even if a later step happened to consume its result.
+     * Describes every agent method of the application (T1.2): the agents quarkus-langchain4j-agentic detected (the
+     * ones it builds), their structure read from the index (TASK-78.5). Like every step below, dev mode only: nothing of
+     * the discovery reaches a prod augmentation, even if a later step happened to consume its result.
      */
     @BuildStep(onlyIf = { IsDevelopment.class, AgenticViewerEnabled.class })
-    AgenticDescriptorsBuildItem scanAgenticAnnotations(CombinedIndexBuildItem combinedIndex) {
-        return new AgenticDescriptorsBuildItem(new AgenticAnnotationScanner().scan(combinedIndex.getIndex()));
+    AgenticDescriptorsBuildItem scanAgenticAnnotations(CombinedIndexBuildItem combinedIndex,
+            DetectedAiAgentAsMapBuildItem aiAgents, DetectedNonAiAgentAsMapBuildItem nonAiAgents,
+            List<DetectedAiAgentBuildItem> detectedAiAgents) {
+        AgenticAnnotationScanner.Result result = new AgenticAnnotationScanner().scan(combinedIndex.getIndex(),
+                UpstreamAgents.of(aiAgents, nonAiAgents, detectedAiAgents));
+        if (!result.disagreements().isEmpty()) {
+            // the viewer may then draw a system differently from what the application builds
+            LOG.warnf("Agentic viewer: quarkus-langchain4j-agentic and the viewer do not agree on these agents "
+                    + "(please report it):%n  %s", String.join(System.lineSeparator() + "  ", result.disagreements()));
+        }
+        return new AgenticDescriptorsBuildItem(result.descriptors());
     }
 
     /**

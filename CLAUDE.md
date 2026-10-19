@@ -101,6 +101,17 @@ scan itself index their fixtures (`Index.of`) and call the scanner directly.
    flags, AI agent details (prompts, `@ModelName`, `@ToolBox` tools), remote agent details (`@A2AClientAgent` server,
    `@McpClientAgent` tool) and input JSON schemas (`InputSchemaGenerator`).
    Resolution rules mirror langchain4j-agentic / quarkus-langchain4j-agentic. Descriptors stay deployment-only.
+   The build step scans with quarkus-langchain4j-agentic's detection (TASK-78.5, `scan(index, UpstreamAgents)`): the
+   agents come from its `DetectedAiAgentAsMapBuildItem` / `DetectedNonAiAgentAsMapBuildItem`; from its
+   `DetectedAiAgentBuildItem`, the model name, the chat model supplier and the methods carrying `@ToolBox`,
+   `@McpToolBox` and `@Skills` of AI agents (their values are read from those annotations). Still read from the index,
+   as upstream exposes none of it: structure, keys, conditions, `@Output`, planners, prompts, the `@Tool` methods of the
+   tool classes, remote details, suppliers, settings. The viewer adds knowingly `@RegistryAgent` agents (not detected
+   upstream; 1.14.2 even rejects them as sub-agents) and agent methods inherited by subclasses; an agent only the viewer
+   finds otherwise is left out, and every difference is logged in dev mode ("do not agree on these agents";
+   `UpstreamAgreementTest` runs the real detection on the scan fixtures, `UpstreamSelectionTest` the rules).
+   `scan(index)` alone keeps the own rules, for the tests calling the scanner on `Index.of`. What an upstream build
+   item would need to replace the remaining scan: Backlog doc-8 (U7).
 2. `RootSystemDetector` nests them under root systems (`AgenticRootsBuildItem`): a root is an agent no other agent lists
    as a sub-agent.
 3. `deployment/.../topology/TopologyBuilder` turns each root into an `AgenticSystem` (`AgenticSystemsBuildItem`). Node ids:
