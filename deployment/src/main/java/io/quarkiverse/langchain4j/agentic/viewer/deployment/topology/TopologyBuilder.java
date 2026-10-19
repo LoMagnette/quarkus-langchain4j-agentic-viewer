@@ -106,7 +106,8 @@ public class TopologyBuilder {
                 plannerInfo(id, tree),
                 descriptor.aiDetails(),
                 descriptor.remoteDetails(),
-                descriptor.code());
+                descriptor.code(),
+                descriptor.settings());
     }
 
     private static void collectChecks(String id, AgentTree tree, Map<String, List<String>> dropped, Set<String> methodReads) {

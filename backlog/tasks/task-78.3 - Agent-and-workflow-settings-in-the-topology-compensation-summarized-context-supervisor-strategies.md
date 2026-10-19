@@ -3,10 +3,11 @@ id: TASK-78.3
 title: >-
   Agent and workflow settings in the topology: compensation, summarized context,
   supervisor strategies
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-10-19 07:45'
-updated_date: '2026-10-19 08:27'
+updated_date: '2026-10-19 09:01'
 labels:
   - review
   - deployment
@@ -32,11 +33,11 @@ Review finding 3. Settings of the pinned API that change how a system behaves ar
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The node details show compensateOnError when set, the summarized context keys of an agent, and for a supervisor its max invocations, context strategy and response strategy
-- [ ] #2 Defaults are not shown as noise: a setting left at its default is either hidden or marked as default
-- [ ] #3 Builder systems show the same settings where the public AgentInstance API exposes them; what it does not expose is documented
-- [ ] #4 Scanner tests cover each setting; a sample uses them; build-time / runtime topology parity tests include the new fields
-- [ ] #5 User documentation describes the new details
+- [x] #1 The node details show compensateOnError when set, the summarized context keys of an agent, and for a supervisor its max invocations, context strategy and response strategy
+- [x] #2 Defaults are not shown as noise: a setting left at its default is either hidden or marked as default
+- [x] #3 Builder systems show the same settings where the public AgentInstance API exposes them; what it does not expose is documented
+- [x] #4 Scanner tests cover each setting; a sample uses them; build-time / runtime topology parity tests include the new fields
+- [x] #5 User documentation describes the new details
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -50,3 +51,15 @@ Upstream meaning (langchain4j-agentic 1.20.2 sources): compensateOnError = on a 
 5. Tests: scanner fixtures for each setting, TopologyBuilder copy, builder parity (annotated agent types), UI test of the details; a sample sets the ones that make no extra model call (compensateOnError, maxAgentsInvocations); SUMMARIZATION / SCORED / summarizedContext call the model, so only fixtures use them.
 6. Docs: index.adoc node details, CLAUDE.md.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implemented as planned. AgentSettings record, AgentNode.settings (new canonical constructor, the previous one kept), AgentDescriptor.settings; supervisor values default to 10 / CHAT_MEMORY / LAST like @SupervisorAgent. BuilderTopology reads them from the @Agent or declarative workflow annotation of the agent type (annotation attributes through public reflection); a workflow made by a builder has null (unknown). Node details: Compensation and Summarized context only when set; supervisors show max invocations, context and response strategies with '(default)'. StoryCreator.Drafter now has compensateOnError = true (no tool, no effect on runs) so the builder parity check covers a non-default value; BankSupervisor already uses responseStrategy SUMMARY. Validation: mvn -o clean install (deployment 175, integration-tests 106, ITs 6 / 1 skipped), mvn -o clean install -Ppatterns (184 / 1 skipped, 139, 6 / 1 skipped), UI tests 29/29 (new agentSettingsAreShownAndSupervisorDefaultsMarked). New AgentSettingsScanTest; BuilderTopologyTest graph() compares leaf settings.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Agent and workflow settings that change behaviour are now part of the topology: compensateOnError (every annotation), summarizedContext, and the supervisor's max invocations, context strategy and response strategy (annotation defaults applied). The node details show compensation and summarized context when set and the supervisor strategies marked when default. Builder systems take them from their agent types' annotations; workflows built in code leave them unknown (documented). Verified with both CI builds and the 29 UI tests.
+<!-- SECTION:FINAL_SUMMARY:END -->

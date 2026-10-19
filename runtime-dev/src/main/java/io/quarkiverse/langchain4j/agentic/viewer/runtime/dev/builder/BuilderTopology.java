@@ -28,6 +28,7 @@ import dev.langchain4j.agentic.workflow.LoopAgentInstance;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.LangChain4jInternals;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerRecorder;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgentNode;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgentSettings;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AiAgentDetails;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.CodeRef;
@@ -167,7 +168,47 @@ public final class BuilderTopology {
                 kind != NodeKind.AI_AGENT ? null : declared != null && declared.aiDetails() != null ? declared.aiDetails()
                         : aiDetails(agent.type()),
                 declared != null && declared.remoteDetails() != null ? declared.remoteDetails() : remoteDetails(kind, agent.type()),
-                declared != null && !declared.code().isEmpty() ? declared.code() : agentCode(agent.type()));
+                declared != null && !declared.code().isEmpty() ? declared.code() : agentCode(agent.type()),
+                declared != null && declared.settings() != null ? declared.settings() : settings(agent.type(), kind));
+    }
+
+    /**
+     * The settings declared on the agent method of an annotated agent type ({@code @Agent} or a declarative workflow
+     * annotation); null for a workflow built in code, whose builder keeps them private.
+     */
+    private static AgentSettings settings(Class<?> type, NodeKind kind) {
+        if (type == null || type.getName().startsWith(LIBRARY)) {
+            return null;
+        }
+        for (Method method : agentMethods(type)) {
+            for (Annotation annotation : annotations(method)) {
+                String name = annotation.annotationType().getName();
+                if (name.equals(AGENT) || DECLARATIVE_WORKFLOWS.contains(name)) {
+                    Object context = attribute(annotation, "summarizedContext");
+                    List<String> summarized = context instanceof String[] names
+                            ? Arrays.stream(names).map(String::trim).filter(n -> !n.isEmpty()).toList()
+                            : List.of();
+                    boolean compensate = Boolean.TRUE.equals(attribute(annotation, "compensateOnError"));
+                    if (kind != NodeKind.SUPERVISOR) {
+                        return new AgentSettings(compensate, summarized, null, null, null);
+                    }
+                    return new AgentSettings(compensate, summarized,
+                            attribute(annotation, "maxAgentsInvocations") instanceof Integer max ? max : null,
+                            attribute(annotation, "contextStrategy") instanceof Enum<?> strategy ? strategy.name() : null,
+                            attribute(annotation, "responseStrategy") instanceof Enum<?> strategy ? strategy.name() : null);
+                }
+            }
+        }
+        return null;
+    }
+
+    /** An attribute of an annotation, null when it has none of that name. */
+    private static Object attribute(Annotation annotation, String name) {
+        try {
+            return annotation.annotationType().getMethod(name).invoke(annotation);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return null;
+        }
     }
 
     /**
@@ -205,7 +246,7 @@ public final class BuilderTopology {
         code.addAll(root.code());
         return new AgentNode(root.id(), root.name(), root.kind(), root.description(), root.inputKeys(), root.outputKey(),
                 root.optional(), root.async(), root.children(), root.guard(), root.plannerInfo(), root.aiDetails(),
-                root.remoteDetails(), code);
+                root.remoteDetails(), code, root.settings());
     }
 
     /**

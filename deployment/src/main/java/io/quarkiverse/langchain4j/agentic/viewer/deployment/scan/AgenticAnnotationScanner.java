@@ -6,6 +6,7 @@ import java.io.UncheckedIOException;
 import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -22,6 +23,7 @@ import org.jboss.jandex.MethodInfo;
 import org.jboss.jandex.MethodParameterInfo;
 import org.jboss.jandex.Type;
 
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgentSettings;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AiAgentDetails;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.CodeRef;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.Guard;
@@ -200,7 +202,28 @@ public class AgenticAnnotationScanner {
                 remoteDetails(method, annotation, kind),
                 null,
                 code(method, annotation, kind),
-                isWorkflow(kind) ? methodReads(method.declaringClass()) : List.of());
+                isWorkflow(kind) ? methodReads(method.declaringClass()) : List.of(),
+                settings(annotation, kind));
+    }
+
+    /**
+     * {@code compensateOnError} of {@code @Agent} and the workflow annotations, {@code @Agent(summarizedContext)}, and
+     * the strategies of {@code @SupervisorAgent} (its defaults when not set).
+     */
+    private static AgentSettings settings(AnnotationInstance annotation, NodeKind kind) {
+        AnnotationValue summarized = annotation.value("summarizedContext");
+        List<String> context = summarized == null ? List.of()
+                : Arrays.stream(summarized.asStringArray()).map(String::trim).filter(name -> !name.isEmpty()).toList();
+        if (kind != NodeKind.SUPERVISOR) {
+            return new AgentSettings(booleanValue(annotation, "compensateOnError"), context, null, null, null);
+        }
+        AnnotationValue max = annotation.value("maxAgentsInvocations");
+        AnnotationValue contextStrategy = annotation.value("contextStrategy");
+        AnnotationValue responseStrategy = annotation.value("responseStrategy");
+        return new AgentSettings(booleanValue(annotation, "compensateOnError"), context,
+                max == null ? AgentSettings.DEFAULT_MAX_AGENTS_INVOCATIONS : max.asInt(),
+                contextStrategy == null ? AgentSettings.DEFAULT_CONTEXT_STRATEGY : contextStrategy.asEnum(),
+                responseStrategy == null ? AgentSettings.DEFAULT_RESPONSE_STRATEGY : responseStrategy.asEnum());
     }
 
     /** The scope keys the {@code @Output} and condition methods next to a workflow read (their parameters). */

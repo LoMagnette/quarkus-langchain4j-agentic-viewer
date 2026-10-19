@@ -119,6 +119,10 @@ class BuilderTopologyTest {
         graph.put("plannerInfo", node.plannerInfo());
         graph.put("aiDetails", node.aiDetails());
         graph.put("remoteDetails", node.remoteDetails());
+        // an agent built from an annotated type has the declared settings; a workflow built in code keeps them private
+        if (node.children().isEmpty()) {
+            graph.put("settings", node.settings());
+        }
         List<Object> children = new ArrayList<>();
         node.children().forEach(child -> children.add(graph(child)));
         graph.put("children", children);
@@ -143,6 +147,10 @@ class BuilderTopologyTest {
         // only the guard label differs: the builder's exit condition is a lambda
         assertEquals("goodEnough", child(twin.root(), 1).guard().label());
         assertEquals(Guard.loopExit(BuilderTopology.LAMBDA, 5, true), child(builder.root(), 1).guard());
+        // settings: from the agent's annotations; unknown for the workflows the builder made
+        assertEquals(true, child(builder.root(), 0).settings().compensateOnError());
+        assertNull(builder.root().settings());
+        assertEquals(false, twin.root().settings().compensateOnError());
     }
 
     /**

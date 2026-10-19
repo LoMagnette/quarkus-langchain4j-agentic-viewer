@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgentSettings;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AiAgentDetails;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.CodeRef;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.Guard;
@@ -40,6 +41,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemInput;
  * @param code the application code behind the agent (method, @Output, conditions, planner supplier, prompt resources)
  * @param methodReads scope keys read by the workflow's {@code @Output}, {@code @ExitCondition} and
  *        {@code @ActivationCondition} methods
+ * @param settings compensation, summarized context and supervisor strategies, as declared
  */
 public record AgentDescriptor(
         String id,
@@ -63,7 +65,8 @@ public record AgentDescriptor(
         RemoteAgentDetails remoteDetails,
         String inheritedFrom,
         List<CodeRef> code,
-        List<String> methodReads) {
+        List<String> methodReads,
+        AgentSettings settings) {
 
     public AgentDescriptor(String id, String declaringClass, String methodName, NodeKind kind, String name,
             String description, String outputKey, List<String> inputKeys, List<String> subAgents, String itemsProvider,
@@ -71,7 +74,7 @@ public record AgentDescriptor(
             boolean async, AiAgentDetails aiDetails, List<SystemInput> inputs, RemoteAgentDetails remoteDetails) {
         this(id, declaringClass, methodName, kind, name, description, outputKey, inputKeys, subAgents, itemsProvider,
                 plannerSupplier, loopGuard, branchGuards, outputMethod, optional, async, aiDetails, inputs, remoteDetails,
-                null, List.of(), List.of());
+                null, List.of(), List.of(), null);
     }
 
     /** The same agent, for a class that inherits its method (langchain4j reads {@code Class.getMethods()}). */
@@ -79,7 +82,8 @@ public record AgentDescriptor(
         String method = id.substring(id.indexOf('#') + 1);
         return new AgentDescriptor(agentClass + "#" + method, agentClass, methodName, kind, name, description, outputKey,
                 inputKeys, subAgents, itemsProvider, plannerSupplier, loopGuard, branchGuards, outputMethod, optional, async,
-                aiDetails, inputs, remoteDetails, inheritedFrom != null ? inheritedFrom : declaringClass, code, methodReads);
+                aiDetails, inputs, remoteDetails, inheritedFrom != null ? inheritedFrom : declaringClass, code, methodReads,
+                settings);
     }
 
     public AgentDescriptor {

@@ -31,7 +31,7 @@ public interface StoryCreator {
 
     interface Drafter {
         @UserMessage("Draft a story about {{topic}}")
-        @Agent(description = "Writes the first draft of the story", outputKey = "story")
+        @Agent(description = "Writes the first draft of the story", outputKey = "story", compensateOnError = true)
         String draft(@V("topic") String topic);
     }
 

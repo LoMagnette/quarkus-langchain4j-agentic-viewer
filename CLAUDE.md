@@ -131,7 +131,9 @@ only, not the CDI producers' own builds), latest instance per call site and shap
 `getDeclarativeAgents`, its node gives the build-time details), or a declarative system whose agent bean injects a
 builder system (`deployment/.../builder/MixedSystems`). Their topology comes from the live agent tree: `runtime-dev/.../builder/BuilderTopology` builds the same model from the public `AgentInstance` API (loops
 and conditions through `as()`, AI details from the annotations of `type()`), with the node id rule of the run events
-(simple name of each agent's type); findings in Backlog doc-5 (tree) and doc-6 (discovery).
+(simple name of each agent's type); findings in Backlog doc-5 (tree) and doc-6 (discovery). `AgentNode.settings` (TASK-78.3: compensateOnError,
+summarizedContext, supervisor max invocations and strategies) comes from the annotations: the scanner at build time,
+`BuilderTopology` from the agent type's annotations (null for a workflow built in code: its builder keeps them private).
 
 ### Configuration
 

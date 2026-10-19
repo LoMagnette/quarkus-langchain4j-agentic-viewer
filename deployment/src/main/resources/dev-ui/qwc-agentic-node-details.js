@@ -213,6 +213,7 @@ export class QwcAgenticNodeDetails extends LitElement {
                 <dt>Output key</dt><dd data-field="outputKey">${node.outputKey ? this._chips([node.outputKey]) : this._none()}</dd>
                 <dt>Optional</dt><dd data-field="optional">${node.optional ? 'yes' : 'no'}</dd>
                 <dt>Async</dt><dd data-field="async">${node.async ? 'yes' : 'no'}</dd>
+                ${this._renderSettings(node)}
                 ${this._renderGuard(node.guard)}
                 ${node.plannerInfo ? html`
                     <dt>Planner</dt>
@@ -226,6 +227,32 @@ export class QwcAgenticNodeDetails extends LitElement {
             ${node.kind === 'AI_AGENT' ? this._renderAiDetails(node.aiDetails) : nothing}
             ${node.remoteDetails ? this._renderRemoteDetails(node.kind, node.remoteDetails) : nothing}
             ${this._renderCode()}`;
+    }
+
+    /**
+     * Compensation and summarized context when set (a setting left at its default is not shown), and the strategies
+     * of a supervisor, marked when they are the defaults.
+     */
+    _renderSettings(node) {
+        const settings = node.settings;
+        if (!settings) {
+            return nothing;
+        }
+        const strategy = value => value ? value.toLowerCase().replaceAll('_', ' ') : undefined;
+        const marked = (value, fallback) => html`${value ?? this._none()}${value != null && value === fallback
+            ? html` <span class="muted">(default)</span>` : nothing}`;
+        return html`
+            ${settings.compensateOnError ? html`<dt>Compensation</dt><dd data-field="compensation">on error
+                <div class="muted">when a tool fails, the successful tool calls before it with @CompensateFor actions are
+                    compensated in reverse order</div></dd>` : nothing}
+            ${settings.summarizedContext?.length ? html`<dt>Summarized context</dt>
+                <dd data-field="summarizedContext">${this._chips(settings.summarizedContext)}
+                    <div class="muted">the interactions of these agents make up its context</div></dd>` : nothing}
+            ${node.kind === 'SUPERVISOR' ? html`
+                <dt>Max invocations</dt><dd data-field="maxAgentsInvocations">${marked(settings.maxAgentsInvocations, 10)}</dd>
+                <dt>Context</dt><dd data-field="contextStrategy">${marked(strategy(settings.contextStrategy), 'chat memory')}</dd>
+                <dt>Response</dt><dd data-field="responseStrategy">${marked(strategy(settings.responseStrategy), 'last')}</dd>`
+                : nothing}`;
     }
 
     /** What the sub-agents of a BDI, debate or voting planner are for it. */

@@ -22,6 +22,8 @@ import io.quarkus.runtime.annotations.RecordableConstructor;
  * @param remoteDetails server or MCP tool of an A2A or MCP client agent, null otherwise
  * @param code the application code behind the node (agent method, @Output, conditions, prompt resources...), for the
  *        Dev UI to open in the IDE
+ * @param settings compensation, summarized context and supervisor strategies; null when unknown (a workflow built in
+ *        code keeps them private)
  */
 public record AgentNode(
         String id,
@@ -37,14 +39,23 @@ public record AgentNode(
         PlannerInfo plannerInfo,
         AiAgentDetails aiDetails,
         RemoteAgentDetails remoteDetails,
-        List<CodeRef> code) {
+        List<CodeRef> code,
+        AgentSettings settings) {
 
     /** Without code references. */
     public AgentNode(String id, String name, NodeKind kind, String description, List<String> inputKeys, String outputKey,
             boolean optional, boolean async, List<AgentNode> children, Guard guard, PlannerInfo plannerInfo,
             AiAgentDetails aiDetails, RemoteAgentDetails remoteDetails) {
         this(id, name, kind, description, inputKeys, outputKey, optional, async, children, guard, plannerInfo, aiDetails,
-                remoteDetails, List.of());
+                remoteDetails, List.of(), null);
+    }
+
+    /** Without settings. */
+    public AgentNode(String id, String name, NodeKind kind, String description, List<String> inputKeys, String outputKey,
+            boolean optional, boolean async, List<AgentNode> children, Guard guard, PlannerInfo plannerInfo,
+            AiAgentDetails aiDetails, RemoteAgentDetails remoteDetails, List<CodeRef> code) {
+        this(id, name, kind, description, inputKeys, outputKey, optional, async, children, guard, plannerInfo, aiDetails,
+                remoteDetails, code, null);
     }
 
 

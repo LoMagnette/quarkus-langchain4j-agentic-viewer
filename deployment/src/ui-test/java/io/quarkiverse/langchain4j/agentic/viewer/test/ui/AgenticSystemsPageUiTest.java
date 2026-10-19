@@ -595,6 +595,33 @@ public class AgenticSystemsPageUiTest {
     }
 
     @Test
+    void agentSettingsAreShownAndSupervisorDefaultsMarked() {
+        openSystem();
+        Object fields = page.evaluate("async () => { "
+                + "const details = document.createElement('qwc-agentic-node-details'); document.body.appendChild(details); "
+                + "const fields = async node => { details.node = node; await details.updateComplete; "
+                + "const result = {}; details.shadowRoot.querySelectorAll('dd[data-field]').forEach(dd => "
+                + "result[dd.dataset.field] = dd.textContent.replace(/\\s+/g, ' ').trim()); return result; }; "
+                + "const node = (kind, settings) => ({ id: 'n', name: 'n', kind, inputKeys: [], children: [], settings }); "
+                + "const result = { "
+                + "agent: await fields(node('AI_AGENT', { compensateOnError: true, summarizedContext: ['checker', 'payer'] })), "
+                + "plain: await fields(node('AI_AGENT', { compensateOnError: false, summarizedContext: [] })), "
+                + "supervisor: await fields(node('SUPERVISOR', { compensateOnError: false, summarizedContext: [], "
+                + "maxAgentsInvocations: 3, contextStrategy: 'CHAT_MEMORY', responseStrategy: 'SCORED' })) }; "
+                + "details.remove(); return result; }");
+        Map<?, ?> byNode = (Map<?, ?>) fields;
+        Map<?, ?> agent = (Map<?, ?>) byNode.get("agent");
+        assertTrue(((String) agent.get("compensation")).startsWith("on error when a tool fails"), agent::toString);
+        assertTrue(((String) agent.get("summarizedContext")).startsWith("checkerpayer"), agent::toString);
+        Map<?, ?> plain = (Map<?, ?>) byNode.get("plain");
+        assertFalse(plain.containsKey("compensation") || plain.containsKey("summarizedContext"), "defaults not shown: " + plain);
+        Map<?, ?> supervisor = (Map<?, ?>) byNode.get("supervisor");
+        assertEquals("3", supervisor.get("maxAgentsInvocations"));
+        assertEquals("chat memory (default)", supervisor.get("contextStrategy"));
+        assertEquals("scored", supervisor.get("responseStrategy"));
+    }
+
+    @Test
     void theUserZoomIsKeptWhenTheGraphResizes() {
         openSystem();
         graph().evaluate("g => g._cy.zoom(2)");
