@@ -133,7 +133,11 @@ builder system (`deployment/.../builder/MixedSystems`). Their topology comes fro
 and conditions through `as()`, AI details from the annotations of `type()`), with the node id rule of the run events
 (simple name of each agent's type); findings in Backlog doc-5 (tree) and doc-6 (discovery). `AgentNode.settings` (TASK-78.3: compensateOnError,
 summarizedContext, supervisor max invocations and strategies) comes from the annotations: the scanner at build time,
-`BuilderTopology` from the agent type's annotations (null for a workflow built in code: its builder keeps them private).
+`BuilderTopology` from the agent type's annotations (null for a workflow built in code: its builder keeps them private). AI
+details (TASK-78.4) add the model suppliers and `@Skills` (`io.quarkiverse.langchain4j.skills.Skills`, read by name: not
+in the pinned jars; deployment tests have a stand-in), and every supplier / `@BeforeCall` next to an agent is a `CodeRef`
+role (scanner `SUPPLIER_ROLES`, same map in `BuilderTopology`; `CODE_ROLES` of the node details labels each role, a
+test checks it).
 
 ### Configuration
 

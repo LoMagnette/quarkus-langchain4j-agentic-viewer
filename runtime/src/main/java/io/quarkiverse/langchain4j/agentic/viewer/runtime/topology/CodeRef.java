@@ -28,7 +28,27 @@ public record CodeRef(Role role, String className, String member, String resourc
         /** the {@code @UserMessage(fromResource)} prompt */
         USER_MESSAGE,
         /** where a builder system is built */
-        CALL_SITE
+        CALL_SITE,
+        /** the {@code @ChatModelSupplier} method of an agent */
+        CHAT_MODEL_SUPPLIER,
+        /** the {@code @StreamingChatModelSupplier} method of an agent */
+        STREAMING_CHAT_MODEL_SUPPLIER,
+        /** the {@code @ChatMemorySupplier} method of an agent */
+        CHAT_MEMORY_SUPPLIER,
+        /** the {@code @ChatMemoryProviderSupplier} method of an agent */
+        CHAT_MEMORY_PROVIDER_SUPPLIER,
+        /** the {@code @ContentRetrieverSupplier} method of an agent */
+        CONTENT_RETRIEVER_SUPPLIER,
+        /** the {@code @RetrievalAugmentorSupplier} method of an agent */
+        RETRIEVAL_AUGMENTOR_SUPPLIER,
+        /** the {@code @SystemMessageProviderSupplier} method of an agent */
+        SYSTEM_MESSAGE_PROVIDER,
+        /** the {@code @UserMessageProviderSupplier} method of an agent */
+        USER_MESSAGE_PROVIDER,
+        /** the {@code @AgentListenerSupplier} method of an agent */
+        AGENT_LISTENER_SUPPLIER,
+        /** the {@code @BeforeCall} method of an agent */
+        BEFORE_CALL
     }
 
     public static CodeRef method(Role role, String className, String member) {

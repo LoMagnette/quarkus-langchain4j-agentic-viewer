@@ -622,6 +622,28 @@ public class AgenticSystemsPageUiTest {
     }
 
     @Test
+    void aiAgentDetailsShowTheModelSupplierAndSkills() {
+        openSystem();
+        Object fields = page.evaluate("async () => { "
+                + "const details = document.createElement('qwc-agentic-node-details'); document.body.appendChild(details); "
+                + "const text = async (aiDetails, field) => { details.node = { id: 'n', name: 'n', kind: 'AI_AGENT', "
+                + "inputKeys: [], children: [], aiDetails }; await details.updateComplete; "
+                + "return details.shadowRoot.querySelector(`[data-field=${field}]`)?.textContent.replace(/\\s+/g, ' ').trim() ?? null; }; "
+                + "const result = { "
+                + "supplier: await text({ modelName: 'fast', chatModelSupplier: 'com.example.Assistant#model', tools: [] }, 'model'), "
+                + "named: await text({ modelName: 'fast', tools: [] }, 'model'), "
+                + "skills: await text({ tools: [], skills: ['billing', 'refunds'] }, 'skills'), "
+                + "unnamed: await text({ tools: [], skills: [] }, 'skills'), "
+                + "none: await text({ tools: [] }, 'skills') }; details.remove(); return result; }");
+        Map<?, ?> byCase = (Map<?, ?>) fields;
+        assertEquals("Assistant#model chat model supplier", byCase.get("supplier"));
+        assertEquals("fast", byCase.get("named"));
+        assertEquals("billingrefunds", byCase.get("skills"));
+        assertEquals("@Skills without names", byCase.get("unnamed"));
+        assertEquals(null, byCase.get("none"), "no @Skills: no section");
+    }
+
+    @Test
     void theUserZoomIsKeptWhenTheGraphResizes() {
         openSystem();
         graph().evaluate("g => g._cy.zoom(2)");

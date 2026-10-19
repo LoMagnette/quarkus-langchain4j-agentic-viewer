@@ -7,6 +7,7 @@ import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -73,6 +74,34 @@ public class AgenticAnnotationScanner {
     static final DotName MODEL_NAME = DotName.createSimple("io.quarkiverse.langchain4j.ModelName");
     static final DotName TOOL_BOX = DotName.createSimple("io.quarkiverse.langchain4j.ToolBox");
     static final DotName MCP_TOOL_BOX = DotName.createSimple("io.quarkiverse.langchain4j.mcp.runtime.McpToolBox");
+    /** quarkus-langchain4j's skills of an AI agent method (read by name: the pinned versions do not ship it). */
+    static final DotName SKILLS = DotName.createSimple("io.quarkiverse.langchain4j.skills.Skills");
+    static final DotName CHAT_MODEL_SUPPLIER = declarative("ChatModelSupplier");
+    static final DotName STREAMING_CHAT_MODEL_SUPPLIER = declarative("StreamingChatModelSupplier");
+    /**
+     * The static methods next to an agent method that configure it (DeclarativeUtil), listed in its code: the model
+     * suppliers first, as the details name them.
+     */
+    static final Map<DotName, CodeRef.Role> SUPPLIER_ROLES = supplierRoles();
+
+    private static DotName declarative(String simpleName) {
+        return DotName.createSimple("dev.langchain4j.agentic.declarative." + simpleName);
+    }
+
+    private static Map<DotName, CodeRef.Role> supplierRoles() {
+        Map<DotName, CodeRef.Role> roles = new LinkedHashMap<>();
+        roles.put(CHAT_MODEL_SUPPLIER, CodeRef.Role.CHAT_MODEL_SUPPLIER);
+        roles.put(STREAMING_CHAT_MODEL_SUPPLIER, CodeRef.Role.STREAMING_CHAT_MODEL_SUPPLIER);
+        roles.put(declarative("ChatMemorySupplier"), CodeRef.Role.CHAT_MEMORY_SUPPLIER);
+        roles.put(declarative("ChatMemoryProviderSupplier"), CodeRef.Role.CHAT_MEMORY_PROVIDER_SUPPLIER);
+        roles.put(declarative("ContentRetrieverSupplier"), CodeRef.Role.CONTENT_RETRIEVER_SUPPLIER);
+        roles.put(declarative("RetrievalAugmentorSupplier"), CodeRef.Role.RETRIEVAL_AUGMENTOR_SUPPLIER);
+        roles.put(declarative("SystemMessageProviderSupplier"), CodeRef.Role.SYSTEM_MESSAGE_PROVIDER);
+        roles.put(declarative("UserMessageProviderSupplier"), CodeRef.Role.USER_MESSAGE_PROVIDER);
+        roles.put(declarative("AgentListenerSupplier"), CodeRef.Role.AGENT_LISTENER_SUPPLIER);
+        roles.put(declarative("BeforeCall"), CodeRef.Role.BEFORE_CALL);
+        return Collections.unmodifiableMap(roles);
+    }
 
     /** {@code @LoopAgent.maxIterations()} default. */
     private static final int DEFAULT_MAX_ITERATIONS = 10;
@@ -270,6 +299,7 @@ public class AgenticAnnotationScanner {
                     systemMessage != null ? systemMessage : type.declaredAnnotation(SYSTEM_MESSAGE));
             addResource(code, CodeRef.Role.USER_MESSAGE, type, method.declaredAnnotation(USER_MESSAGE));
         }
+        SUPPLIER_ROLES.forEach((annotationName, role) -> addMethod(code, role, annotatedMethod(type, annotationName)));
         return code;
     }
 
@@ -318,7 +348,31 @@ public class AgenticAnnotationScanner {
                 template(method.declaredAnnotation(USER_MESSAGE)),
                 modelName == null ? null : nonBlank(modelName.value().asString()),
                 tools(index, method),
-                runtimeToolSources(method));
+                runtimeToolSources(method),
+                methodRef(annotatedMethod(method.declaringClass(), CHAT_MODEL_SUPPLIER)),
+                methodRef(annotatedMethod(method.declaringClass(), STREAMING_CHAT_MODEL_SUPPLIER)),
+                skills(method.declaredAnnotation(SKILLS)));
+    }
+
+    /** The values of {@code @Skills}, whatever their type (names or classes); null without the annotation. */
+    private static List<String> skills(AnnotationInstance skills) {
+        if (skills == null) {
+            return null;
+        }
+        AnnotationValue value = skills.value();
+        if (value == null) {
+            return List.of();
+        }
+        List<String> names = new ArrayList<>();
+        List<AnnotationValue> values = value.kind() == AnnotationValue.Kind.ARRAY ? value.asArrayList() : List.of(value);
+        for (AnnotationValue item : values) {
+            String name = item.kind() == AnnotationValue.Kind.CLASS ? item.asClass().name().toString()
+                    : String.valueOf(item.value());
+            if (!name.isBlank()) {
+                names.add(name);
+            }
+        }
+        return names;
     }
 
     private static List<ToolInfo> tools(IndexView index, MethodInfo method) {

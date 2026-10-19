@@ -112,16 +112,19 @@ checked the same way (what their lambdas read is unknown: no "never read" hint f
 === Details
 
 Clicking a node opens its details: description, input and output keys, flags, the exit or activation condition, and
-for an AI agent its system and user messages, model and tools. Settings that change how an agent behaves are shown
-when set: `compensateOnError` (compensation of the earlier tool calls when a tool fails), the agents of its
-`summarizedContext`, and for a supervisor its maximum of invocations, context strategy and response strategy, marked
-when they are the defaults. For a system built with the builders, they come from the annotations of its agent types:
-the settings of the workflows the builders make are not known.
+for an AI agent its system and user messages, model (its `@ModelName`, or the `@ChatModelSupplier` or
+`@StreamingChatModelSupplier` method giving it), skills (`@Skills`) and tools. Settings that change how an agent
+behaves are shown when set: `compensateOnError` (compensation of the earlier tool calls when a tool fails), the agents
+of its `summarizedContext`, and for a supervisor its maximum of invocations, context strategy and response strategy,
+marked when they are the defaults. For a system built with the builders, they come from the annotations of its agent
+types: the settings of the workflows the builders make are not known.
 
 The *Code* section lists the application code behind the node: the agent method, a workflow's `@Output`, a planner's
-`@PlannerSupplier`, the exit and activation conditions, the prompt resources (`fromResource`), the tools, and where a
-builder system is built. Code found in the application sources shows its file and line; when the Dev UI detected your
-IDE, a click opens it there. Code of dependencies is listed without a link.
+`@PlannerSupplier`, the exit and activation conditions, the prompt resources (`fromResource`), the tools, the methods
+configuring the agent (chat model, chat memory, content retriever, retrieval augmentor, message provider and agent
+listener suppliers, `@BeforeCall`), and where a builder system is built. Code found in the application sources shows
+its file and line; when the Dev UI detected your IDE, a click opens it there. Code of dependencies is listed without a
+link.
 
 image::details.png[The details of an AI agent]
 

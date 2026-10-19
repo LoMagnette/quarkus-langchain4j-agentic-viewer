@@ -11,6 +11,7 @@ import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -80,6 +81,26 @@ public final class BuilderTopology {
     private static final String MODEL_NAME = "io.quarkiverse.langchain4j.ModelName";
     private static final String TOOL_BOX = "io.quarkiverse.langchain4j.ToolBox";
     private static final String MCP_TOOL_BOX = "io.quarkiverse.langchain4j.mcp.runtime.McpToolBox";
+    private static final String SKILLS = "io.quarkiverse.langchain4j.skills.Skills";
+    private static final String CHAT_MODEL_SUPPLIER = DECLARATIVE + "ChatModelSupplier";
+    private static final String STREAMING_CHAT_MODEL_SUPPLIER = DECLARATIVE + "StreamingChatModelSupplier";
+    /** Same as the scanner's SUPPLIER_ROLES: the static methods configuring an agent, in its code. */
+    private static final Map<String, CodeRef.Role> SUPPLIER_ROLES = supplierRoles();
+
+    private static Map<String, CodeRef.Role> supplierRoles() {
+        Map<String, CodeRef.Role> roles = new LinkedHashMap<>();
+        roles.put(CHAT_MODEL_SUPPLIER, CodeRef.Role.CHAT_MODEL_SUPPLIER);
+        roles.put(STREAMING_CHAT_MODEL_SUPPLIER, CodeRef.Role.STREAMING_CHAT_MODEL_SUPPLIER);
+        roles.put(DECLARATIVE + "ChatMemorySupplier", CodeRef.Role.CHAT_MEMORY_SUPPLIER);
+        roles.put(DECLARATIVE + "ChatMemoryProviderSupplier", CodeRef.Role.CHAT_MEMORY_PROVIDER_SUPPLIER);
+        roles.put(DECLARATIVE + "ContentRetrieverSupplier", CodeRef.Role.CONTENT_RETRIEVER_SUPPLIER);
+        roles.put(DECLARATIVE + "RetrievalAugmentorSupplier", CodeRef.Role.RETRIEVAL_AUGMENTOR_SUPPLIER);
+        roles.put(DECLARATIVE + "SystemMessageProviderSupplier", CodeRef.Role.SYSTEM_MESSAGE_PROVIDER);
+        roles.put(DECLARATIVE + "UserMessageProviderSupplier", CodeRef.Role.USER_MESSAGE_PROVIDER);
+        roles.put(DECLARATIVE + "AgentListenerSupplier", CodeRef.Role.AGENT_LISTENER_SUPPLIER);
+        roles.put(DECLARATIVE + "BeforeCall", CodeRef.Role.BEFORE_CALL);
+        return Collections.unmodifiableMap(roles);
+    }
 
     /** Planners of the workflow kinds, by class name (internal classes); any other planner is a PLANNER node. */
     private static final Map<String, NodeKind> WORKFLOW_PLANNERS = Map.of(
@@ -184,32 +205,24 @@ public final class BuilderTopology {
             for (Annotation annotation : annotations(method)) {
                 String name = annotation.annotationType().getName();
                 if (name.equals(AGENT) || DECLARATIVE_WORKFLOWS.contains(name)) {
-                    Object context = attribute(annotation, "summarizedContext");
+                    Object context = value(annotation, "summarizedContext");
                     List<String> summarized = context instanceof String[] names
                             ? Arrays.stream(names).map(String::trim).filter(n -> !n.isEmpty()).toList()
                             : List.of();
-                    boolean compensate = Boolean.TRUE.equals(attribute(annotation, "compensateOnError"));
+                    boolean compensate = Boolean.TRUE.equals(value(annotation, "compensateOnError"));
                     if (kind != NodeKind.SUPERVISOR) {
                         return new AgentSettings(compensate, summarized, null, null, null);
                     }
                     return new AgentSettings(compensate, summarized,
-                            attribute(annotation, "maxAgentsInvocations") instanceof Integer max ? max : null,
-                            attribute(annotation, "contextStrategy") instanceof Enum<?> strategy ? strategy.name() : null,
-                            attribute(annotation, "responseStrategy") instanceof Enum<?> strategy ? strategy.name() : null);
+                            value(annotation, "maxAgentsInvocations") instanceof Integer max ? max : null,
+                            value(annotation, "contextStrategy") instanceof Enum<?> strategy ? strategy.name() : null,
+                            value(annotation, "responseStrategy") instanceof Enum<?> strategy ? strategy.name() : null);
                 }
             }
         }
         return null;
     }
 
-    /** An attribute of an annotation, null when it has none of that name. */
-    private static Object attribute(Annotation annotation, String name) {
-        try {
-            return annotation.annotationType().getMethod(name).invoke(annotation);
-        } catch (ReflectiveOperationException | RuntimeException e) {
-            return null;
-        }
-    }
 
     /**
      * The application class of an agent (its agent method when it declares one), none for the library's own types (an
@@ -224,7 +237,15 @@ public final class BuilderTopology {
                         || a.annotationType().getName().startsWith(DECLARATIVE)))
                 .map(Method::getName).findFirst()
                 .orElseGet(() -> type.isInterface() && agentMethods(type).size() == 1 ? agentMethods(type).get(0).getName() : null);
-        return List.of(CodeRef.method(CodeRef.Role.AGENT, type.getName(), member));
+        List<CodeRef> code = new ArrayList<>();
+        code.add(CodeRef.method(CodeRef.Role.AGENT, type.getName(), member));
+        SUPPLIER_ROLES.forEach((annotation, role) -> {
+            Method supplier = agentMethod(type, annotation);
+            if (supplier != null) {
+                code.add(CodeRef.method(role, supplier.getDeclaringClass().getName(), supplier.getName()));
+            }
+        });
+        return code;
     }
 
     /** Where the system is built: the call site the transform reported ({@code Class#method:line}), else the producer. */
@@ -407,7 +428,25 @@ public final class BuilderTopology {
         Annotation modelName = annotation(method, MODEL_NAME);
         return new AiAgentDetails(template(type, systemMessage), template(type, annotation(method, USER_MESSAGE)),
                 modelName == null ? null : nonBlank((String) value(modelName, "value")), tools(method),
-                runtimeToolSources(type, method));
+                runtimeToolSources(type, method), supplierRef(type, CHAT_MODEL_SUPPLIER),
+                supplierRef(type, STREAMING_CHAT_MODEL_SUPPLIER), skills(annotation(method, SKILLS)));
+    }
+
+    /** {@code Class#method} of the method of the agent type with this annotation, null when none. */
+    private static String supplierRef(Class<?> type, String annotation) {
+        Method supplier = agentMethod(type, annotation);
+        return supplier == null ? null : supplier.getDeclaringClass().getName() + "#" + supplier.getName();
+    }
+
+    /** The values of {@code @Skills}, names or classes; null without the annotation. */
+    private static List<String> skills(Annotation skills) {
+        if (skills == null) {
+            return null;
+        }
+        Object value = value(skills, "value");
+        Object[] values = value instanceof Object[] array ? array : value == null ? new Object[0] : new Object[] { value };
+        return Arrays.stream(values).map(item -> item instanceof Class<?> type ? type.getName() : String.valueOf(item))
+                .filter(name -> !name.isBlank()).toList();
     }
 
     private static List<ToolInfo> tools(Method method) {

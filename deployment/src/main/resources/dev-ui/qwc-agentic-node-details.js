@@ -10,7 +10,12 @@ import { shortRef } from './qwc-agentic-run-model.js';
 const CODE_ROLES = {
     AGENT: 'Agent', OUTPUT: '@Output', PLANNER_SUPPLIER: 'Planner supplier', EXIT_CONDITION: 'Exit condition',
     ACTIVATION_CONDITION: 'Activation condition', SYSTEM_MESSAGE: 'System message', USER_MESSAGE: 'User message',
-    TOOL: 'Tool', CALL_SITE: 'Built at',
+    TOOL: 'Tool', CALL_SITE: 'Built at', CHAT_MODEL_SUPPLIER: 'Chat model supplier',
+    STREAMING_CHAT_MODEL_SUPPLIER: 'Streaming chat model supplier', CHAT_MEMORY_SUPPLIER: 'Chat memory supplier',
+    CHAT_MEMORY_PROVIDER_SUPPLIER: 'Chat memory provider supplier', CONTENT_RETRIEVER_SUPPLIER: 'Content retriever supplier',
+    RETRIEVAL_AUGMENTOR_SUPPLIER: 'Retrieval augmentor supplier', SYSTEM_MESSAGE_PROVIDER: 'System message provider',
+    USER_MESSAGE_PROVIDER: 'User message provider', AGENT_LISTENER_SUPPLIER: 'Agent listener supplier',
+    BEFORE_CALL: 'Before call',
 };
 /** Display names of the langchain4j-agentic-patterns planners. */
 const PATTERN_LABELS = {
@@ -354,7 +359,15 @@ export class QwcAgenticNodeDetails extends LitElement {
     _renderAiDetails(details) {
         return html`
             <h5>Model</h5>
-            <div data-field="model">${details?.modelName ?? html`<span class="none">default model</span>`}</div>
+            <div data-field="model">${details?.chatModelSupplier || details?.streamingChatModelSupplier
+                ? [[details.chatModelSupplier, 'chat model supplier'], [details.streamingChatModelSupplier, 'streaming chat model supplier']]
+                    .filter(([ref]) => ref).map(([ref, label]) => html`<div><span title=${ref}>${shortRef(ref)}</span>
+                        <span class="muted">${label}</span></div>`)
+                : details?.modelName ?? html`<span class="none">default model</span>`}</div>
+            ${details?.skills ? html`
+                <h5>Skills</h5>
+                <div data-field="skills">${details.skills.length ? this._chips(details.skills)
+                    : html`<span class="muted">@Skills without names</span>`}</div>` : nothing}
             <h5>System message</h5>
             <div data-field="systemMessage">${details?.systemMessage ? html`<pre>${details.systemMessage}</pre>` : this._none()}</div>
             <h5>User message</h5>
