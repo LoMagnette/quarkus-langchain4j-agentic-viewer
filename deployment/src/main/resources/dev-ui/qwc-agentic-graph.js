@@ -509,11 +509,10 @@ export class QwcAgenticGraph extends observeState(LitElement) {
         :host {
             display: flex;
             flex-direction: column;
-            min-height: 480px;
         }
         #graph {
             flex: 1;
-            min-height: 480px;
+            min-height: 200px;
             border: 1px solid var(--lumo-contrast-10pct);
             border-radius: var(--lumo-border-radius-m);
         }

@@ -214,7 +214,10 @@ whose link shows the number of systems known at build time. Everything comes ove
 (`AgenticViewerJsonRpcService`: `listSystems`, `getTopology`, `getContributions`, `getInputSchema`, `previewGoalPath`,
 `startRun`, `streamRun`, `listRuns`, `getRun`, `cancelRun`, `provideHumanInput`; an unknown system or run id is a
 JSON-RPC error, except `listRuns` (empty list: no run kept) and `cancelRun` (false: nothing running to cancel));
-method names are `quarkus-langchain4j-agentic-viewer_<method>`. Components (Lit + Vaadin, served by the Dev UI):
+method names are `quarkus-langchain4j-agentic-viewer_<method>`. System page layout (TASK-82): the `qwc-agentic-systems`
+host scrolls; graph and side panel share a band (`.system-body`) sized to the window below the header, or to the height
+dragged on `.band-resizer` (kept in localStorage, double-click resets); the timeline sits below at full width and shows
+every row (no inner scroll). Components (Lit + Vaadin, served by the Dev UI):
 - `qwc-agentic-graph.js`: Cytoscape.js + elkjs (mvnpm). `toGraph()` / `toDataFlowGraph()` map a topology to
   nodes/edges (pattern planners: `goalGraph`, `peerGraph`, `boardGraph`; contributions replace the candidates); each
   compound is laid out separately by ELK to keep declaration order. The live view goes through `highlight`,

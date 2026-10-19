@@ -28,6 +28,8 @@ export class QwcAgenticSystems extends LitElement {
             padding: var(--lumo-space-m);
             height: 100%;
             box-sizing: border-box;
+            /* the page scrolls: the timeline below the graph band grows with the run */
+            overflow-y: auto;
         }
         vaadin-grid {
             flex: 1;
@@ -87,11 +89,35 @@ export class QwcAgenticSystems extends LitElement {
         .header h3 {
             margin: 0;
         }
+        /* graph and side panel: a band whose height is the window's below the header, or the one the user dragged */
         .system-body {
-            flex: 1;
+            flex: 0 0 auto;
             display: flex;
             gap: var(--lumo-space-m);
             min-height: 0;
+        }
+        .band-resizer {
+            flex: 0 0 auto;
+            height: 12px;
+            margin: calc(-1 * var(--lumo-space-m) + 2px) 0 calc(-1 * var(--lumo-space-m) + 2px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: row-resize;
+            touch-action: none;
+        }
+        .band-resizer::before {
+            content: '';
+            width: 48px;
+            height: 4px;
+            border-radius: 2px;
+            background: var(--lumo-contrast-20pct);
+        }
+        .band-resizer:hover::before, .band-resizer:focus-visible::before, .band-resizer.dragging::before {
+            background: var(--lumo-primary-color-50pct);
+        }
+        .band-resizer:focus-visible {
+            outline: none;
         }
         .graph-column {
             flex: 1;
@@ -106,7 +132,6 @@ export class QwcAgenticSystems extends LitElement {
         }
         qwc-agentic-timeline {
             flex: 0 0 auto;
-            max-height: 35%;
             border: 1px solid var(--lumo-contrast-10pct);
             border-radius: var(--lumo-border-radius-m);
             padding: var(--lumo-space-xs) var(--lumo-space-s);
@@ -162,6 +187,10 @@ export class QwcAgenticSystems extends LitElement {
 
     jsonRpc = new JsonRpc(this);
 
+    /** Where the graph band height the user dragged is kept (this browser only). */
+    static BAND_HEIGHT_KEY = 'quarkus-langchain4j-agentic-viewer.graph-height';
+    static MIN_BAND_HEIGHT = 320;
+
     /**
      * The JSON-RPC calls the run panel makes. A plain object: the JsonRpc proxy answers every property, including the
      * one Lit probes to recognize directives, so it cannot be passed through a binding.
@@ -181,9 +210,81 @@ export class QwcAgenticSystems extends LitElement {
 
     connectedCallback() {
         super.connectedCallback();
+        this._userBandHeight = readBandHeight();
+        // the default band height follows the window
+        this._hostObserver = new ResizeObserver(() => this._applyBandHeight());
+        this._hostObserver.observe(this);
         this.jsonRpc.listSystems()
             .then(response => this._systems = response.result ?? [])
             .catch(error => this._error = `Cannot list the agentic systems: ${error?.message ?? error}`);
+    }
+
+    disconnectedCallback() {
+        this._hostObserver?.disconnect();
+        super.disconnectedCallback();
+    }
+
+    updated() {
+        this._applyBandHeight();
+    }
+
+    /** Sizes the graph band: the height the user dragged, otherwise the window's below the header. */
+    _applyBandHeight() {
+        const band = this.renderRoot.querySelector('.system-body');
+        if (band) {
+            band.style.height = `${this._userBandHeight ?? this._defaultBandHeight(band)}px`;
+        }
+    }
+
+    _defaultBandHeight(band) {
+        const top = band.getBoundingClientRect().top - this.getBoundingClientRect().top + this.scrollTop;
+        const style = getComputedStyle(this);
+        const below = parseFloat(style.paddingBottom) + parseFloat(style.rowGap || 0);
+        return Math.max(QwcAgenticSystems.MIN_BAND_HEIGHT + 40, Math.round(this.clientHeight - top - below));
+    }
+
+    _startBandResize(event) {
+        const band = this.renderRoot.querySelector('.system-body');
+        const handle = event.currentTarget;
+        const startY = event.clientY;
+        const startHeight = band.getBoundingClientRect().height;
+        event.preventDefault();
+        handle.setPointerCapture(event.pointerId);
+        handle.classList.add('dragging');
+        const move = e => this._setBandHeight(startHeight + e.clientY - startY, false);
+        const end = () => {
+            handle.removeEventListener('pointermove', move);
+            handle.removeEventListener('pointerup', end);
+            handle.removeEventListener('pointercancel', end);
+            handle.classList.remove('dragging');
+            storeBandHeight(this._userBandHeight);
+        };
+        handle.addEventListener('pointermove', move);
+        handle.addEventListener('pointerup', end);
+        handle.addEventListener('pointercancel', end);
+    }
+
+    _bandKey(event) {
+        const step = event.key === 'ArrowUp' ? -40 : event.key === 'ArrowDown' ? 40 : 0;
+        if (step) {
+            event.preventDefault();
+            const band = this.renderRoot.querySelector('.system-body');
+            this._setBandHeight(band.getBoundingClientRect().height + step, true);
+        }
+    }
+
+    _setBandHeight(height, store) {
+        this._userBandHeight = Math.max(QwcAgenticSystems.MIN_BAND_HEIGHT, Math.round(height));
+        this._applyBandHeight();
+        if (store) {
+            storeBandHeight(this._userBandHeight);
+        }
+    }
+
+    _resetBandHeight() {
+        this._userBandHeight = undefined;
+        storeBandHeight(undefined);
+        this._applyBandHeight();
     }
 
     render() {
@@ -338,8 +439,6 @@ export class QwcAgenticSystems extends LitElement {
                 <div class="graph-column">
                     <qwc-agentic-graph .system=${system}
                                        @node-selected=${e => this._selectNode(system, e.detail.nodeId)}></qwc-agentic-graph>
-                    ${this._runEvents ? html`<qwc-agentic-timeline .events=${this._runEvents} .system=${system}
-                            .running=${!!this._runRunning}></qwc-agentic-timeline>` : ''}
                 </div>
                 <div class="side" ?hidden=${!this._side}>
                     <div class="side-header">
@@ -367,7 +466,34 @@ export class QwcAgenticSystems extends LitElement {
                             .systemId=${this._summary?.id} .rpc=${this.rpc} .warnings=${system.warnings}
                             @close=${this._closeDetails}></qwc-agentic-node-details>` : ''}
                 </div>
-            </div>`;
+            </div>
+            <div class="band-resizer" role="separator" aria-orientation="horizontal" tabindex="0"
+                 aria-label="Resize the graph" title="Drag to resize the graph, double-click for the default height"
+                 @pointerdown=${this._startBandResize} @dblclick=${this._resetBandHeight} @keydown=${this._bandKey}></div>
+            ${this._runEvents ? html`<qwc-agentic-timeline .events=${this._runEvents} .system=${system}
+                    .running=${!!this._runRunning}></qwc-agentic-timeline>` : ''}`;
+    }
+}
+
+/** The graph band height the user dragged, undefined when none or when the browser keeps no storage. */
+function readBandHeight() {
+    try {
+        const height = Number(localStorage.getItem(QwcAgenticSystems.BAND_HEIGHT_KEY));
+        return height >= QwcAgenticSystems.MIN_BAND_HEIGHT ? height : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+function storeBandHeight(height) {
+    try {
+        if (height === undefined) {
+            localStorage.removeItem(QwcAgenticSystems.BAND_HEIGHT_KEY);
+        } else {
+            localStorage.setItem(QwcAgenticSystems.BAND_HEIGHT_KEY, String(height));
+        }
+    } catch {
+        // no storage (private window, blocked site data): the height lasts until the page is left
     }
 }
 

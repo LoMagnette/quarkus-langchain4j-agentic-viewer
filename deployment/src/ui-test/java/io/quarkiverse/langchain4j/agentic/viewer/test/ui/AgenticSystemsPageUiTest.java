@@ -27,9 +27,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.Locator;
+import com.microsoft.playwright.Mouse;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.assertions.LocatorAssertions;
+import com.microsoft.playwright.options.BoundingBox;
 import com.microsoft.playwright.options.ReducedMotion;
 import com.microsoft.playwright.options.WaitForSelectorState;
 
@@ -677,6 +679,60 @@ public class AgenticSystemsPageUiTest {
         assertEquals("billingrefunds", byCase.get("skills"));
         assertEquals("@Skills without names", byCase.get("unnamed"));
         assertEquals(null, byCase.get("none"), "no @Skills: no section");
+    }
+
+    @Test
+    void theTimelineGrowsBelowTheGraphAndThePageScrolls() {
+        page.setViewportSize(1280, 620);
+        openRunForm();
+        fill("a lighthouse");
+        clickRun();
+        confirmIfAsked();
+        assertThat(status()).hasAttribute("data-run-status", "succeeded");
+
+        Map<String, Object> before = layout();
+        double bandHeight = number(before, "bandHeight");
+        // the graph and the side panel end with the band, the timeline starts below it, at the band's full width
+        assertTrue(number(before, "graphBottom") <= number(before, "timelineTop"), before::toString);
+        assertTrue(number(before, "sideBottom") <= number(before, "timelineTop"), before::toString);
+        assertEquals(number(before, "bandLeft"), number(before, "timelineLeft"), 1, before::toString);
+        assertEquals(number(before, "bandRight"), number(before, "timelineRight"), 1, before::toString);
+        assertEquals(false, before.get("timelineScrolls"), "every row shown: " + before);
+        assertEquals(true, before.get("pageScrolls"), "the page scrolls instead: " + before);
+        assertTrue(bandHeight >= 320, "the band keeps a usable height: " + before);
+
+        // dragging the handle resizes the band, the height is kept for the next visits
+        BoundingBox handle = page.locator(".band-resizer").boundingBox();
+        page.mouse().move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+        page.mouse().down();
+        page.mouse().move(handle.x + handle.width / 2, handle.y + handle.height / 2 + 120, new Mouse.MoveOptions().setSteps(6));
+        page.mouse().up();
+        double dragged = number(layout(), "bandHeight");
+        assertEquals(bandHeight + 120, dragged, 2);
+        assertEquals(String.valueOf(Math.round(dragged)), layout().get("stored"));
+        openSystem();
+        assertEquals(dragged, number(layout(), "bandHeight"), 2, "kept after a reload");
+
+        // a double-click restores the default height
+        page.locator(".band-resizer").dblclick();
+        Map<String, Object> reset = layout();
+        assertEquals(bandHeight, number(reset, "bandHeight"), 2, reset::toString);
+        assertEquals(null, reset.get("stored"));
+    }
+
+    /** Boxes of the system page parts (the timeline's when there is one), whether things scroll, the stored height. */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> layout() {
+        return (Map<String, Object>) page.locator("qwc-agentic-systems").evaluate("page => { "
+                + "const part = sel => page.shadowRoot.querySelector(sel); const box = sel => part(sel).getBoundingClientRect(); "
+                + "const band = box('.system-body'), timeline = part('qwc-agentic-timeline'); "
+                + "let stored = 'unreadable'; try { stored = localStorage.getItem('quarkus-langchain4j-agentic-viewer.graph-height'); } catch (e) {} "
+                + "return { bandHeight: band.height, bandLeft: band.left, bandRight: band.right, "
+                + "graphBottom: box('qwc-agentic-graph').bottom, sideBottom: box('.side').bottom, "
+                + "timelineTop: timeline?.getBoundingClientRect().top, timelineLeft: timeline?.getBoundingClientRect().left, "
+                + "timelineRight: timeline?.getBoundingClientRect().right, "
+                + "timelineScrolls: timeline ? timeline.scrollHeight > timeline.clientHeight + 1 : null, "
+                + "pageScrolls: page.scrollHeight > page.clientHeight, stored }; }");
     }
 
     @Test

@@ -160,7 +160,9 @@ image::tools-confirmation.png[The confirmation listing the tools a run can reach
 While the run executes, the graph highlights the agents as they start and finish, with their duration and token
 usage, the iterations of loops and the items of parallel mappers. The timeline below the graph shows every
 invocation, nested by its parent, with the tool calls (click one for its arguments and result); the *Scope* tab shows
-the AgenticScope keys as agents write them.
+the AgenticScope keys as agents write them. The timeline spans the page width and grows with the run: the page
+scrolls. Drag the handle between the graph and the timeline to resize the graph (double-click it for the default height,
+which fills the window); the height is remembered in the browser.
 
 image::live.png[A supervisor run with its timeline]
 
