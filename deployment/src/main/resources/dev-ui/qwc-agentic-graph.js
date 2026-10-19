@@ -275,6 +275,7 @@ export function toGraph(system) {
             label: (compound ? `${kindLabel(node.kind, node.plannerInfo?.patternType)} · ${node.name}` : node.name) + badge,
             warned: !!badge,
             kind: node.kind,
+            pattern: node.plannerInfo?.patternType,
             parent,
             compound,
             // extra layout room: a loop draws its back-edge and label on the right, conditional guards label the fan-out
@@ -415,7 +416,7 @@ export function toDataFlowGraph(system) {
     const readers = [...agents]; // agents, then suppliers, whose input keys are drawn
     const supplier = (node, ancestors) => {
         if (!nodes.some(n => n.id === node.id)) {
-            nodes.push({ id: node.id, label: node.name, kind: node.kind, compound: false });
+            nodes.push({ id: node.id, label: node.name, kind: node.kind, pattern: node.plannerInfo?.patternType, compound: false });
             readers.push({ node, ancestors });
         }
         return node.id;
@@ -447,7 +448,7 @@ export function toDataFlowGraph(system) {
         const { node, ancestors } = readers[i];
         (node.inputKeys ?? []).forEach(key => sourcesOf(key, ancestors).forEach(source => reads.push({ source, reader: node })));
     }
-    agents.forEach(({ node }) => nodes.push({ id: node.id, label: node.name, kind: node.kind, compound: false }));
+    agents.forEach(({ node }) => nodes.push({ id: node.id, label: node.name, kind: node.kind, pattern: node.plannerInfo?.patternType, compound: false }));
     // system inputs, then suppliers, then agents: the layout breaks cycles against this order, so sources stay on top
     nodes.sort((a, b) => (b.inputKey ? 1 : 0) - (a.inputKey ? 1 : 0));
     // one edge per (source, reader) pair, listing every key it carries
@@ -613,17 +614,23 @@ export class QwcAgenticGraph extends observeState(LitElement) {
             <div id="graph"></div>`;
     }
 
-    /** Lists the node kinds drawn in the current view, drawn like in the graph. */
+    /** Lists the node kinds drawn in the current view, drawn like in the graph; planners by pattern when known. */
     _renderLegend() {
-        const kinds = [...new Set((this._graph?.nodes ?? []).filter(n => !n.helper || n.inputKey).map(n => n.kind))];
+        const entries = new Map();
+        (this._graph?.nodes ?? []).filter(n => !n.helper || n.inputKey).forEach(n => {
+            const label = kindLabel(n.kind, n.pattern);
+            if (!entries.has(label)) {
+                entries.set(label, n.kind);
+            }
+        });
         const order = Object.keys(KIND_STYLES);
-        kinds.sort((a, b) => order.indexOf(a) - order.indexOf(b));
-        return html`<div class="legend">${kinds.map(kind => {
+        const legend = [...entries].sort(([, a], [, b]) => order.indexOf(a) - order.indexOf(b));
+        return html`<div class="legend">${legend.map(([label, kind]) => {
             const style = KIND_STYLES[kind] ?? KIND_STYLES.NON_AI_AGENT;
             return html`<span class="legend-item" data-kind=${kind}>
                 <span class="swatch ${style.shape} ${style.border}"
                       style="border-color: ${style.color}; border-style: ${style.border}"></span>
-                ${KIND_LABELS[kind] ?? kind}</span>`;
+                ${label}</span>`;
         })}
         ${this.view === 'dataflow' ? html`<span class="legend-item">key: writer → reader</span>` : ''}</div>`;
     }

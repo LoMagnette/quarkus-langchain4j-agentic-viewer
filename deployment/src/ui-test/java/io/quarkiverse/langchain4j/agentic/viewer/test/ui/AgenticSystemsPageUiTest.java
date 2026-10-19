@@ -605,6 +605,8 @@ public class AgenticSystemsPageUiTest {
                 + "document.body.appendChild(graph); graph.system = system; "
                 + "for (let i = 0; i < 200 && !graph._cy; i++) { await new Promise(r => setTimeout(r, 50)); } "
                 + "const titles = ['r/bdi', 'r/debate', 'r/vote', 'r/custom'].map(id => graph._cy.getElementById(id).data('label')); "
+                + "await graph.updateComplete; const legend = [...graph.shadowRoot.querySelectorAll('.legend-item')] "
+                + ".map(item => item.textContent.trim()).filter(text => text !== 'AI agent' && text !== 'Sequence'); "
                 + "graph.remove(); "
                 // the badge of the node details, the planner kind kept in its title
                 + "const details = document.createElement('qwc-agentic-node-details'); document.body.appendChild(details); "
@@ -622,8 +624,9 @@ public class AgenticSystemsPageUiTest {
                 + "render(document.createElement('qwc-agentic-systems')._renderKinds({ patternKinds: ['SEQUENCE', 'PLANNER'], "
                 + "plannerPatterns: ['BDI', 'CUSTOM'] }), cell); "
                 + "const list = [...cell.querySelectorAll('.kind')].map(chip => chip.textContent.trim()); "
-                + "return { titles, detailsTag, timelineTag, list }; }");
+                + "return { titles, legend, detailsTag, timelineTag, list }; }");
         assertEquals(Map.of("titles", List.of("BDI · bdi", "Debate · debate", "Voting · vote", "Planner · custom"),
+                "legend", List.of("BDI", "Debate", "Voting", "Planner", "Desire", "Vote"),
                 "detailsTag", "BDI / Planner", "timelineTag", "Voting", "list", List.of("Sequence", "BDI", "Planner")), tags);
     }
 

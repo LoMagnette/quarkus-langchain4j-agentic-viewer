@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-10-19 16:53'
-updated_date: '2026-10-19 17:07'
+updated_date: '2026-10-19 17:25'
 labels: []
 dependencies: []
 priority: low
@@ -25,6 +25,7 @@ A planner node built on one of the langchain4j-agentic-patterns planners (GOAP, 
 - [x] #2 The kind badge of the node details and the kind tag of the timeline rows name the pattern for a pattern planner
 - [x] #3 The Patterns column of the system list shows the pattern of each planner of a system instead of a single 'Planner' (a custom planner still shows 'Planner')
 - [x] #4 Covered by tests: system summary (Java) and Dev UI (browser test)
+- [x] #5 The graph legend names the pattern of each pattern planner drawn (custom planners: 'Planner')
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -41,10 +42,12 @@ A planner node built on one of the langchain4j-agentic-patterns planners (GOAP, 
 <!-- SECTION:NOTES:BEGIN -->
 The graph legend keeps 'Planner': it explains the shape and color of a kind, the same for every planner. A system with a pattern planner and a custom one lists both tags (e.g. BDI, Planner).
 Validation: mvn -o clean install (deployment 185, integration-tests 106, ITs 6 / 1 skipped), -Ppatterns (194 / 1 skipped, 139, 6 / 1 skipped), UI tests 31/31 including the new one.
+
+User clarification (2026-10-19): the pattern name wherever it is known, 'Planner' only when it is not. The graph legend was the one place left showing 'Planner' for a pattern planner: it now lists one entry per pattern (same planner swatch), and 'Planner' for custom ones. UI tests 31/31 (patternPlannersAreTaggedWithTheirPattern also checks the legend).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Pattern planners (GOAP, peer-to-peer, blackboard, BDI, debate, voting) are now tagged with their pattern instead of 'Planner': group title in the graph, node details badge and timeline tag (shared kindLabel in qwc-agentic-graph.js, 'Planner' kept in the tag's title), and the system list's Patterns column through a new AgenticSystemSummary.plannerPatterns. Custom planners keep 'Planner'. Verified by the summary tests (pattern samples, custom sample, JSON-RPC) and a browser test covering the four places; default, patterns and UI builds pass.
+Pattern planners (GOAP, peer-to-peer, blackboard, BDI, debate, voting) are tagged with their pattern instead of 'Planner' wherever a kind is shown: graph group title and legend, node details badge, timeline tag (shared kindLabel in qwc-agentic-graph.js, 'Planner' kept in the tag's title), and the system list's Patterns column through a new AgenticSystemSummary.plannerPatterns. Planners whose pattern is unknown keep 'Planner'. Verified by the summary tests (pattern samples, custom sample, JSON-RPC) and a browser test covering the five places; default, patterns and UI builds pass.
 <!-- SECTION:FINAL_SUMMARY:END -->
