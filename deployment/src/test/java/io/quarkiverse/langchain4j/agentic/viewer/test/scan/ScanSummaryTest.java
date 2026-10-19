@@ -4,54 +4,41 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
 
+import org.jboss.jandex.Index;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentDescriptor;
 import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgentTree;
-import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticDescriptorsBuildItem;
-import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticRootsBuildItem;
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.AgenticAnnotationScanner;
+import io.quarkiverse.langchain4j.agentic.viewer.deployment.scan.RootSystemDetector;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AiAgentDetails;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.ToolInfo;
-import io.quarkus.deployment.builditem.FeatureBuildItem;
-import io.quarkus.test.QuarkusUnitTest;
 
 /**
- * In a real application build, the extension produces a descriptor for every agentic annotation of the fixtures,
- * including supervisor, planner and human-in-the-loop agents, loop and conditional guards, {@code @Output} and the details of an AI agent.
+ * One line per descriptor of every agentic annotation of the fixtures, including supervisor, planner and
+ * human-in-the-loop agents, loop and conditional guards, {@code @Output} and the details of an AI agent, and the root
+ * systems they form. The scan only runs in dev mode builds (AgenticViewerOutsideDevModeTest), where the dev-mode tests
+ * cover it through the Dev UI; here it runs over an index of the fixtures.
  */
-public class AgenticDescriptorsBuildStepTest {
+class ScanSummaryTest {
 
-    // the build step and the test method run in different class loaders: report through a system property
-    private static final String RESULT_PROPERTY = "agentic-viewer.test.descriptors";
-    private static final String ROOTS_PROPERTY = "agentic-viewer.test.roots";
+    private static List<AgentDescriptor> descriptors;
 
-    @RegisterExtension
-    static final QuarkusUnitTest config = new QuarkusUnitTest()
-            .withApplicationRoot(jar -> jar.addClasses(ScanFixtures.class)
-                    .addAsResource("prompts/cashier-system.txt"))
-            .addBuildChainCustomizer(builder -> builder.addBuildStep(context -> {
-                String summary = String.join("\n", context.consume(AgenticDescriptorsBuildItem.class).getDescriptors().stream()
-                        .map(d -> d.id().substring(d.id().lastIndexOf('$') + 1) + " " + d.kind() + " out=" + d.outputKey()
-                                + " in=" + d.inputKeys() + " sub="
-                                + d.subAgents().stream().map(s -> s.substring(s.lastIndexOf('$') + 1)).toList()
-                                + guards(d))
-                        .toList());
-                System.setProperty(RESULT_PROPERTY, summary);
-                System.setProperty(ROOTS_PROPERTY, String.join("\n", context.consume(AgenticRootsBuildItem.class).getRoots()
-                        .stream().map(AgenticDescriptorsBuildStepTest::render).toList()));
-                context.produce(new FeatureBuildItem("agentic-viewer-descriptors-check"));
-            }).consumes(AgenticDescriptorsBuildItem.class).consumes(AgenticRootsBuildItem.class)
-                    .produces(FeatureBuildItem.class).build());
+    @BeforeAll
+    static void scan() throws Exception {
+        descriptors = new AgenticAnnotationScanner().scan(Index.of(ScanFixtures.class.getDeclaredClasses()));
+    }
 
     private static String render(AgentTree tree) {
         String self = tree.agentClass().substring(tree.agentClass().lastIndexOf('$') + 1);
         return tree.children().isEmpty() ? self
-                : self + tree.children().stream().map(AgenticDescriptorsBuildStepTest::render).toList();
+                : self + tree.children().stream().map(ScanSummaryTest::render).toList();
     }
 
     @Test
     void rootSystems() {
+        List<String> roots = new RootSystemDetector().detect(descriptors).stream().map(ScanSummaryTest::render).toList();
         assertEquals(List.of(
                 "ApprovedStory[Writer, Approval]",
                 "Bank[Teller]",
@@ -64,7 +51,7 @@ public class AgenticDescriptorsBuildStepTest {
                 "Router[Expert, Generalist]",
                 "Shouter",
                 "StoryFlow[Writer, Reviewer]"),
-                List.of(System.getProperty(ROOTS_PROPERTY).split("\n")));
+                roots);
     }
 
     private static String guards(AgentDescriptor d) {
@@ -94,6 +81,12 @@ public class AgenticDescriptorsBuildStepTest {
 
     @Test
     void descriptorForEveryAnnotation() {
+        List<String> summary = descriptors.stream()
+                .map(d -> d.id().substring(d.id().lastIndexOf('$') + 1) + " " + d.kind() + " out=" + d.outputKey()
+                        + " in=" + d.inputKeys() + " sub="
+                        + d.subAgents().stream().map(s -> s.substring(s.lastIndexOf('$') + 1)).toList()
+                        + guards(d))
+                .sorted().toList();
         assertEquals(List.of(
                 "Approval#ask HUMAN_IN_THE_LOOP out=approval in=[draft] sub=[]",
                 "ApprovedStory#write SEQUENCE out=approval in=[topic] sub=[Writer, Approval]",
@@ -118,6 +111,6 @@ public class AgenticDescriptorsBuildStepTest {
                 "Translator#translate AI_AGENT out=translation in=[item] sub=[]",
                 "WebSearch#searchWeb AI_AGENT out=web in=[topic] sub=[]",
                 "Writer#write AI_AGENT out=draft in=[topic] sub=[]"),
-                List.of(System.getProperty(RESULT_PROPERTY).split("\n")));
+                summary);
     }
 }

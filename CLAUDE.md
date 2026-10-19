@@ -91,6 +91,10 @@ application configures for each agent.
 
 ### Build-time chain
 
+Every step runs in dev mode only, with the viewer enabled (`onlyIf = { IsDevelopment.class, AgenticViewerEnabled.class }`,
+discovery included: a prod or test-mode build does not scan; `AgenticViewerOutsideDevModeTest` checks it). Tests of the
+scan itself index their fixtures (`Index.of`) and call the scanner directly.
+
 1. `deployment/.../scan/AgenticAnnotationScanner` reads the agentic annotations with Jandex and produces one
    `AgentDescriptor` per agent method (`AgenticDescriptorsBuildItem`): kind, keys, sub-agents, guards, `@Output`,
    flags, AI agent details (prompts, `@ModelName`, `@ToolBox` tools), remote agent details (`@A2AClientAgent` server,

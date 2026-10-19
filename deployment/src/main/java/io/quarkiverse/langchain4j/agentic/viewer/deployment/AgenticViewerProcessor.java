@@ -64,9 +64,10 @@ public class AgenticViewerProcessor {
     }
 
     /**
-     * Describes every agent method of the application (T1.2).
+     * Describes every agent method of the application (T1.2). Like every step below, dev mode only: nothing of the
+     * discovery reaches a prod augmentation, even if a later step happened to consume its result.
      */
-    @BuildStep
+    @BuildStep(onlyIf = { IsDevelopment.class, AgenticViewerEnabled.class })
     AgenticDescriptorsBuildItem scanAgenticAnnotations(CombinedIndexBuildItem combinedIndex) {
         return new AgenticDescriptorsBuildItem(new AgenticAnnotationScanner().scan(combinedIndex.getIndex()));
     }
@@ -74,7 +75,7 @@ public class AgenticViewerProcessor {
     /**
      * Keeps the agents no other agent uses as roots of agentic systems, with their sub-agents nested (T1.3).
      */
-    @BuildStep
+    @BuildStep(onlyIf = { IsDevelopment.class, AgenticViewerEnabled.class })
     AgenticRootsBuildItem detectRootSystems(AgenticDescriptorsBuildItem descriptors) {
         return new AgenticRootsBuildItem(new RootSystemDetector().detect(descriptors.getDescriptors()));
     }
@@ -82,7 +83,7 @@ public class AgenticViewerProcessor {
     /**
      * Builds the topology of every declarative system (T1.4).
      */
-    @BuildStep
+    @BuildStep(onlyIf = { IsDevelopment.class, AgenticViewerEnabled.class })
     AgenticSystemsBuildItem buildTopologies(AgenticRootsBuildItem roots, CombinedIndexBuildItem index,
             AgenticViewerBuildConfig config) {
         // planner classes come from the bytecode of the @PlannerSupplier methods, read through the build class loader
