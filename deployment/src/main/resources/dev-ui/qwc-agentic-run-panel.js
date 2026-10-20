@@ -206,11 +206,13 @@ export class QwcAgenticRunPanel extends LitElement {
         super();
         this._mode = 'form';
         this._compare = [];
+        this._reloadRun = 0;
     }
 
     willUpdate(changed) {
         if (changed.has('system') && this.system) {
             this._stopStream();
+            this._cancelReloadRun();
             this._mode = 'form';
             this._run = undefined;
             this._schema = undefined;
@@ -259,6 +261,7 @@ export class QwcAgenticRunPanel extends LitElement {
     disconnectedCallback() {
         connectionState.removeObserver(this._connectionObserver);
         this._stopStream();
+        this._cancelReloadRun();
         super.disconnectedCallback();
     }
 
@@ -667,16 +670,28 @@ export class QwcAgenticRunPanel extends LitElement {
 
     _toggleWatch(on) {
         this._watch = on;
+        if (!on) {
+            this._cancelReloadRun();
+        }
         session.set(WATCH + this.system.id, on);
         this._watchMessage = on ? 'The last inputs run again after each reload of the application' : undefined;
+    }
+
+    /** A re-run after a reload still waiting for the system gives up (page left, other system, re-run turned off). */
+    _cancelReloadRun() {
+        this._reloadRun = (this._reloadRun ?? 0) + 1;
+        this._reloading = false;
     }
 
     /** After a hot reload: runs the last inputs again (opt-in), once the system is known again. */
     async _afterReload() {
         const system = this.system;
-        if (!this._watch || !system || this._reloading) {
+        if (!this._watch || !system || this._reloading || !this.isConnected) {
             return;
         }
+        const reloadRun = this._reloadRun;
+        // never runs the system (and its tools) once nobody looks at this panel waiting for it
+        const current = () => this._reloadRun === reloadRun && this.isConnected && this._watch && this.system === system;
         const inputs = this._lastInputs;
         if (!inputs) {
             this._watchMessage = 'Not re-run after the reload: no run yet';
@@ -689,13 +704,13 @@ export class QwcAgenticRunPanel extends LitElement {
         this._reloading = true; // once per reload
         try {
             let known = false;
-            for (let attempt = 0; attempt < (this.reloadAttempts ?? RELOAD_ATTEMPTS) && !known && this.system === system; attempt++) {
+            for (let attempt = 0; attempt < (this.reloadAttempts ?? RELOAD_ATTEMPTS) && !known && current(); attempt++) {
                 known = await this.jsonRpc.getTopology({ systemId: system.id }).then(() => true, () => false);
                 if (!known) {
                     await new Promise(resolve => setTimeout(resolve, 500));
                 }
             }
-            if (this.system !== system) {
+            if (!current()) {
                 return;
             }
             if (!known) {
@@ -703,6 +718,9 @@ export class QwcAgenticRunPanel extends LitElement {
                 return;
             }
             const schema = await this.jsonRpc.getInputSchema({ systemId: system.id }).then(r => r.result, () => undefined);
+            if (!current()) {
+                return;
+            }
             const properties = Object.keys(schema?.properties ?? {});
             const changed = Object.keys(inputs).some(name => !properties.includes(name))
                 || (schema?.required ?? []).some(name => !(name in inputs));
@@ -714,7 +732,9 @@ export class QwcAgenticRunPanel extends LitElement {
             this._watchMessage = 'Re-run after the reload';
             this._start(inputs, runId => this._rerunOf = runId);
         } finally {
-            this._reloading = false;
+            if (this._reloadRun === reloadRun) {
+                this._reloading = false;
+            }
         }
     }
 

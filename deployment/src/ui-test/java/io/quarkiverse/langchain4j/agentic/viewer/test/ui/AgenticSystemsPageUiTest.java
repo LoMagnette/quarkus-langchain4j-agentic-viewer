@@ -228,6 +228,41 @@ public class AgenticSystemsPageUiTest {
         assertEquals(2, history.count());
     }
 
+    @Test
+    void aReRunWaitingForTheSystemGivesUpWhenNobodyLooks() {
+        openRunForm();
+        fill("a mill");
+        Locator watch = panel().locator("input[data-action=\"watch\"]");
+        watch.evaluate("box => box.click()");
+        clickRun();
+        confirmIfAsked();
+        assertThat(status()).hasAttribute("data-run-status", "succeeded");
+        // the system is not known yet after the reload, until the test says so; runs started from then on are counted
+        page.locator("qwc-agentic-systems").evaluate("el => { const topology = el.rpc.getTopology; "
+                + "const start = el.rpc.startRun; window.reloadTest = { known: false, starts: 0 }; "
+                + "el.rpc.getTopology = args => window.reloadTest.known ? topology(args) "
+                + ": Promise.reject({ error: { message: 'Unknown agentic system' } }); "
+                + "el.rpc.startRun = args => { window.reloadTest.starts++; return start(args); }; }");
+
+        // turned off while it waits
+        simulateReload();
+        page.waitForTimeout(700);
+        watch.evaluate("box => box.click()");
+        page.evaluate("() => window.reloadTest.known = true");
+        page.waitForTimeout(1500);
+        assertEquals(0, page.evaluate("() => window.reloadTest.starts"));
+
+        // the page is left while it waits
+        watch.evaluate("box => box.click()");
+        page.evaluate("() => window.reloadTest.known = false");
+        simulateReload();
+        page.waitForTimeout(700);
+        panel().evaluate("p => p.remove()");
+        page.evaluate("() => window.reloadTest.known = true");
+        page.waitForTimeout(1500);
+        assertEquals(0, page.evaluate("() => window.reloadTest.starts"));
+    }
+
     private void simulateReload() {
         page.evaluate("async () => { const { connectionState } = await import('connection-state'); "
                 + "const uri = connectionState.current.serverUri; connectionState.hotreload(uri); "
