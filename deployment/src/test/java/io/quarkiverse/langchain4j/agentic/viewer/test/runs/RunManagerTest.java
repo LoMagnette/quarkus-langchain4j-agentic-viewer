@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ExecutionEvent;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.PayloadTruncator;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.RunFailed;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.RunFinished;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.RunStarted;
@@ -40,6 +41,72 @@ class RunManagerTest {
 
     private static RunManager manager(RunInvoker invoker) {
         return new RunManager(id -> SYSTEM.equals(id) ? Optional.of(ECHO) : Optional.empty(), invoker);
+    }
+
+    private static RunManager manager(RunInvoker invoker, int maxConcurrentRuns) {
+        return new RunManager(id -> SYSTEM.equals(id) ? Optional.of(ECHO) : Optional.empty(), invoker,
+                PayloadTruncator.DEFAULT_MAX_SIZE, RunManager.DEFAULT_HISTORY_SIZE, maxConcurrentRuns);
+    }
+
+    /** Starts a run as soon as a run thread is free again. */
+    private static String startWhenFree(RunManager manager) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 5000;
+        while (true) {
+            try {
+                return manager.startRun(SYSTEM, Map.of("text", "again"));
+            } catch (IllegalStateException e) {
+                if (System.currentTimeMillis() > deadline) {
+                    throw e;
+                }
+                Thread.sleep(20);
+            }
+        }
+    }
+
+    @Test
+    void runsBeyondTheLimitAreRefusedUntilOneEnds() throws Exception {
+        CountDownLatch release = new CountDownLatch(1);
+        RunManager manager = manager((system, inputs) -> {
+            release.await(5, TimeUnit.SECONDS);
+            return "done";
+        }, 2);
+        String first = manager.startRun(SYSTEM, Map.of("text", "1"));
+        manager.startRun(SYSTEM, Map.of("text", "2"));
+
+        IllegalStateException refused = assertThrows(IllegalStateException.class,
+                () -> manager.startRun(SYSTEM, Map.of("text", "3")));
+        assertTrue(refused.getMessage().contains("2 are running")
+                && refused.getMessage().contains("quarkus.langchain4j.agentic.dev-ui.max-concurrent-runs"),
+                refused::getMessage);
+        assertEquals(2, manager.listRuns(SYSTEM).size(), "no run created for the refused one");
+
+        release.countDown();
+        manager.run(first).orElseThrow().completion().get(5, TimeUnit.SECONDS);
+        Run again = manager.run(startWhenFree(manager)).orElseThrow();
+        again.completion().get(5, TimeUnit.SECONDS);
+        assertEquals(RunStatus.SUCCEEDED, again.status());
+    }
+
+    @Test
+    void aCancelledRunKeepsItsThreadUntilItReturns() throws Exception {
+        CountDownLatch release = new CountDownLatch(1);
+        RunManager manager = manager((system, inputs) -> {
+            long until = System.currentTimeMillis() + 5000;
+            while (release.getCount() > 0 && System.currentTimeMillis() < until) {
+                Thread.onSpinWait(); // a call ignoring the interruption
+            }
+            return "late";
+        }, 1);
+        String runId = manager.startRun(SYSTEM, Map.of("text", "1"));
+        assertTrue(manager.cancel(runId));
+        Run cancelled = manager.run(runId).orElseThrow();
+        cancelled.completion().get(5, TimeUnit.SECONDS);
+        assertEquals(RunStatus.CANCELLED, cancelled.status());
+        assertThrows(IllegalStateException.class, () -> manager.startRun(SYSTEM, Map.of("text", "2")),
+                "its thread still works");
+
+        release.countDown();
+        assertNotEquals(runId, startWhenFree(manager));
     }
 
     @Test

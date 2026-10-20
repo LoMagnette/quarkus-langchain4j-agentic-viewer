@@ -155,6 +155,10 @@ can also provide their own `ChatModel` bean answering scripted replies.
 
 image::tools-confirmation.png[The confirmation listing the tools a run can reach]
 
+Each run executes on its own thread. At most 16 runs execute at the same time (`max-concurrent-runs`); beyond that a new
+run is refused until one ends. A cancelled run counts until its thread returns, as a model or tool call may ignore the
+cancellation.
+
 === Live view
 
 While the run executes, the graph highlights the agents as they start and finish, with their duration and token

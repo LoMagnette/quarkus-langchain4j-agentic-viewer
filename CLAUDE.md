@@ -154,13 +154,14 @@ test checks it).
 ### Configuration
 
 Config roots under `quarkus.langchain4j.agentic.dev-ui`: `enabled` and `builder-discovery` (build time, `deployment/.../AgenticViewerBuildConfig`,
-checked by every dev-only build step through `AgenticViewerEnabled`), `history-size` and `max-payload-size` (run time,
+checked by every dev-only build step through `AgenticViewerEnabled`), `history-size`, `max-payload-size` and `max-concurrent-runs` (run time,
 `runtime/.../config/AgenticViewerRuntimeConfig`, read by `RunManager`). The extension processor runs on runtime and
 deployment so they are registered and documented.
 
 ### Runs (runtime-dev, dev mode only)
 
-`runs/RunManager` starts a run on its own daemon threads (`startRun` returns the run id at once) and emits the
+`runs/RunManager` starts a run on its own daemon threads (`startRun` returns the run id at once; at most
+`max-concurrent-runs` busy run threads, a permit taken before the run exists and given back when its thread returns) and emits the
 `events/ExecutionEvent` records; `runs/CdiRunInvoker` converts the form JSON to the root method parameters (Jackson) and
 calls the root CDI bean inside a fresh request context (request-scoped chat memory must not leak between runs).
 Events are delivered by one event thread (callbacks only queue them); `streamRun` replays a run then follows it

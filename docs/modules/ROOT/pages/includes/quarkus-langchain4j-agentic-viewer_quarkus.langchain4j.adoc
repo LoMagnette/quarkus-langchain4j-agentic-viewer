@@ -112,5 +112,26 @@ endif::add-copy-button-to-env-var[]
 |int
 |`+++2048+++`
 
+a| [[quarkus-langchain4j-agentic-viewer_quarkus-langchain4j-agentic-dev-ui-max-concurrent-runs]] [.property-path]##link:#quarkus-langchain4j-agentic-viewer_quarkus-langchain4j-agentic-dev-ui-max-concurrent-runs[`+++quarkus.langchain4j.agentic.dev-ui.max-concurrent-runs+++`]##
+ifdef::add-copy-button-to-config-props[]
+config_property_copy_button:+++quarkus.langchain4j.agentic.dev-ui.max-concurrent-runs+++[]
+endif::add-copy-button-to-config-props[]
+
+
+[.description]
+--
+Runs started from the Dev UI that may execute at the same time, each on its own thread: beyond this number a new run is refused until one ends. A cancelled run counts until its thread returns (a model or tool call may ignore the interruption).
+
+
+ifdef::add-copy-button-to-env-var[]
+Environment variable: env_var_with_copy_button:+++QUARKUS_LANGCHAIN4J_AGENTIC_DEV_UI_MAX_CONCURRENT_RUNS+++[]
+endif::add-copy-button-to-env-var[]
+ifndef::add-copy-button-to-env-var[]
+Environment variable: `+++QUARKUS_LANGCHAIN4J_AGENTIC_DEV_UI_MAX_CONCURRENT_RUNS+++`
+endif::add-copy-button-to-env-var[]
+--
+|int
+|`+++16+++`
+
 |===
 

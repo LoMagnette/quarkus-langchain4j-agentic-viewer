@@ -25,6 +25,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -81,6 +82,9 @@ public class RunManager {
     /** Run ids per system, oldest first; guarded by itself. */
     private final Map<String, Deque<String>> history = new HashMap<>();
     private final int historySize;
+    /** Run threads that may be busy at once: a permit is taken before a run exists, given back when its thread returns. */
+    private final Semaphore runThreads;
+    private final int maxConcurrentRuns;
     private final PayloadTruncator truncator;
     private final List<Consumer<ExecutionEvent>> listeners = new CopyOnWriteArrayList<>();
     /** Human-in-the-loop steps waiting for an answer, per run id, oldest first. */
@@ -93,11 +97,13 @@ public class RunManager {
     }
 
     public static final int DEFAULT_HISTORY_SIZE = 20;
+    public static final int DEFAULT_MAX_CONCURRENT_RUNS = 16;
     private static final long EVENT_THREAD_IDLE_SECONDS = 5;
 
     @Inject
     public RunManager(AgenticSystemRegistry registry, BuilderSystems builderSystems, AgenticViewerRuntimeConfig config) {
-        this(registry::find, new CdiRunInvoker(builderSystems::root), config.maxPayloadSize(), config.historySize());
+        this(registry::find, new CdiRunInvoker(builderSystems::root), config.maxPayloadSize(), config.historySize(),
+                config.maxConcurrentRuns());
     }
 
     public RunManager(Function<String, Optional<AgenticSystem>> systems, RunInvoker invoker) {
@@ -106,7 +112,14 @@ public class RunManager {
 
     public RunManager(Function<String, Optional<AgenticSystem>> systems, RunInvoker invoker, int maxPayloadSize,
             int historySize) {
+        this(systems, invoker, maxPayloadSize, historySize, DEFAULT_MAX_CONCURRENT_RUNS);
+    }
+
+    public RunManager(Function<String, Optional<AgenticSystem>> systems, RunInvoker invoker, int maxPayloadSize,
+            int historySize, int maxConcurrentRuns) {
         this.systems = systems;
+        this.maxConcurrentRuns = Math.max(1, maxConcurrentRuns);
+        this.runThreads = new Semaphore(this.maxConcurrentRuns);
         this.invoker = invoker;
         this.historySize = Math.max(1, historySize);
         this.truncator = new PayloadTruncator(maxPayloadSize);
@@ -136,10 +149,16 @@ public class RunManager {
      * @param inputs input values by name
      * @return the run id
      * @throws IllegalArgumentException for an unknown system
+     * @throws IllegalStateException when {@code max-concurrent-runs} runs are running (no run is created)
      */
     public String startRun(String systemId, Map<String, Object> inputs) {
         AgenticSystem system = systems.apply(systemId)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown agentic system: " + systemId));
+        if (!runThreads.tryAcquire()) {
+            throw new IllegalStateException("Too many runs at once: " + maxConcurrentRuns + " are running (cancelled ones "
+                    + "count until their thread returns); start it again once one ended, or raise "
+                    + "quarkus.langchain4j.agentic.dev-ui.max-concurrent-runs");
+        }
         // a copy: the run executes and its events are written later, the caller's map may change meanwhile (null values
         // stay: an optional input left empty)
         Map<String, Object> runInputs = inputs == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(inputs));
@@ -150,7 +169,19 @@ public class RunManager {
         // known to the run before it starts: a cancel at any time finds it
         FutureTask<Void> task = new FutureTask<>(() -> execute(run, system), null);
         run.task(task);
-        executor.execute(task);
+        try {
+            // the permit is given back when the thread is done with the run, also after a cancel (even before it ran)
+            executor.execute(() -> {
+                try {
+                    task.run();
+                } finally {
+                    runThreads.release();
+                }
+            });
+        } catch (RuntimeException e) {
+            runThreads.release();
+            throw e;
+        }
         return run.id();
     }
 

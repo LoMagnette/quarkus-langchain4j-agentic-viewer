@@ -26,4 +26,12 @@ public interface AgenticViewerRuntimeConfig {
      */
     @WithDefault("2048")
     int maxPayloadSize();
+
+    /**
+     * Runs started from the Dev UI that may execute at the same time, each on its own thread: beyond this number a new
+     * run is refused until one ends. A cancelled run counts until its thread returns (a model or tool call may ignore
+     * the interruption).
+     */
+    @WithDefault("16")
+    int maxConcurrentRuns();
 }
