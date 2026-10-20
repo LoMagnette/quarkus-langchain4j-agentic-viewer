@@ -256,11 +256,45 @@ class PayloadTruncatorTest {
 
     @Test
     void utf8StringsAreCutWithTheirLengthInChars() {
-        byte[] bytes = "é".repeat(50_000).getBytes(StandardCharsets.UTF_8);
-        String kept = truncator.truncate(new Utf8Text(bytes)).tree().asText();
-        assertTrue(kept.startsWith("ééé") && kept.endsWith("… [truncated, 50000 chars]"), kept);
+        String kept = truncator.truncate(new Utf8Text("é".repeat(300).getBytes(StandardCharsets.UTF_8))).tree().asText();
+        assertTrue(kept.startsWith("ééé") && kept.endsWith("… [truncated, 300 chars]"), kept);
         assertTrue(kept.length() + 2 <= MAX, kept);
+        // far longer than the limit: neither decoded nor counted, its bytes are told
+        byte[] bytes = "é".repeat(50_000).getBytes(StandardCharsets.UTF_8);
+        String huge = truncator.truncate(new Utf8Text(bytes)).tree().asText();
+        assertTrue(huge.startsWith("ééé") && huge.endsWith("… [truncated, 100000 bytes of UTF-8]"), huge);
+        assertTrue(huge.length() + 2 <= MAX, huge);
         assertEquals("déjà", truncator.truncate(new Utf8Text("déjà".getBytes(StandardCharsets.UTF_8))).tree().asText());
+    }
+
+    /** Written by a custom serializer through the sized array entry points. */
+    @JsonSerialize(using = SizedArraySerializer.class)
+    record Triple(int a, int b, int c) {
+    }
+
+    static class SizedArraySerializer extends StdSerializer<Triple> {
+        SizedArraySerializer() {
+            super(Triple.class);
+        }
+
+        @Override
+        @SuppressWarnings("deprecation")
+        public void serialize(Triple value, JsonGenerator gen, SerializerProvider provider) throws IOException {
+            gen.writeStartArray(2);
+            gen.writeNumber(value.a());
+            gen.writeStartArray(value, 2);
+            gen.writeNumber(value.b());
+            gen.writeNumber(value.c());
+            gen.writeEndArray();
+            gen.writeEndArray();
+        }
+    }
+
+    @Test
+    void sizedArraysOpenOneArrayEach() {
+        PayloadTruncator.Result result = truncator.truncate(new Triple(1, 2, 3));
+        assertFalse(result.truncated());
+        assertEquals("[1,[2,3]]", result.tree().toString());
     }
 
     @Test

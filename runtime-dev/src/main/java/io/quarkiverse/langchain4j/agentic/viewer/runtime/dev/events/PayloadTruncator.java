@@ -351,6 +351,11 @@ public final class PayloadTruncator {
          * @param length the length of the whole string
          */
         private void writeText(String text, int length) throws IOException {
+            writeText(text, length, length + " chars");
+        }
+
+        /** @param size the size told by the marker of a cut string */
+        private void writeText(String text, int length, String size) throws IOException {
             if (skipped(false)) {
                 return;
             }
@@ -362,7 +367,7 @@ public final class PayloadTruncator {
                 skipEntry(parent, false);
                 return;
             }
-            String kept = length + 2 <= room ? text : cut(text, length, Math.max(room, MARKER_ROOM));
+            String kept = length + 2 <= room ? text : cut(text, size, Math.max(room, MARKER_ROOM));
             truncated |= kept != text;
             used += comma + kept.length() + 2;
             if (inArray) {
@@ -502,6 +507,11 @@ public final class PayloadTruncator {
             if (skipped(false)) {
                 return;
             }
+            if (length > 4 * budget) { // more chars than the budget whatever they are: not counted, its bytes are told
+                writeText(new String(text, offset, 4 * budget, StandardCharsets.UTF_8), budget + 1,
+                        length + " bytes of UTF-8");
+                return;
+            }
             int chars = 0;
             for (int i = offset; i < offset + length; i++) {
                 byte b = text[i];
@@ -509,7 +519,7 @@ public final class PayloadTruncator {
                     chars += (b & 0xF8) == 0xF0 ? 2 : 1;
                 }
             }
-            writeText(new String(text, offset, Math.min(length, 4 * budget), StandardCharsets.UTF_8), chars);
+            writeText(new String(text, offset, length, StandardCharsets.UTF_8), chars);
         }
 
         @Override
@@ -632,12 +642,12 @@ public final class PayloadTruncator {
     }
 
     private static String cut(String text, int budget) {
-        return cut(text, text.length(), budget);
+        return cut(text, text.length() + " chars", budget);
     }
 
-    /** The start of a text of this length, with a marker, within the budget ({@code text} may be its start only). */
-    private static String cut(String text, int length, int budget) {
-        String marker = "… [truncated, " + length + " chars]";
+    /** The start of a text, with a marker telling its size, within the budget ({@code text} may be its start only). */
+    private static String cut(String text, String size, int budget) {
+        String marker = "… [truncated, " + size + "]";
         int keep = Math.min(Math.max(0, budget - marker.length() - 2), text.length());
         if (keep > 0 && Character.isHighSurrogate(text.charAt(keep - 1))) {
             keep--; // never half of a character (an emoji is two UTF-16 chars)
