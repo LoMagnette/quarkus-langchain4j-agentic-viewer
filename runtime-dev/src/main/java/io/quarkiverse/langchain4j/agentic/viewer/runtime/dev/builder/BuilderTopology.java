@@ -5,7 +5,6 @@ import java.io.InputStream;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
@@ -348,13 +347,12 @@ public final class BuilderTopology {
         if (!agent.arguments().isEmpty() || type == null || !type.isInterface() || type.getName().startsWith(LIBRARY)) {
             return declared;
         }
-        List<Method> methods = Arrays.stream(type.getMethods())
-                .filter(method -> Modifier.isAbstract(method.getModifiers()) && method.getDeclaringClass() == type).toList();
-        if (methods.size() != 1) {
+        Method method = TypedAgentMethod.of(type).orElse(null);
+        if (method == null) {
             return declared;
         }
         List<AgentArgument> arguments = new ArrayList<>();
-        for (Parameter parameter : methods.get(0).getParameters()) {
+        for (Parameter parameter : method.getParameters()) {
             if (!AgenticScope.class.isAssignableFrom(parameter.getType())) {
                 Annotation v = annotation(parameter, V);
                 String name = v != null ? (String) value(v, "value") : parameter.getName();

@@ -28,6 +28,7 @@ import dev.langchain4j.agentic.scope.AgenticScopeAccess;
 import dev.langchain4j.invocation.InvocationParameters;
 import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.V;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.builder.TypedAgentMethod;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemInput;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemOrigin;
@@ -156,13 +157,8 @@ public class CdiRunInvoker implements RunInvoker {
 
     /** The one method of a typed agent interface built with a builder (it carries no agentic annotation). */
     static Method agentMethod(Class<?> type) {
-        List<Method> methods = Arrays.stream(type.getMethods())
-                .filter(method -> Modifier.isAbstract(method.getModifiers()) && method.getDeclaringClass() == type)
-                .toList();
-        if (methods.size() != 1) {
-            throw new IllegalStateException("Expected one agent method on " + type.getName() + ", found " + methods);
-        }
-        return methods.get(0);
+        return TypedAgentMethod.of(type).orElseThrow(() -> new IllegalStateException(
+                "Expected one agent method on " + type.getName() + ", found " + TypedAgentMethod.candidates(type)));
     }
 
     /**

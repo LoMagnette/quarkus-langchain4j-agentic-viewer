@@ -12,8 +12,13 @@ import jakarta.inject.Named;
 
 import org.junit.jupiter.api.Test;
 
+import dev.langchain4j.agentic.AgenticServices;
 import dev.langchain4j.agentic.UntypedAgent;
 import dev.langchain4j.agentic.planner.AgentInstance;
+import dev.langchain4j.agentic.scope.AgenticScopeAccess;
+import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.service.V;
+import io.quarkiverse.langchain4j.agentic.viewer.it.samples.StoryWriter;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticSystemRegistry;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerJsonRpcService;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.builder.BuilderTopology;
@@ -40,14 +45,33 @@ class BuilderRunsTest {
     @Inject
     BuilderStoryWriter builderStoryWriter;
 
+    @Inject
+    ChatModel chatModel;
+
+    /** A typed builder interface whose agent method is inherited (and a langchain4j interface's methods too). */
+    public interface BaseWriter {
+        String write(@V("bio") String bio);
+    }
+
+    public interface InheritingWriter extends BaseWriter, AgenticScopeAccess {
+        default String shout(String bio) {
+            return write(bio).toUpperCase();
+        }
+    }
+
     private static final String CREATOR = "creator";
     private static final String WRITER = "writer";
+    private static final String INHERITING = "inheriting";
 
     private RunManager runManager;
 
     private AgenticViewerJsonRpcService service() {
         Map<String, Object> roots = Map.of(CREATOR, ClientProxy.unwrap(builderStoryCreator), WRITER,
-                ClientProxy.unwrap(builderStoryWriter));
+                ClientProxy.unwrap(builderStoryWriter), INHERITING, AgenticServices.sequenceBuilder(InheritingWriter.class)
+                        .name("inheritingWrite")
+                        .subAgents(Agents.fresh(chatModel, StoryWriter.IntroWriter.class))
+                        .output(scope -> scope.readState("intro", ""))
+                        .build());
         AgenticSystemRegistry registry = new AgenticSystemRegistry();
         roots.forEach((id, root) -> registry.register(BuilderTopology.system(id, id, new SourceRef(id, id, null),
                 (AgentInstance) root)));
@@ -81,5 +105,15 @@ class BuilderRunsTest {
         assertEquals("Once upon a time, there was Ada, a curious engineer.\n\n"
                 + "One day, a dragon knocked at the door and asked for help.",
                 output(service.startRun(WRITER, Map.of("bio", "Ada, a curious engineer"))));
+    }
+
+    @Test
+    void typedBuilderInterfaceRunsThroughAnInheritedMethod() throws Exception {
+        AgenticViewerJsonRpcService service = service();
+
+        assertEquals(Map.of("type", "object", "properties", Map.of("bio", Map.of("type", "string")), "required",
+                List.of("bio")), service.getInputSchema(INHERITING));
+        assertEquals("Once upon a time, there was Grace, a sailor.",
+                output(service.startRun(INHERITING, Map.of("bio", "Grace, a sailor"))));
     }
 }
