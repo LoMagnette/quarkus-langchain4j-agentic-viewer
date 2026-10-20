@@ -89,8 +89,10 @@ class RunManagerTest {
 
     @Test
     void aCancelledRunKeepsItsThreadUntilItReturns() throws Exception {
+        CountDownLatch working = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         RunManager manager = manager((system, inputs) -> {
+            working.countDown();
             long until = System.currentTimeMillis() + 5000;
             while (release.getCount() > 0 && System.currentTimeMillis() < until) {
                 Thread.onSpinWait(); // a call ignoring the interruption
@@ -98,6 +100,8 @@ class RunManagerTest {
             return "late";
         }, 1);
         String runId = manager.startRun(SYSTEM, Map.of("text", "1"));
+        // once it runs (a run cancelled before its thread took it gives its thread back at once)
+        assertTrue(working.await(5, TimeUnit.SECONDS));
         assertTrue(manager.cancel(runId));
         Run cancelled = manager.run(runId).orElseThrow();
         cancelled.completion().get(5, TimeUnit.SECONDS);
@@ -107,6 +111,51 @@ class RunManagerTest {
 
         release.countDown();
         assertNotEquals(runId, startWhenFree(manager));
+    }
+
+    @Test
+    void noRunStartsOnceShutDown() {
+        RunManager manager = manager((system, inputs) -> "done");
+        manager.shutdown();
+        IllegalStateException refused = assertThrows(IllegalStateException.class,
+                () -> manager.startRun(SYSTEM, Map.of("text", "late")));
+        assertTrue(refused.getMessage().contains("stopping or reloading"), refused::getMessage);
+        assertEquals(List.of(), manager.listRuns(SYSTEM));
+    }
+
+    @Test
+    void aShutdownDuringTheStartLeavesNoRunBehind() {
+        RunManager[] manager = new RunManager[1];
+        manager[0] = manager((system, inputs) -> "done");
+        // read while the run is being accepted: the manager shuts down meanwhile, its event is then rejected
+        Map<String, Object> inputs = new java.util.AbstractMap<>() {
+            @Override
+            public java.util.Set<Entry<String, Object>> entrySet() {
+                manager[0].shutdown();
+                return Map.<String, Object> of("text", "racing").entrySet();
+            }
+        };
+        IllegalStateException refused = assertThrows(IllegalStateException.class,
+                () -> manager[0].startRun(SYSTEM, inputs));
+        assertTrue(refused.getMessage().contains("stopping or reloading"), refused::getMessage);
+        assertEquals(List.of(), manager[0].listRuns(SYSTEM), "no ghost run in the history");
+    }
+
+    @Test
+    void aFailedStartGivesItsThreadBack() throws Exception {
+        RunManager manager = manager((system, inputs) -> "done", 1);
+        Map<String, Object> failing = new java.util.AbstractMap<>() {
+            @Override
+            public java.util.Set<Entry<String, Object>> entrySet() {
+                throw new java.util.ConcurrentModificationException("changed while copied");
+            }
+        };
+        assertThrows(java.util.ConcurrentModificationException.class, () -> manager.startRun(SYSTEM, failing));
+        assertEquals(List.of(), manager.listRuns(SYSTEM));
+
+        Run run = manager.run(manager.startRun(SYSTEM, Map.of("text", "next"))).orElseThrow();
+        run.completion().get(5, TimeUnit.SECONDS);
+        assertEquals(RunStatus.SUCCEEDED, run.status(), "the only run thread was given back");
     }
 
     @Test

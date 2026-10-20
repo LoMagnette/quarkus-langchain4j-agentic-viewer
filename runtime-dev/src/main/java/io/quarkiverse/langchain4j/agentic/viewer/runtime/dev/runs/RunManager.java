@@ -98,6 +98,7 @@ public class RunManager {
 
     public static final int DEFAULT_HISTORY_SIZE = 20;
     public static final int DEFAULT_MAX_CONCURRENT_RUNS = 16;
+    private static final String STOPPING = "The application is stopping or reloading: start the run again once it is back";
     private static final long EVENT_THREAD_IDLE_SECONDS = 5;
 
     @Inject
@@ -149,28 +150,36 @@ public class RunManager {
      * @param inputs input values by name
      * @return the run id
      * @throws IllegalArgumentException for an unknown system
-     * @throws IllegalStateException when {@code max-concurrent-runs} runs are running (no run is created)
+     * @throws IllegalStateException when {@code max-concurrent-runs} runs are running, or the manager is shut down (no
+     *         run is created)
      */
     public String startRun(String systemId, Map<String, Object> inputs) {
         AgenticSystem system = systems.apply(systemId)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown agentic system: " + systemId));
+        if (shutdown) {
+            throw new IllegalStateException(STOPPING);
+        }
         if (!runThreads.tryAcquire()) {
             throw new IllegalStateException("Too many runs at once: " + maxConcurrentRuns + " are running (cancelled ones "
                     + "count until their thread returns); start it again once one ended, or raise "
                     + "quarkus.langchain4j.agentic.dev-ui.max-concurrent-runs");
         }
-        // a copy: the run executes and its events are written later, the caller's map may change meanwhile (null values
-        // stay: an optional input left empty)
-        Map<String, Object> runInputs = inputs == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(inputs));
-        Run run = new Run(UUID.randomUUID().toString(), systemId, runInputs, System.currentTimeMillis());
-        runs.put(run.id(), run);
-        remember(run);
-        emit(run, new RunStarted(run.id(), run.startedAt(), systemId, runInputs));
-        // known to the run before it starts: a cancel at any time finds it
-        FutureTask<Void> task = new FutureTask<>(() -> execute(run, system), null);
-        run.task(task);
+        Run accepted = null;
         try {
-            // the permit is given back when the thread is done with the run, also after a cancel (even before it ran)
+            // a copy: the run executes and its events are written later, the caller's map may change meanwhile (null
+            // values stay: an optional input left empty)
+            Map<String, Object> runInputs = inputs == null ? Map.of()
+                    : Collections.unmodifiableMap(new LinkedHashMap<>(inputs));
+            Run run = new Run(UUID.randomUUID().toString(), systemId, runInputs, System.currentTimeMillis());
+            accepted = run;
+            runs.put(run.id(), run);
+            remember(run);
+            emit(run, new RunStarted(run.id(), run.startedAt(), systemId, runInputs));
+            // known to the run before it starts: a cancel at any time finds it
+            FutureTask<Void> task = new FutureTask<>(() -> execute(run, system), null);
+            run.task(task);
+            // from here the permit is given back when the thread is done with the run, also after a cancel (even before
+            // it ran)
             executor.execute(() -> {
                 try {
                     task.run();
@@ -178,11 +187,28 @@ public class RunManager {
                     runThreads.release();
                 }
             });
+            return run.id();
         } catch (RuntimeException e) {
+            // not accepted (e.g. a shutdown meanwhile rejects its event or its thread): nothing is left behind
             runThreads.release();
-            throw e;
+            if (accepted != null) {
+                forget(accepted);
+            }
+            throw shutdown ? new IllegalStateException(STOPPING, e) : e;
         }
-        return run.id();
+    }
+
+    /** A run that was never accepted (its id was not given out): ended, and out of the runs and the history. */
+    private void forget(Run run) {
+        run.claimEnd(0);
+        run.end(RunStatus.CANCELLED, null); // its events, if still queued, are not delivered any more
+        runs.remove(run.id());
+        synchronized (history) {
+            Deque<String> ids = history.get(run.systemId());
+            if (ids != null) {
+                ids.remove(run.id());
+            }
+        }
     }
 
     /** Adds the run to its system's history. */
