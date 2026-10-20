@@ -1,7 +1,10 @@
 package io.quarkiverse.langchain4j.agentic.viewer.runtime.dev;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -25,9 +28,10 @@ public class AgenticSystemRegistry {
 
     private static final Logger LOG = Logger.getLogger(AgenticSystemRegistry.class);
 
-    // registration order is kept for listing; ids are unique
-    private final Map<String, AgenticSystem> systems = new ConcurrentHashMap<>();
-    private final List<String> order = new CopyOnWriteArrayList<>();
+    // by id, in registration order: an immutable snapshot replaced as a whole (under mutation), so a reader never sees
+    // an id without its system
+    private volatile Map<String, AgenticSystem> systems = Map.of();
+    private final Object mutation = new Object();
 
     // builder systems (T5.1): found when first asked for, so their beans are not created at startup
     @Inject
@@ -36,7 +40,11 @@ public class AgenticSystemRegistry {
     private final List<String> buildTimeIds = new CopyOnWriteArrayList<>();
 
     private volatile TopologyContributions contributions = new TopologyContributions(List.of());
-    private final Map<String, Map<String, TopologyContribution>> contributionsBySystem = new ConcurrentHashMap<>();
+    // per system id, for the registered instance it was computed for (a replaced system gets new ones)
+    private final Map<String, Contributions> contributionsBySystem = new ConcurrentHashMap<>();
+
+    private record Contributions(AgenticSystem system, Map<String, TopologyContribution> byNodeId) {
+    }
 
     @PostConstruct
     void loadBuildTimeSystems() {
@@ -59,26 +67,36 @@ public class AgenticSystemRegistry {
      * @return what the application's topology contributors draw in the planner nodes of a system, by node id
      */
     public Map<String, TopologyContribution> contributions(String systemId) {
-        return find(systemId).map(system -> contributionsBySystem.computeIfAbsent(system.id(),
-                id -> contributions.of(system))).orElse(Map.of());
+        return find(systemId).map(system -> contributionsBySystem.compute(system.id(),
+                (id, known) -> known != null && known.system() == system ? known
+                        : new Contributions(system, contributions.of(system)))
+                .byNodeId()).orElse(Map.of());
     }
 
     /**
      * Adds a system, or replaces the one with the same id.
      */
     public void register(AgenticSystem system) {
-        contributionsBySystem.remove(system.id());
-        if (systems.put(system.id(), system) == null) {
-            order.add(system.id());
+        synchronized (mutation) {
+            if (systems.get(system.id()) == system) {
+                return; // the same instance again (built systems are handed over on each listing)
+            }
+            Map<String, AgenticSystem> next = new LinkedHashMap<>(systems);
+            next.put(system.id(), system); // a replaced system keeps its place
+            systems = Collections.unmodifiableMap(next);
         }
     }
 
     /** Removes a system (a builder system that became part of another). */
     void unregister(String systemId) {
-        contributionsBySystem.remove(systemId);
-        if (systems.remove(systemId) != null) {
-            order.remove(systemId);
+        synchronized (mutation) {
+            if (systems.containsKey(systemId)) {
+                Map<String, AgenticSystem> next = new LinkedHashMap<>(systems);
+                next.remove(systemId);
+                systems = Collections.unmodifiableMap(next);
+            }
         }
+        contributionsBySystem.remove(systemId);
     }
 
     /**
@@ -86,14 +104,15 @@ public class AgenticSystemRegistry {
      */
     public List<AgenticSystem> systems() {
         loadBuilderSystems();
-        return order.stream().map(systems::get).toList();
+        return List.copyOf(systems.values());
     }
 
     /**
-     * @return the systems known at build time (declarative), without creating any builder system bean
+     * @return the systems known at build time (declarative) still registered, without creating any builder system bean
      */
     public List<AgenticSystem> buildTimeSystems() {
-        return buildTimeIds.stream().map(systems::get).toList();
+        Map<String, AgenticSystem> current = systems;
+        return buildTimeIds.stream().map(current::get).filter(Objects::nonNull).toList();
     }
 
     public Optional<AgenticSystem> find(String systemId) {
