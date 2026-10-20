@@ -4,6 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -13,7 +17,11 @@ import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
 
+import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.SerializerProvider;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.StdSerializer;
 
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.PayloadTruncator;
 import io.smallrye.mutiny.Multi;
@@ -204,6 +212,55 @@ class PayloadTruncatorTest {
         assertTrue(kept.startsWith("qqq") && kept.endsWith("… [truncated, 5000 chars]"), kept);
         assertEquals(1, kept.split("… \\[truncated").length - 1, "one marker");
         assertEquals("[\"a\",null]", truncator.truncate(new String[] { "a", null }).tree().toString());
+    }
+
+    @Test
+    void hugeNumbersAndBinariesStayWithinTheLimitWherever() {
+        BigInteger huge = BigInteger.TEN.pow(10_000);
+        PayloadTruncator.Result root = truncator.truncate(huge);
+        assertTrue(root.truncated());
+        assertEquals("<number of about 10001 digits>", root.tree().asText());
+
+        Map<String, Object> fields = new java.util.LinkedHashMap<>();
+        fields.put("label", "l".repeat(60));
+        fields.put("count", BigInteger.TEN.pow(150)); // its text fits the limit, not the room left
+        fields.put("amount", new BigDecimal(BigInteger.TEN.pow(5_000), 2));
+        fields.put("data", new byte[5_000]);
+        JsonNode tree = truncator.truncate(fields).tree();
+        assertTrue(tree.get("count").asText().matches("1000+… \\[truncated, 151 chars]"), tree::toString);
+        // the fields written always get a value
+        tree.fields().forEachRemaining(field -> assertTrue(field.getValue().isTextual(), tree::toString));
+        assertTrue(tree.toString().length() <= MAX, () -> "length " + tree.toString().length() + ": " + tree);
+
+        JsonNode inArray = truncator.truncate(List.of("a".repeat(150), BigInteger.TEN.pow(40), new byte[300])).tree();
+        assertTrue(inArray.toString().length() <= MAX, () -> "length " + inArray.toString().length() + ": " + inArray);
+        assertEquals("<300 bytes>", truncator.truncate(Map.of("data", new byte[300])).tree().get("data").asText());
+        assertEquals("AQID", truncator.truncate(new byte[] { 1, 2, 3 }).tree().asText(), "base64 when it fits");
+    }
+
+    /** Written by a custom serializer as UTF-8 bytes: "é" is two bytes. */
+    @JsonSerialize(using = Utf8Serializer.class)
+    record Utf8Text(byte[] bytes) {
+    }
+
+    static class Utf8Serializer extends StdSerializer<Utf8Text> {
+        Utf8Serializer() {
+            super(Utf8Text.class);
+        }
+
+        @Override
+        public void serialize(Utf8Text value, JsonGenerator gen, SerializerProvider provider) throws IOException {
+            gen.writeUTF8String(value.bytes(), 0, value.bytes().length);
+        }
+    }
+
+    @Test
+    void utf8StringsAreCutWithTheirLengthInChars() {
+        byte[] bytes = "é".repeat(50_000).getBytes(StandardCharsets.UTF_8);
+        String kept = truncator.truncate(new Utf8Text(bytes)).tree().asText();
+        assertTrue(kept.startsWith("ééé") && kept.endsWith("… [truncated, 50000 chars]"), kept);
+        assertTrue(kept.length() + 2 <= MAX, kept);
+        assertEquals("déjà", truncator.truncate(new Utf8Text("déjà".getBytes(StandardCharsets.UTF_8))).tree().asText());
     }
 
     @Test

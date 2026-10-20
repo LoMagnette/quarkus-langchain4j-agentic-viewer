@@ -201,18 +201,22 @@ public final class PayloadTruncator {
             return false;
         }
 
-        /** Whether a value of this JSON length is written; a value in an array that does not fit is skipped and counted. */
-        private boolean fits(int size, boolean container) {
-            if (skipped(container)) {
+        /**
+         * Whether a container is written: always at the root and in an object (its entries are then bounded, the room of
+         * its marker is kept by the field), in an array when it fits with the room of its marker (otherwise skipped and
+         * counted).
+         */
+        private boolean opens() {
+            if (skipped(true)) {
                 return false;
             }
             Open parent = open.peek();
             int comma = comma();
-            if (parent != null && parent.array && (parent.skipped > 0 || size + (container ? MARKER_ROOM : 0) > room(comma))) {
-                skipEntry(parent, container);
+            if (parent != null && parent.array && (parent.skipped > 0 || 2 + MARKER_ROOM > room(comma))) {
+                skipEntry(parent, true);
                 return false;
             }
-            used += comma + size;
+            used += comma + 2;
             if (parent != null && parent.array) {
                 parent.entries++;
             }
@@ -228,10 +232,30 @@ public final class PayloadTruncator {
             skip();
         }
 
-        private void scalar(int size, Write write) throws IOException {
-            if (fits(size, false)) {
-                write.run();
+        /**
+         * A scalar value of this JSON length, written when it fits the room left (at the root, in an object or in an
+         * array); otherwise {@code asText} is written instead as a string, cut (in an array: skipped and counted when
+         * not even a cut one fits), so a field name always gets a value.
+         */
+        private void scalar(int size, Write write, String asText) throws IOException {
+            if (skipped(false)) {
+                return;
             }
+            Open parent = open.peek();
+            int comma = comma();
+            if (size <= room(comma) && (parent == null || !parent.array || parent.skipped == 0)) {
+                used += comma + size;
+                if (parent != null && parent.array) {
+                    parent.entries++;
+                }
+                write.run();
+            } else {
+                writeMarker(asText);
+            }
+        }
+
+        private void scalar(String text, Write write) throws IOException {
+            scalar(text.length(), write, text);
         }
 
         private interface Write {
@@ -242,7 +266,7 @@ public final class PayloadTruncator {
             if (open.size() + skipping >= MAX_DEPTH) {
                 throw new IllegalStateException("nested deeper than " + MAX_DEPTH + " levels");
             }
-            if (fits(2, true)) {
+            if (opens()) {
                 write.run();
                 open.push(new Open(array));
             }
@@ -345,6 +369,12 @@ public final class PayloadTruncator {
                 parent.entries++;
             }
             delegate.writeString(kept);
+        }
+
+        /** A marker string standing for a value left out. */
+        private void writeMarker(String marker) throws IOException {
+            truncated = true;
+            writeText(marker, marker.length());
         }
 
         // every other write goes through the ones above
@@ -459,12 +489,27 @@ public final class PayloadTruncator {
 
         @Override
         public void writeRawUTF8String(byte[] text, int offset, int length) throws IOException {
-            writeString(new String(text, offset, length, StandardCharsets.UTF_8));
+            writeUtf8(text, offset, length);
         }
 
         @Override
         public void writeUTF8String(byte[] text, int offset, int length) throws IOException {
-            writeString(new String(text, offset, length, StandardCharsets.UTF_8));
+            writeUtf8(text, offset, length);
+        }
+
+        /** Decodes only what can be kept (4 bytes at most per char); the marker tells the length in UTF-16 chars. */
+        private void writeUtf8(byte[] text, int offset, int length) throws IOException {
+            if (skipped(false)) {
+                return;
+            }
+            int chars = 0;
+            for (int i = offset; i < offset + length; i++) {
+                byte b = text[i];
+                if ((b & 0xC0) != 0x80) { // not a continuation byte: a char starts, two for a 4-byte one
+                    chars += (b & 0xF8) == 0xF0 ? 2 : 1;
+                }
+            }
+            writeText(new String(text, offset, Math.min(length, 4 * budget), StandardCharsets.UTF_8), chars);
         }
 
         @Override
@@ -474,7 +519,7 @@ public final class PayloadTruncator {
 
         @Override
         public void writeRawValue(String text, int offset, int length) throws IOException {
-            writeString(text.substring(offset, offset + length));
+            writeText(text.substring(offset, offset + Math.min(length, budget)), length);
         }
 
         @Override
@@ -484,11 +529,8 @@ public final class PayloadTruncator {
 
         @Override
         public void writeBinary(Base64Variant variant, byte[] data, int offset, int length) throws IOException {
-            if ((length + 2) / 3 * 4 + 2 <= budget) {
-                scalar((length + 2) / 3 * 4 + 2, () -> delegate.writeBinary(variant, data, offset, length));
-            } else {
-                writeString("<" + length + " bytes>");
-            }
+            scalar((length + 2) / 3 * 4 + 2, () -> delegate.writeBinary(variant, data, offset, length),
+                    "<" + length + " bytes>");
         }
 
         @Override
@@ -499,63 +541,94 @@ public final class PayloadTruncator {
 
         @Override
         public void writeNumber(short v) throws IOException {
-            scalar(Short.toString(v).length(), () -> delegate.writeNumber(v));
+            scalar(Short.toString(v), () -> delegate.writeNumber(v));
         }
 
         @Override
         public void writeNumber(int v) throws IOException {
-            scalar(Integer.toString(v).length(), () -> delegate.writeNumber(v));
+            scalar(Integer.toString(v), () -> delegate.writeNumber(v));
         }
 
         @Override
         public void writeNumber(long v) throws IOException {
-            scalar(Long.toString(v).length(), () -> delegate.writeNumber(v));
+            scalar(Long.toString(v), () -> delegate.writeNumber(v));
         }
 
         @Override
         public void writeNumber(BigInteger v) throws IOException {
-            scalar(v == null ? 4 : v.toString().length(), () -> delegate.writeNumber(v));
+            if (v == null) {
+                writeNull();
+            } else if (digits(v.bitLength()) > budget) { // never turned into its whole decimal text
+                writeMarker(hugeNumber(digits(v.bitLength())));
+            } else {
+                scalar(v.toString(), () -> delegate.writeNumber(v));
+            }
         }
 
         @Override
         public void writeNumber(double v) throws IOException {
-            scalar(Double.toString(v).length(), () -> delegate.writeNumber(v));
+            scalar(Double.toString(v), () -> delegate.writeNumber(v));
         }
 
         @Override
         public void writeNumber(float v) throws IOException {
-            scalar(Float.toString(v).length(), () -> delegate.writeNumber(v));
+            scalar(Float.toString(v), () -> delegate.writeNumber(v));
         }
 
         @Override
         public void writeNumber(BigDecimal v) throws IOException {
-            scalar(v == null ? 4 : v.toString().length(), () -> delegate.writeNumber(v));
+            // its text is its digits and a short exponent (plain digits for a small scale)
+            int digits = v == null ? 0 : digits(v.unscaledValue().bitLength()) + Math.min(Math.abs(v.scale()), 12) + 2;
+            if (v == null) {
+                writeNull();
+            } else if (digits > budget) {
+                writeMarker(hugeNumber(digits));
+            } else {
+                scalar(v.toString(), () -> delegate.writeNumber(v));
+            }
         }
 
         @Override
         public void writeNumber(String encoded) throws IOException {
-            scalar(encoded == null ? 4 : encoded.length(), () -> delegate.writeNumber(encoded));
+            if (encoded == null) {
+                writeNull();
+            } else {
+                scalar(encoded, () -> delegate.writeNumber(encoded));
+            }
         }
 
         @Override
         public void writeNumber(char[] encoded, int offset, int length) throws IOException {
-            writeNumber(new String(encoded, offset, length));
+            if (length > budget) {
+                writeText(new String(encoded, offset, budget), length);
+            } else {
+                writeNumber(new String(encoded, offset, length));
+            }
         }
 
         @Override
         public void writeBoolean(boolean v) throws IOException {
-            scalar(v ? 4 : 5, () -> delegate.writeBoolean(v));
+            scalar(v ? "true" : "false", () -> delegate.writeBoolean(v));
         }
 
         @Override
         public void writeNull() throws IOException {
-            scalar(4, () -> delegate.writeNull());
+            scalar("null", () -> delegate.writeNull());
         }
 
         @Override
         public void writeEmbeddedObject(Object object) throws IOException {
             writeString("<" + (object == null ? "null" : object.getClass().getName()) + ">");
         }
+    }
+
+    /** At least the decimal digits of an integer of this bit length. */
+    private static int digits(int bitLength) {
+        return (int) (bitLength * 0.30103) + 1;
+    }
+
+    private static String hugeNumber(int digits) {
+        return "<number of about " + digits + " digits>";
     }
 
     private static String cut(String text, int budget) {
