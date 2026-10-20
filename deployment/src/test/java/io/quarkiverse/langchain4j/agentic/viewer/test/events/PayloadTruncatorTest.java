@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -70,7 +71,7 @@ class PayloadTruncatorTest {
         JsonNode tree = result.tree();
         assertEquals("Ada", tree.get("name").asText());
         // the long note is cut within the budget left after the name; the extra field no longer fits
-        assertEquals("y".repeat(67) + "… [truncated, 3000 chars]", tree.get("notes").get(0).asText(), tree::toString);
+        assertEquals("y".repeat(68) + "… [truncated, 3000 chars]", tree.get("notes").get(0).asText(), tree::toString);
         assertEquals(1, tree.get("notes").size());
         assertEquals("[1 more fields]", tree.get("…").asText());
         assertEquals(3, tree.size());
@@ -145,6 +146,64 @@ class PayloadTruncatorTest {
                     () -> "cut inside a character: " + content.length());
             assertTrue(truncator.truncateText(text).codePoints().noneMatch(c -> Character.isSurrogate((char) c)));
         }
+    }
+
+    @Test
+    void aHugeValueIsNotWalkedToTheEnd() {
+        int[] read = { 0 };
+        List<String> huge = new AbstractList<>() {
+            @Override
+            public String get(int index) {
+                read[0]++;
+                return "line " + index;
+            }
+
+            @Override
+            public int size() {
+                return 5_000_000;
+            }
+        };
+        JsonNode array = truncator.truncate(huge).tree();
+        assertEquals("line 0", array.get(0).asText());
+        assertEquals("… [more items]", array.get(array.size() - 1).asText(), "too many to count");
+        assertTrue(array.toString().length() <= MAX, () -> "length " + array.toString().length());
+        assertTrue(read[0] < 20_000, () -> read[0] + " items read");
+    }
+
+    @Test
+    void aHugeNestedValueStopsInsideAndEndsItsOpenContainers() {
+        Map<String, Object> report = new java.util.LinkedHashMap<>();
+        report.put("title", "load");
+        report.put("rows", IntStream.range(0, 200_000).mapToObj(i -> Map.of("n", i, "label", "row " + i)).toList());
+        PayloadTruncator.Result result = truncator.truncate(report);
+        assertTrue(result.truncated());
+        JsonNode tree = result.tree();
+        assertEquals("load", tree.get("title").asText());
+        JsonNode rows = tree.get("rows");
+        assertEquals("… [more items]", rows.get(rows.size() - 1).asText(), tree::toString);
+        assertTrue(tree.toString().length() <= MAX, () -> "length " + tree.toString().length() + ": " + tree);
+    }
+
+    @Test
+    void primitiveArraysAndJsonTreesAreBoundedToo() {
+        JsonNode numbers = truncator.truncate(IntStream.range(0, 100).toArray()).tree();
+        assertEquals(0, numbers.get(0).asInt());
+        assertTrue(numbers.get(numbers.size() - 1).asText().matches("… \\[\\d+ more items]"), numbers::toString);
+        assertTrue(numbers.toString().length() <= MAX, () -> "length " + numbers.toString().length());
+
+        JsonNode node = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("text", "w".repeat(900));
+        PayloadTruncator.Result result = truncator.truncate(node);
+        assertTrue(result.truncated());
+        assertTrue(result.tree().get("text").asText().endsWith("… [truncated, 900 chars]"));
+        assertTrue(result.tree().toString().length() <= MAX, () -> "length " + result.tree().toString().length());
+    }
+
+    @Test
+    void charArraysAndNullStringsAreWrittenAsTheirStrings() {
+        String kept = truncator.truncate("q".repeat(5000).toCharArray()).tree().asText();
+        assertTrue(kept.startsWith("qqq") && kept.endsWith("… [truncated, 5000 chars]"), kept);
+        assertEquals(1, kept.split("… \\[truncated").length - 1, "one marker");
+        assertEquals("[\"a\",null]", truncator.truncate(new String[] { "a", null }).tree().toString());
     }
 
     @Test

@@ -1,26 +1,37 @@
 package io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events;
 
-import java.util.Iterator;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.Reader;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.fasterxml.jackson.core.Base64Variant;
+import com.fasterxml.jackson.core.SerializableString;
+import com.fasterxml.jackson.core.util.JsonGeneratorDelegate;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
+import com.fasterxml.jackson.databind.util.TokenBuffer;
 
 /**
  * Turns event payload values into bounded, plain JSON values (maps, lists, strings, numbers, booleans, null): large
  * scope values or outputs would slow the Dev UI and use memory. Plain values, not Jackson trees: the Dev UI serializer
  * writes a JsonNode as a bean.
  * <p>
- * A value becomes a Jackson tree; when its JSON text is longer than the limit, strings are cut with a marker, and arrays
- * and objects keep their first entries within the budget followed by a marker. Streaming outputs and values Jackson
- * cannot convert (failing getters, cycles, a map or list containing itself) are replaced by a marker, never by their
- * {@code toString()} (a streaming response would block). It never throws: an event must not be lost for its payload.
+ * A value is cut while Jackson serializes it, within the limit of JSON characters: strings are cut with a marker, and
+ * arrays and objects keep their first entries followed by a marker counting the others. Neither the full tree nor the
+ * full JSON text of a large value is built, and the serialization stops once it has skipped a bounded amount of it (the
+ * markers then tell that more was left out, without a count). Streaming outputs and values Jackson cannot convert
+ * (failing getters, cycles, a map or list containing itself) are replaced by a marker, never by their {@code toString()}
+ * (a streaming response would block). It never throws: an event must not be lost for its payload.
  */
 public final class PayloadTruncator {
 
@@ -33,6 +44,10 @@ public final class PayloadTruncator {
             "io.smallrye.mutiny.Multi", "java.util.concurrent.Flow$Publisher", "java.util.stream.Stream");
     /** Room kept for the marker closing a truncated container. */
     private static final int MARKER_ROOM = 40;
+    /** Tokens skipped beyond the limit before the serialization of a value stops. */
+    private static final int SKIPPED_TOKENS = 10_000;
+    /** Deeper values are taken for cycles (Jackson recurses without end into a map or list containing itself). */
+    private static final int MAX_DEPTH = 1000;
 
     private final int maxSize;
 
@@ -53,11 +68,29 @@ public final class PayloadTruncator {
     }
 
     public Result truncate(Object value) {
-        JsonNode tree = toTree(value);
-        if (tree.toString().length() <= maxSize) {
-            return new Result(tree, false);
+        if (value == null) {
+            return new Result(NODES.nullNode(), false);
         }
-        return new Result(shrink(tree, maxSize), true);
+        if (isStream(value.getClass())) {
+            return new Result(TextNode.valueOf("<stream " + value.getClass().getName() + ">"), false);
+        }
+        TokenBuffer buffer = new TokenBuffer(MAPPER, false);
+        Bounded bounded = new Bounded(buffer, maxSize);
+        try {
+            MAPPER.writeValue(bounded, value);
+        } catch (Exception | StackOverflowError e) {
+            if (!bounded.stopped) {
+                return notSerializable(value);
+            }
+        }
+        try {
+            if (bounded.stopped) {
+                bounded.endOpenContainers();
+            }
+            return new Result(MAPPER.readTree(buffer.asParser()), bounded.truncated);
+        } catch (IOException | RuntimeException e) {
+            return notSerializable(value);
+        }
     }
 
     /** Truncates every value of a map (e.g. agent inputs), within the limit for each value. */
@@ -83,22 +116,8 @@ public final class PayloadTruncator {
         return tree == null || tree.isNull() ? null : MAPPER.convertValue(tree, Object.class);
     }
 
-    private static JsonNode toTree(Object value) {
-        if (value == null) {
-            return NODES.nullNode();
-        }
-        if (value instanceof JsonNode node) {
-            return node;
-        }
-        if (isStream(value.getClass())) {
-            return TextNode.valueOf("<stream " + value.getClass().getName() + ">");
-        }
-        try {
-            return MAPPER.valueToTree(value);
-        } catch (RuntimeException | StackOverflowError e) {
-            // Jackson reports bean cycles, but recurses without end into a map or list containing itself
-            return TextNode.valueOf("<" + value.getClass().getName() + ", not serializable to JSON>");
-        }
+    private static Result notSerializable(Object value) {
+        return new Result(TextNode.valueOf("<" + value.getClass().getName() + ", not serializable to JSON>"), false);
     }
 
     private static boolean isStream(Class<?> type) {
@@ -115,64 +134,437 @@ public final class PayloadTruncator {
         return false;
     }
 
-    /** A tree whose JSON text fits in about {@code budget} characters. */
-    private static JsonNode shrink(JsonNode node, int budget) {
-        if (node.isTextual()) {
-            return TextNode.valueOf(cut(node.asText(), budget));
-        }
-        if (node.isArray()) {
-            ArrayNode array = NODES.arrayNode();
-            int used = 2;
-            int index = 0;
-            for (JsonNode element : node) {
-                JsonNode kept = fit(element, budget - used - MARKER_ROOM);
-                if (kept == null) {
-                    break;
-                }
-                array.add(kept);
-                used += kept.toString().length() + 1;
-                index++;
-            }
-            if (index < node.size()) {
-                array.add(TextNode.valueOf("… [" + (node.size() - index) + " more items]"));
-            }
-            return array;
-        }
-        if (node.isObject()) {
-            ObjectNode object = NODES.objectNode();
-            int used = 2;
-            int kept = 0;
-            for (Iterator<Map.Entry<String, JsonNode>> fields = node.fields(); fields.hasNext();) {
-                Map.Entry<String, JsonNode> field = fields.next();
-                JsonNode value = fit(field.getValue(), budget - used - field.getKey().length() - 4 - MARKER_ROOM);
-                if (value == null) {
-                    break;
-                }
-                object.set(field.getKey(), value);
-                used += field.getKey().length() + 4 + value.toString().length();
-                kept++;
-            }
-            if (kept < node.size()) {
-                object.put("…", "[" + (node.size() - kept) + " more fields]");
-            }
-            return object;
-        }
-        return node; // numbers, booleans, null
-    }
+    /**
+     * Writes what Jackson serializes into a token buffer, within a budget of JSON characters: what does not fit is
+     * skipped and counted per container, whose end then writes a marker. Room for the marker of each open container is
+     * kept. Every write method goes through it (none is passed straight to the buffer).
+     */
+    private static final class Bounded extends JsonGeneratorDelegate {
 
-    /** The node itself, or a shrunk copy, within the budget; null when not even a shrunk copy fits. */
-    private static JsonNode fit(JsonNode node, int budget) {
-        if (node.toString().length() <= budget) {
-            return node;
+        /** A container being written. */
+        private static final class Open {
+            final boolean array;
+            int entries;
+            int skipped;
+
+            Open(boolean array) {
+                this.array = array;
+            }
         }
-        if (budget < MARKER_ROOM || !(node.isTextual() || node.isContainerNode())) {
-            return null;
+
+        private final int budget;
+        private final Deque<Open> open = new ArrayDeque<>();
+        /** JSON characters written so far, with the brackets of the open containers */
+        private int used;
+        /** depth within a skipped container */
+        private int skipping;
+        /** the field name was skipped, so is its value */
+        private boolean skipValue;
+        private int skippedTokens;
+        boolean truncated;
+        /** the serialization stopped: too much was skipped */
+        boolean stopped;
+
+        Bounded(TokenBuffer buffer, int budget) {
+            super(buffer, false);
+            this.budget = budget;
         }
-        return shrink(node, budget);
+
+        /** Room left for a value, keeping the room of the markers of the open containers. */
+        private int room(int comma) {
+            return budget - used - comma - open.size() * MARKER_ROOM;
+        }
+
+        private int comma() {
+            Open parent = open.peek();
+            return parent != null && parent.array && parent.entries > 0 ? 1 : 0;
+        }
+
+        /** Skips a token; past the bound, the serialization stops. */
+        private void skip() {
+            if (++skippedTokens > SKIPPED_TOKENS) {
+                stopped = true;
+                throw new IllegalStateException("payload too large, the rest is left out");
+            }
+        }
+
+        /** Whether the next value is skipped (inside a skipped container, after a skipped field name). */
+        private boolean skipped(boolean container) {
+            if (skipping > 0 || skipValue) {
+                skipValue = false;
+                if (container) {
+                    skipping++;
+                }
+                skip();
+                return true;
+            }
+            return false;
+        }
+
+        /** Whether a value of this JSON length is written; a value in an array that does not fit is skipped and counted. */
+        private boolean fits(int size, boolean container) {
+            if (skipped(container)) {
+                return false;
+            }
+            Open parent = open.peek();
+            int comma = comma();
+            if (parent != null && parent.array && (parent.skipped > 0 || size + (container ? MARKER_ROOM : 0) > room(comma))) {
+                skipEntry(parent, container);
+                return false;
+            }
+            used += comma + size;
+            if (parent != null && parent.array) {
+                parent.entries++;
+            }
+            return true;
+        }
+
+        private void skipEntry(Open parent, boolean container) {
+            parent.skipped++;
+            truncated = true;
+            if (container) {
+                skipping++;
+            }
+            skip();
+        }
+
+        private void scalar(int size, Write write) throws IOException {
+            if (fits(size, false)) {
+                write.run();
+            }
+        }
+
+        private interface Write {
+            void run() throws IOException;
+        }
+
+        private void start(boolean array, Write write) throws IOException {
+            if (open.size() + skipping >= MAX_DEPTH) {
+                throw new IllegalStateException("nested deeper than " + MAX_DEPTH + " levels");
+            }
+            if (fits(2, true)) {
+                write.run();
+                open.push(new Open(array));
+            }
+        }
+
+        private void end() throws IOException {
+            if (skipping > 0) {
+                skipping--;
+                skip();
+                return;
+            }
+            Open container = open.pop();
+            close(container, container.skipped > 0 ? container.skipped + " " : null);
+        }
+
+        /**
+         * Ends a container, with the marker of the entries left out when {@code count} is given ("" for unknown): it
+         * takes the room kept for it.
+         */
+        private void close(Open container, String count) throws IOException {
+            int comma = container.entries > 0 ? 1 : 0;
+            if (container.array) {
+                if (count != null) {
+                    String marker = "… [" + count + "more items]";
+                    used += comma + marker.length() + 2;
+                    delegate.writeString(marker);
+                }
+                delegate.writeEndArray();
+            } else {
+                if (count != null) {
+                    String marker = "[" + count + "more fields]";
+                    used += comma + 4 + marker.length() + 2;
+                    delegate.writeFieldName("…");
+                    delegate.writeString(marker);
+                }
+                delegate.writeEndObject();
+            }
+        }
+
+        /** After a stop: the open containers end with a marker telling that more was left out. */
+        void endOpenContainers() throws IOException {
+            truncated = true;
+            while (!open.isEmpty()) {
+                close(open.pop(), "");
+            }
+        }
+
+        @Override
+        public void writeFieldName(String name) throws IOException {
+            if (skipping > 0) {
+                skip();
+                return;
+            }
+            Open parent = open.peek();
+            int comma = parent.entries > 0 ? 1 : 0;
+            int size = name.length() + 3;
+            if (parent.skipped > 0 || size + MARKER_ROOM > room(comma)) {
+                parent.skipped++;
+                truncated = true;
+                skipValue = true;
+                skip();
+                return;
+            }
+            used += comma + size;
+            parent.entries++;
+            delegate.writeFieldName(name);
+        }
+
+        @Override
+        public void writeString(String text) throws IOException {
+            if (text == null) {
+                writeNull();
+            } else {
+                writeText(text, text.length());
+            }
+        }
+
+        /**
+         * A string is cut to the room left; in an array, it is skipped when not even a cut one fits.
+         *
+         * @param text the string, or its start when longer than the budget
+         * @param length the length of the whole string
+         */
+        private void writeText(String text, int length) throws IOException {
+            if (skipped(false)) {
+                return;
+            }
+            Open parent = open.peek();
+            boolean inArray = parent != null && parent.array;
+            int comma = comma();
+            int room = room(comma);
+            if (inArray && (parent.skipped > 0 || Math.min(length + 2, MARKER_ROOM) > room)) {
+                skipEntry(parent, false);
+                return;
+            }
+            String kept = length + 2 <= room ? text : cut(text, length, Math.max(room, MARKER_ROOM));
+            truncated |= kept != text;
+            used += comma + kept.length() + 2;
+            if (inArray) {
+                parent.entries++;
+            }
+            delegate.writeString(kept);
+        }
+
+        // every other write goes through the ones above
+
+        @Override
+        public void writeStartArray() throws IOException {
+            start(true, () -> delegate.writeStartArray());
+        }
+
+        @Override
+        @Deprecated
+        public void writeStartArray(int size) throws IOException {
+            start(true, () -> delegate.writeStartArray());
+        }
+
+        @Override
+        public void writeStartArray(Object forValue) throws IOException {
+            start(true, () -> delegate.writeStartArray(forValue));
+        }
+
+        @Override
+        public void writeStartArray(Object forValue, int size) throws IOException {
+            start(true, () -> delegate.writeStartArray(forValue, size));
+        }
+
+        @Override
+        public void writeEndArray() throws IOException {
+            end();
+        }
+
+        @Override
+        public void writeStartObject() throws IOException {
+            start(false, () -> delegate.writeStartObject());
+        }
+
+        @Override
+        public void writeStartObject(Object forValue) throws IOException {
+            start(false, () -> delegate.writeStartObject(forValue));
+        }
+
+        @Override
+        public void writeStartObject(Object forValue, int size) throws IOException {
+            start(false, () -> delegate.writeStartObject(forValue, size));
+        }
+
+        @Override
+        public void writeEndObject() throws IOException {
+            end();
+        }
+
+        @Override
+        public void writeFieldName(SerializableString name) throws IOException {
+            writeFieldName(name.getValue());
+        }
+
+        @Override
+        public void writeFieldId(long id) throws IOException {
+            writeFieldName(Long.toString(id));
+        }
+
+        @Override
+        public void writeArray(int[] array, int offset, int length) throws IOException {
+            writeStartArray(array, length);
+            for (int i = offset; i < offset + length; i++) {
+                writeNumber(array[i]);
+            }
+            writeEndArray();
+        }
+
+        @Override
+        public void writeArray(long[] array, int offset, int length) throws IOException {
+            writeStartArray(array, length);
+            for (int i = offset; i < offset + length; i++) {
+                writeNumber(array[i]);
+            }
+            writeEndArray();
+        }
+
+        @Override
+        public void writeArray(double[] array, int offset, int length) throws IOException {
+            writeStartArray(array, length);
+            for (int i = offset; i < offset + length; i++) {
+                writeNumber(array[i]);
+            }
+            writeEndArray();
+        }
+
+        @Override
+        public void writeArray(String[] array, int offset, int length) throws IOException {
+            writeStartArray(array, length);
+            for (int i = offset; i < offset + length; i++) {
+                writeString(array[i]);
+            }
+            writeEndArray();
+        }
+
+        @Override
+        public void writeString(char[] text, int offset, int length) throws IOException {
+            // a long text is only copied up to what can be kept
+            writeText(new String(text, offset, Math.min(length, budget)), length);
+        }
+
+        @Override
+        public void writeString(SerializableString text) throws IOException {
+            writeString(text.getValue());
+        }
+
+        @Override
+        public void writeString(Reader reader, int length) throws IOException {
+            writeString("<text stream>");
+        }
+
+        @Override
+        public void writeRawUTF8String(byte[] text, int offset, int length) throws IOException {
+            writeString(new String(text, offset, length, StandardCharsets.UTF_8));
+        }
+
+        @Override
+        public void writeUTF8String(byte[] text, int offset, int length) throws IOException {
+            writeString(new String(text, offset, length, StandardCharsets.UTF_8));
+        }
+
+        @Override
+        public void writeRawValue(String text) throws IOException {
+            writeString(text); // raw JSON is kept as text: it cannot be cut as JSON
+        }
+
+        @Override
+        public void writeRawValue(String text, int offset, int length) throws IOException {
+            writeString(text.substring(offset, offset + length));
+        }
+
+        @Override
+        public void writeRawValue(char[] text, int offset, int length) throws IOException {
+            writeString(text, offset, length);
+        }
+
+        @Override
+        public void writeBinary(Base64Variant variant, byte[] data, int offset, int length) throws IOException {
+            if ((length + 2) / 3 * 4 + 2 <= budget) {
+                scalar((length + 2) / 3 * 4 + 2, () -> delegate.writeBinary(variant, data, offset, length));
+            } else {
+                writeString("<" + length + " bytes>");
+            }
+        }
+
+        @Override
+        public int writeBinary(Base64Variant variant, InputStream data, int length) throws IOException {
+            writeString("<binary stream>");
+            return 0;
+        }
+
+        @Override
+        public void writeNumber(short v) throws IOException {
+            scalar(Short.toString(v).length(), () -> delegate.writeNumber(v));
+        }
+
+        @Override
+        public void writeNumber(int v) throws IOException {
+            scalar(Integer.toString(v).length(), () -> delegate.writeNumber(v));
+        }
+
+        @Override
+        public void writeNumber(long v) throws IOException {
+            scalar(Long.toString(v).length(), () -> delegate.writeNumber(v));
+        }
+
+        @Override
+        public void writeNumber(BigInteger v) throws IOException {
+            scalar(v == null ? 4 : v.toString().length(), () -> delegate.writeNumber(v));
+        }
+
+        @Override
+        public void writeNumber(double v) throws IOException {
+            scalar(Double.toString(v).length(), () -> delegate.writeNumber(v));
+        }
+
+        @Override
+        public void writeNumber(float v) throws IOException {
+            scalar(Float.toString(v).length(), () -> delegate.writeNumber(v));
+        }
+
+        @Override
+        public void writeNumber(BigDecimal v) throws IOException {
+            scalar(v == null ? 4 : v.toString().length(), () -> delegate.writeNumber(v));
+        }
+
+        @Override
+        public void writeNumber(String encoded) throws IOException {
+            scalar(encoded == null ? 4 : encoded.length(), () -> delegate.writeNumber(encoded));
+        }
+
+        @Override
+        public void writeNumber(char[] encoded, int offset, int length) throws IOException {
+            writeNumber(new String(encoded, offset, length));
+        }
+
+        @Override
+        public void writeBoolean(boolean v) throws IOException {
+            scalar(v ? 4 : 5, () -> delegate.writeBoolean(v));
+        }
+
+        @Override
+        public void writeNull() throws IOException {
+            scalar(4, () -> delegate.writeNull());
+        }
+
+        @Override
+        public void writeEmbeddedObject(Object object) throws IOException {
+            writeString("<" + (object == null ? "null" : object.getClass().getName()) + ">");
+        }
     }
 
     private static String cut(String text, int budget) {
-        String marker = "… [truncated, " + text.length() + " chars]";
+        return cut(text, text.length(), budget);
+    }
+
+    /** The start of a text of this length, with a marker, within the budget ({@code text} may be its start only). */
+    private static String cut(String text, int length, int budget) {
+        String marker = "… [truncated, " + length + " chars]";
         int keep = Math.min(Math.max(0, budget - marker.length() - 2), text.length());
         if (keep > 0 && Character.isHighSurrogate(text.charAt(keep - 1))) {
             keep--; // never half of a character (an emoji is two UTF-16 chars)

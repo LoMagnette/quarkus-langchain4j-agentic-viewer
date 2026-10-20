@@ -166,8 +166,9 @@ calls the root CDI bean inside a fresh request context (request-scoped chat memo
 Events are delivered by one event thread (callbacks only queue them); `streamRun` replays a run then follows it
 (`RunManager.stream`). Over the Dev UI websocket a stream sends a `Void` ack, then one `SubscriptionMessage` per event and
 no completion message: the client stops at `RunFinished` / `RunFailed`. History is bounded per system.
-Event payloads are bounded on the event thread (`events/PayloadTruncator`) and must be plain Java values (maps, lists,
-strings, numbers): the Dev UI serializer writes a Jackson `JsonNode` as a bean.
+Event payloads are bounded on the event thread (`events/PayloadTruncator`: cut while Jackson serializes them, through a
+budgeted generator, never as a full tree or text first) and must be plain Java values (maps, lists, strings, numbers): the
+Dev UI serializer writes a Jackson `JsonNode` as a bean.
 `RunManager.shutdown` (@PreDestroy, also on hot reload) ends open runs CANCELLED, completes their streams, releases
 waiting human steps and stops its threads; the registry is rebuilt by the restart.
 
