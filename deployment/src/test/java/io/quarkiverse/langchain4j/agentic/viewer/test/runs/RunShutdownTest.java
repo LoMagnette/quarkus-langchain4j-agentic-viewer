@@ -1,9 +1,5 @@
 package io.quarkiverse.langchain4j.agentic.viewer.test.runs;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -25,6 +21,8 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SourceRef;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SystemOrigin;
 import io.smallrye.mutiny.helpers.test.AssertSubscriber;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Stopping the application or a hot reload (RunManager.shutdown) ends the open runs and leaves no thread behind (T6.2).
@@ -59,10 +57,12 @@ class RunShutdownTest {
         manager.shutdown();
 
         stream.awaitCompletion(Duration.ofSeconds(5));
-        ExecutionEvent last = stream.getItems().get(stream.getItems().size() - 1);
-        assertTrue(last instanceof RunFailed, () -> stream.getItems().toString());
+        ExecutionEvent last = stream.getItems().getLast();
+        assertInstanceOf(RunFailed.class, last, () -> stream.getItems().toString());
         assertEquals("Application stopped or reloaded", ((RunFailed) last).error().message());
         assertEquals(RunStatus.CANCELLED, run.status());
+        // the stream ends on the stopping event thread: its unsubscribe, not accepted any more, must not stop the end
+        assertEquals(run, run.completion().get(5, TimeUnit.SECONDS));
         assertEquals(2, threads.size(), threads::toString);
         for (Thread thread : threads) {
             thread.join(5_000);

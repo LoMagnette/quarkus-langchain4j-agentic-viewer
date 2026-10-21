@@ -24,6 +24,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -419,7 +420,14 @@ public class RunManager {
         }
         Run run = found.get();
         return Multi.createFrom().<ExecutionEvent> emitter(emitter -> {
-            emitter.onTermination(() -> dispatcher.execute(() -> run.unsubscribe(emitter)));
+            emitter.onTermination(() -> {
+                try {
+                    dispatcher.execute(() -> run.unsubscribe(emitter));
+                } catch (RejectedExecutionException e) {
+                    // shut down (e.g. the run ended by the shutdown completes this stream on the stopping event
+                    // thread): nothing is delivered any more, the subscriber is left on the run
+                }
+            });
             dispatcher.execute(() -> run.subscribe(emitter));
         }).emitOn(Infrastructure.getDefaultWorkerPool());
     }
