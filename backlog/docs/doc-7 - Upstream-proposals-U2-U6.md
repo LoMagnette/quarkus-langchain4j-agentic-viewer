@@ -3,7 +3,7 @@ id: doc-7
 title: Upstream proposals U2-U6
 type: specification
 created_date: '2026-10-17 10:48'
-updated_date: '2026-10-17 10:48'
+updated_date: '2026-10-21 11:11'
 ---
 # Upstream proposals U2-U6
 
@@ -83,8 +83,10 @@ planners (sequence, loop, parallel, conditional) need not report: a flag on the 
 (`default boolean plannerDecisionsOfWorkflows()`), or reporting only for `topology()` STAR / custom planners.
 
 **Viewer today.** `PlannerDecisions` replaces the private final `plannerSupplier` field of each workflow handler by
-reflection with a reporting planner; the blackboard and P2P candidates are read from private fields
-(`agentActivators`, `canActivate`, `maxInvocations`, `exitCondition`...).
+reflection with a reporting planner; the P2P state is read from private fields (`maxInvocations`,
+`exitCondition`...), the blackboard candidates are those its planner hands its `conflictResolutionStrategy`, a private
+field wrapped by reflection (its own `canActivate` changed signature in 1.23 and evaluates activation conditions:
+TASK-92).
 
 **Test.** The supervisor (or a custom planner) of a two-agent system: the listener receives call, call, done; a
 blackboard planner reports its candidates.

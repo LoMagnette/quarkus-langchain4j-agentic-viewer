@@ -1,8 +1,6 @@
 package io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,8 +24,10 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.LangChain4jInt
  * changed since they last fired; among those candidates, its conflict resolution strategy picks one; it stops when
  * its goal predicate holds or no agent can fire (quiescent). The adapter tells, per decision, the candidates (the
  * picked one included), the strategy, the invocations against the maximum and whether the goal holds, and on done why
- * it stopped. Candidates, strategy, goal and maximum are private: read by reflection (internal API: without them,
- * only the invocations are told). langchain4j has no callback for the candidates yet (upstream U3).
+ * it stopped. Strategy, goal and maximum are private: read by reflection (internal API: without them, only the
+ * invocations are told); the candidates are those the planner hands its strategy, which the adapter wraps (the
+ * planner's own activation check also evaluates the application's activation conditions: never called here).
+ * langchain4j has no callback for the candidates yet (upstream U3).
  */
 @ApplicationScoped
 public class BlackboardAdapter implements PatternAdapter {
@@ -35,32 +35,9 @@ public class BlackboardAdapter implements PatternAdapter {
     public static final String GOAL_REACHED = "GOAL_REACHED";
     public static final String QUIESCENT = "QUIESCENT";
 
-    private static final Field ACTIVATORS = field(BlackboardPlanner.class, LangChain4jInternals.BLACKBOARD_ACTIVATORS);
     private static final Field STRATEGY = field(BlackboardPlanner.class, LangChain4jInternals.BLACKBOARD_STRATEGY);
     private static final Field GOAL = field(BlackboardPlanner.class, LangChain4jInternals.BLACKBOARD_GOAL);
     private static final Field MAX = field(BlackboardPlanner.class, LangChain4jInternals.BLACKBOARD_MAX_INVOCATIONS);
-    private static final Class<?> ACTIVATOR = activatorClass();
-    private static final Field ACTIVATOR_AGENT = ACTIVATOR == null ? null : field(ACTIVATOR, LangChain4jInternals.BLACKBOARD_ACTIVATOR_AGENT);
-    private static final Method CAN_ACTIVATE = ACTIVATOR == null ? null : canActivate();
-
-    private static Class<?> activatorClass() {
-        try {
-            return Class.forName(LangChain4jInternals.BLACKBOARD_ACTIVATOR, false,
-                    BlackboardPlanner.class.getClassLoader());
-        } catch (ClassNotFoundException | RuntimeException | LinkageError e) {
-            return null;
-        }
-    }
-
-    private static Method canActivate() {
-        try {
-            Method method = ACTIVATOR.getDeclaredMethod(LangChain4jInternals.BLACKBOARD_ACTIVATOR_CAN_ACTIVATE, AgenticScope.class);
-            method.setAccessible(true);
-            return method;
-        } catch (ReflectiveOperationException | RuntimeException e) {
-            return null;
-        }
-    }
 
     private static Field field(Class<?> type, String name) {
         try {
@@ -99,6 +76,22 @@ public class BlackboardAdapter implements PatternAdapter {
         }
     }
 
+    /** The planner's strategy, recording the candidates the planner hands it (never called by the Dev UI). */
+    static final class RecordedStrategy implements ConflictResolutionStrategy {
+        final ConflictResolutionStrategy delegate;
+        volatile List<AgentInstance> candidates;
+
+        RecordedStrategy(ConflictResolutionStrategy delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public AgentInstance resolve(AgenticScope scope, List<AgentInstance> candidates) {
+            this.candidates = List.copyOf(candidates);
+            return delegate.resolve(scope, candidates);
+        }
+    }
+
     /** After init, which sets the default goal (the planner agent's output key present). */
     @Override
     @SuppressWarnings("unchecked")
@@ -109,6 +102,14 @@ public class BlackboardAdapter implements PatternAdapter {
             }
         } catch (ReflectiveOperationException | RuntimeException e) {
             // whether the goal holds is then left out
+        }
+        try {
+            if (STRATEGY != null && STRATEGY.get(planner) instanceof ConflictResolutionStrategy strategy
+                    && !(strategy instanceof RecordedStrategy)) {
+                STRATEGY.set(planner, new RecordedStrategy(strategy));
+            }
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            // the candidates are then left out
         }
     }
 
@@ -140,26 +141,19 @@ public class BlackboardAdapter implements PatternAdapter {
     }
 
     /**
-     * The agents that could fire for this decision: those still able to fire, plus the one picked (picking it marks it
-     * fired), in declaration order.
+     * The agents that could fire for this decision, the picked one included, in declaration order: those the planner
+     * handed its strategy to pick from (cleared once told, so a decision never tells those of an earlier one).
      */
     private static List<AgentInstance> candidates(Planner planner, Decision decision) {
-        if (!(get(ACTIVATORS, planner) instanceof Map<?, ?> activators) || ACTIVATOR_AGENT == null || CAN_ACTIVATE == null) {
+        if (!(get(STRATEGY, planner) instanceof RecordedStrategy recorded) || !(decision.action() instanceof Action.AgentCallAction)) {
             return null;
         }
-        List<String> ids = new ArrayList<>();
-        if (decision.action() instanceof Action.AgentCallAction call) {
-            call.agentsToCall().forEach(agent -> ids.add(agent.agentId()));
-        }
-        try {
-            for (Object activator : activators.values()) {
-                if (Boolean.TRUE.equals(CAN_ACTIVATE.invoke(activator, decision.scope()))) {
-                    ids.add(((AgentInstance) ACTIVATOR_AGENT.get(activator)).agentId());
-                }
-            }
-        } catch (ReflectiveOperationException | RuntimeException e) {
+        List<AgentInstance> candidates = recorded.candidates;
+        recorded.candidates = null;
+        if (candidates == null) {
             return null;
         }
+        List<String> ids = candidates.stream().map(AgentInstance::agentId).toList();
         return decision.subagents().stream().filter(agent -> ids.contains(agent.agentId())).toList();
     }
 
@@ -170,6 +164,9 @@ public class BlackboardAdapter implements PatternAdapter {
 
     /** "declaration order", or the class the strategy is written in (e.g. a lambda of the application). */
     private static String strategy(Object strategy) {
+        if (strategy instanceof RecordedStrategy recorded) {
+            return strategy(recorded.delegate);
+        }
         if (strategy == null) {
             return null;
         }

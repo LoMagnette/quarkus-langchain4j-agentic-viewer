@@ -65,13 +65,9 @@ public final class LangChain4jInternals {
     // langchain4j-agentic-patterns
     public static final String P2P_MAX_INVOCATIONS = "maxAgentsInvocations";
     public static final String P2P_EXIT_CONDITION = "exitCondition";
-    public static final String BLACKBOARD_ACTIVATORS = "agentActivators";
     public static final String BLACKBOARD_STRATEGY = "conflictResolutionStrategy";
     public static final String BLACKBOARD_GOAL = "goalPredicate";
     public static final String BLACKBOARD_MAX_INVOCATIONS = "maxInvocations";
-    public static final String BLACKBOARD_ACTIVATOR = "dev.langchain4j.agentic.patterns.blackboard.BlackboardPlanner$AgentActivator";
-    public static final String BLACKBOARD_ACTIVATOR_AGENT = "agent";
-    public static final String BLACKBOARD_ACTIVATOR_CAN_ACTIVATE = "canActivate";
     /** {@code executionState()} key of the P2P and blackboard planners' invocation counter. */
     public static final String INVOCATION_COUNTER = "invocationCounter";
 
@@ -136,13 +132,9 @@ public final class LangChain4jInternals {
                     "GOAP path preview and live path", "java.util.Collection", "java.lang.String"),
             field(Library.PATTERNS, P2P, P2P_MAX_INVOCATIONS, "P2P maximum and termination reason"),
             field(Library.PATTERNS, P2P, P2P_EXIT_CONDITION, "P2P termination reason"),
-            field(Library.PATTERNS, BLACKBOARD, BLACKBOARD_ACTIVATORS, "blackboard candidates"),
-            field(Library.PATTERNS, BLACKBOARD, BLACKBOARD_STRATEGY, "blackboard strategy"),
+            field(Library.PATTERNS, BLACKBOARD, BLACKBOARD_STRATEGY, "blackboard strategy and candidates"),
             field(Library.PATTERNS, BLACKBOARD, BLACKBOARD_GOAL, "blackboard goal status and termination"),
-            field(Library.PATTERNS, BLACKBOARD, BLACKBOARD_MAX_INVOCATIONS, "blackboard maximum"),
-            field(Library.PATTERNS, BLACKBOARD_ACTIVATOR, BLACKBOARD_ACTIVATOR_AGENT, "blackboard candidates"),
-            method(Library.PATTERNS, BLACKBOARD_ACTIVATOR, BLACKBOARD_ACTIVATOR_CAN_ACTIVATE, "blackboard candidates",
-                    SCOPE_INTERFACE));
+            field(Library.PATTERNS, BLACKBOARD, BLACKBOARD_MAX_INVOCATIONS, "blackboard maximum"));
 
     private LangChain4jInternals() {
     }
