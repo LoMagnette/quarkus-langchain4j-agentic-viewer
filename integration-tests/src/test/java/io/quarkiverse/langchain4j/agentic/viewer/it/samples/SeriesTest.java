@@ -16,6 +16,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ExecutionEvent;
 import org.jboss.jandex.Index;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -121,12 +122,12 @@ class SeriesTest {
         for (int i = 1; i < trace.runs().size(); i++) {
             Run previous = manager.run(trace.runs().get(i - 1).runId()).orElseThrow();
             long previousEnd = previous.events().stream().filter(RunFinished.class::isInstance)
-                    .mapToLong(e -> e.timestamp()).findFirst().orElseThrow();
+                    .mapToLong(ExecutionEvent::timestamp).findFirst().orElseThrow();
             assertTrue(manager.run(trace.runs().get(i).runId()).orElseThrow().startedAt() >= previousEnd);
         }
         assertEquals(historyBefore, manager.listRuns(storyWriter).size(), "out of the run history");
-        assertEquals(trace.seriesId(), service.listSeries(storyWriter).get(0).seriesId());
-        assertEquals(3, service.listSeries(storyWriter).get(0).started());
+        assertEquals(trace.seriesId(), service.listSeries(storyWriter).getFirst().seriesId());
+        assertEquals(3, service.listSeries(storyWriter).getFirst().started());
     }
 
     @Test
@@ -153,14 +154,14 @@ class SeriesTest {
         SeriesTrace trace = ended(manager, seriesId);
         assertEquals(RunStatus.CANCELLED, trace.status());
         assertEquals(1, trace.runs().size());
-        assertEquals(RunStatus.CANCELLED, manager.run(trace.runs().get(0).runId()).orElseThrow().completion()
+        assertEquals(RunStatus.CANCELLED, manager.run(trace.runs().getFirst().runId()).orElseThrow().completion()
                 .get(30, TimeUnit.SECONDS).status());
         assertFalse(service.cancelSeries(seriesId), "nothing left to stop");
     }
 
     private static boolean waiting(String seriesId) {
         List<SeriesRun> runs = manager.series(seriesId).orElseThrow().runs();
-        return !runs.isEmpty() && manager.run(runs.get(0).runId()).orElseThrow().events().stream()
+        return !runs.isEmpty() && manager.run(runs.getFirst().runId()).orElseThrow().events().stream()
                 .anyMatch(AwaitingHumanInput.class::isInstance);
     }
 
@@ -209,7 +210,7 @@ class SeriesTest {
         }
 
         assertEquals(5, manager.listSeries(tripPlanner).size());
-        assertTrue(manager.series(ids.get(0)).isEmpty(), "an older one left once ended");
+        assertTrue(manager.series(ids.getFirst()).isEmpty(), "an older one left once ended");
     }
 
     /** At most max-concurrent-runs series run at once: no thread for a further one (TASK-99). */
@@ -299,14 +300,14 @@ class SeriesTest {
         List<String> firstRuns = new ArrayList<>();
         for (int i = 0; i < 6; i++) {
             String seriesId = manager.startSeries(researchGatherer, Map.of("topic", "quantum computing"), 1);
-            firstRuns.add(ended(manager, seriesId).runs().get(0).runId());
+            firstRuns.add(ended(manager, seriesId).runs().getFirst().runId());
             ids.add(seriesId);
         }
 
         assertEquals(5, manager.listSeries(researchGatherer).size());
-        assertTrue(manager.series(ids.get(0)).isEmpty(), "the oldest left");
+        assertTrue(manager.series(ids.getFirst()).isEmpty(), "the oldest left");
         assertTrue(manager.run(firstRuns.get(0)).isEmpty(), "with its runs");
         assertTrue(manager.run(firstRuns.get(1)).isPresent());
-        assertEquals(ids.get(5), manager.listSeries(researchGatherer).get(0).seriesId(), "newest first");
+        assertEquals(ids.get(5), manager.listSeries(researchGatherer).getFirst().seriesId(), "newest first");
     }
 }

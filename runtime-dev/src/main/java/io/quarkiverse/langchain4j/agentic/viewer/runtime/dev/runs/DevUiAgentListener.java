@@ -285,7 +285,7 @@ public class DevUiAgentListener implements AgentListener {
         if (parentNode != null && parentNode.kind() == NodeKind.LOOP) {
             synchronized (parent) {
                 // an iteration starts with the first agent of the loop body
-                if (parentNode.children().isEmpty() || parentNode.children().get(0).id().equals(nodeId)
+                if (parentNode.children().isEmpty() || parentNode.children().getFirst().id().equals(nodeId)
                         || parent.loopCounter < 0) {
                     parent.loopCounter++;
                 }
@@ -627,7 +627,7 @@ public class DevUiAgentListener implements AgentListener {
         List<Integer> occurrences = occurrences(agent);
         String id;
         if (occurrences.size() <= 1) {
-            id = NodeIds.child(parent.nodeId, segment, occurrences.isEmpty() ? 1 : occurrences.get(0));
+            id = NodeIds.child(parent.nodeId, segment, occurrences.isEmpty() ? 1 : occurrences.getFirst());
         } else {
             synchronized (parent) {
                 int start = parent.childStarts.merge(base, 1, Integer::sum) - 1;
@@ -648,7 +648,7 @@ public class DevUiAgentListener implements AgentListener {
             return run.systemId();
         }
         List<Integer> occurrences = occurrences(agent);
-        return NodeIds.child(nodeId(run, parent), simpleName(agent.type()), occurrences.isEmpty() ? 1 : occurrences.get(0));
+        return NodeIds.child(nodeId(run, parent), simpleName(agent.type()), occurrences.isEmpty() ? 1 : occurrences.getFirst());
     }
 
     /**
@@ -698,7 +698,7 @@ public class DevUiAgentListener implements AgentListener {
     }
 
     private static String toolKey(Run run, ToolExecutionRequest request) {
-        return run.id() + "/" + (request.id() != null ? request.id() : request.name() + "@" + Thread.currentThread().getId());
+        return run.id() + "/" + (request.id() != null ? request.id() : request.name() + "@" + Thread.currentThread().threadId());
     }
 
     private static long elapsedMillis(Invocation invocation) {

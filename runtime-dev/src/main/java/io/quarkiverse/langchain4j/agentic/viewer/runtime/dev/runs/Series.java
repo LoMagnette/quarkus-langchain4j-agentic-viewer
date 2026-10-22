@@ -94,7 +94,7 @@ public final class Series {
     /** @return the run started last, null before the first */
     String currentRunId() {
         List<String> ids = runIds();
-        return ids.isEmpty() ? null : ids.get(ids.size() - 1);
+        return ids.isEmpty() ? null : ids.getLast();
     }
 
     void end(RunStatus endStatus, String failure) {

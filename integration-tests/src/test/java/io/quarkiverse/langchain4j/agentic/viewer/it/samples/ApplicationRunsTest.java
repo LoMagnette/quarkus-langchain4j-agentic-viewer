@@ -1,10 +1,5 @@
 package io.quarkiverse.langchain4j.agentic.viewer.it.samples;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.io.File;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -55,6 +50,8 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.SourceRef;
 import io.quarkus.arc.ClientProxy;
 import io.quarkus.test.junit.QuarkusTest;
 import io.smallrye.mutiny.helpers.test.AssertSubscriber;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Runs the application starts itself (TASK-95): calls of the root agents outside a Dev UI run are recorded as
@@ -153,7 +150,7 @@ class ApplicationRunsTest {
     private static Run lastApplicationRun(RunManager runManager, String systemName) throws Exception {
         List<RunSummary> runs = applicationRuns(runManager, systemName);
         assertFalse(runs.isEmpty(), "no application run of " + systemName);
-        Run run = runManager.run(runs.get(0).runId()).orElseThrow();
+        Run run = runManager.run(runs.getFirst().runId()).orElseThrow();
         run.completion().get(30, TimeUnit.SECONDS);
         return run;
     }
@@ -172,9 +169,9 @@ class ApplicationRunsTest {
         assertEquals(story, run.output());
         assertEquals(Map.of("bio", "Ada, a curious engineer"), run.inputs());
         List<ExecutionEvent> events = run.events();
-        assertTrue(events.get(0) instanceof RunStarted, events.toString());
-        assertTrue(events.get(1) instanceof ScopeCreated, events.toString());
-        assertTrue(events.get(events.size() - 1) instanceof RunFinished finished && story.equals(finished.output()));
+        assertInstanceOf(RunStarted.class, events.get(0), events.toString());
+        assertInstanceOf(ScopeCreated.class, events.get(1), events.toString());
+        assertTrue(events.getLast() instanceof RunFinished finished && story.equals(finished.output()));
         List<String> nodes = events(run, AgentStarted.class).stream().map(AgentStarted::nodeId).toList();
         String root = systemId("StoryWriter");
         assertEquals(List.of(root, root + "/IntroWriter", root + "/AdventureWriter"), nodes);
@@ -211,7 +208,7 @@ class ApplicationRunsTest {
         assertEquals(unrecorded.getMessage(), recorded.getMessage());
         Run run = lastApplicationRun(manager, "FailingFlow");
         assertEquals(RunStatus.FAILED, run.status());
-        RunFailed failed = (RunFailed) run.events().get(run.events().size() - 1);
+        RunFailed failed = (RunFailed) run.events().getLast();
         assertEquals(recorded.getClass().getName(), failed.error().exceptionClass(), "what the application got");
         assertTrue(failed.error().rootCauseMessage().contains("boom on x"), failed.error().rootCauseMessage());
     }
@@ -293,8 +290,8 @@ class ApplicationRunsTest {
         List<RunSummary> runs = manager.listRuns(storyWriterId);
         assertTrue(runs.stream().anyMatch(s -> s.runId().equals(devUiRun) && s.origin() == RunOrigin.DEV_UI), runs.toString());
         assertEquals(APPLICATION_HISTORY, applicationRuns(manager, "StoryWriter").size());
-        assertEquals(Map.of("bio", "Grace " + (APPLICATION_HISTORY + 2)), runs.get(0).inputs(), "newest first");
-        assertFalse(service.cancelRun(runs.get(0).runId()));
+        assertEquals(Map.of("bio", "Grace " + (APPLICATION_HISTORY + 2)), runs.getFirst().inputs(), "newest first");
+        assertFalse(service.cancelRun(runs.getFirst().runId()));
     }
 
     @Test
@@ -336,7 +333,7 @@ class ApplicationRunsTest {
             run.completion().get(30, TimeUnit.SECONDS);
             assertEquals(3, events(run, AgentStarted.class).size(), run.events().toString());
             assertTrue(((String) run.output()).contains((String) summary.inputs().get("bio")));
-            assertEquals(storyWriterId, events(run, AgentStarted.class).get(0).nodeId());
+            assertEquals(storyWriterId, events(run, AgentStarted.class).getFirst().nodeId());
         }
     }
 

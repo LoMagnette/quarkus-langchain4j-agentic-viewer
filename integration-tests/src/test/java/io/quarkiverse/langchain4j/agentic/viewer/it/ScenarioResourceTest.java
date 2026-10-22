@@ -49,7 +49,7 @@ class ScenarioResourceTest {
     void everyScenarioRunsWithTheQueryOfTheIndex() {
         for (Scenario scenario : ScenarioResource.SCENARIOS) {
             RequestSpecification request = given();
-            query(scenario.query()).forEach((name, values) -> request.queryParam(name, values));
+            query(scenario.query()).forEach(request::queryParam);
             request.get(scenario.path()).then().statusCode(200);
             bankTool.reset();
         }
@@ -57,11 +57,14 @@ class ScenarioResourceTest {
 
     @Test
     void declarativeSamples() {
-        expect("/scenarios/story-writer", "Once upon a time, there was Ada, a curious engineer.\n\n"
-                + "One day, a dragon knocked at the door and asked for help.");
-        expect("/scenarios/research-gatherer", "Web: 3 articles about quantum computing\n"
-                + "Database: 2 records about quantum computing\n"
-                + "Archives: 1 old report about quantum computing");
+        expect("/scenarios/story-writer", """
+                Once upon a time, there was Ada, a curious engineer.
+                
+                One day, a dragon knocked at the door and asked for help.""");
+        expect("/scenarios/research-gatherer", """
+                Web: 3 articles about quantum computing
+                Database: 2 records about quantum computing
+                Archives: 1 old report about quantum computing""");
         expect("/scenarios/phrase-translator", "bonjour\nmerci\nbonne nuit");
         expect("/scenarios/story-creator", "A story about a lighthouse (draft 4)");
         expect("/scenarios/expert-router", "Rest, and see a doctor if it gets worse.");
@@ -69,9 +72,10 @@ class ScenarioResourceTest {
         expect("/scenarios/draft-reviewer", "A polished draft about solar panels");
         expect("/scenarios/trip-planner", "Day 1, 2 and 3 in Lisbon");
         expect("/scenarios/resilient-story-writer", "A tiny tale of dragons and wizards.");
-        expect("/scenarios/product-launch", "Launch plan of Photon, Campaign (v4)\n"
-                + "Pitches: pitch for Belgium | pitch for Japan\n"
-                + "Channels: paid media for 20000 + an event for Photon");
+        expect("/scenarios/product-launch", """
+                Launch plan of Photon, Campaign (v4)
+                Pitches: pitch for Belgium | pitch for Japan
+                Channels: paid media for 20000 + an event for Photon""");
     }
 
     @Test
@@ -91,8 +95,10 @@ class ScenarioResourceTest {
     void builderAndMixedSamples() {
         expect("/scenarios/builder/story-creator", "A story about a lighthouse (draft 4)");
         expect("/scenarios/builder/draft-reviewer", "A polished draft about solar panels");
-        expect("/scenarios/builder/story-writer", "Once upon a time, there was Ada, a curious engineer.\n\n"
-                + "One day, a dragon knocked at the door and asked for help.");
+        expect("/scenarios/builder/story-writer", """
+                Once upon a time, there was Ada, a curious engineer.
+                
+                One day, a dragon knocked at the door and asked for help.""");
         expect("/scenarios/blurbed-story", "A tale you will not forget.");
     }
 

@@ -183,7 +183,7 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
 
         assertEquals(List.of("RunStarted", "RunFailed"), events.stream().map(e -> e.path("type").asText()).toList());
         assertTrue(events.stream().allMatch(e -> runId.equals(e.path("runId").asText())));
-        assertEquals(Map.of("topic", "dragons").toString(), toMap(events.get(0).path("inputs")).toString());
+        assertEquals(Map.of("topic", "dragons").toString(), toMap(events.getFirst().path("inputs")).toString());
     }
 
     @Test
@@ -210,9 +210,8 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
         trace.path("events").forEach(event -> types.add(event.path("type").asText()));
         assertEquals(List.of("RunStarted", "RunFailed"), types);
 
-        assertEquals(false, executeJsonRPCMethod("cancelRun", Map.of("runId", runId)).asBoolean(), "already ended");
-        assertEquals(false, executeJsonRPCMethod("provideHumanInput", Map.of("runId", runId, "value", "yes")).asBoolean(),
-                "nothing waits for human input");
+        assertFalse(executeJsonRPCMethod("cancelRun", Map.of("runId", runId)).asBoolean(), "already ended");
+        assertFalse(executeJsonRPCMethod("provideHumanInput", Map.of("runId", runId, "value", "yes")).asBoolean(), "nothing waits for human input");
         String unknown = rawJsonRpc("quarkus-langchain4j-agentic-viewer_getRun", "{\"runId\":\"nope\"}");
         assertTrue(unknown.contains("\"error\"") && unknown.contains("Unknown run: nope"), unknown);
         String unknownInput = rawJsonRpc("quarkus-langchain4j-agentic-viewer_provideHumanInput",
