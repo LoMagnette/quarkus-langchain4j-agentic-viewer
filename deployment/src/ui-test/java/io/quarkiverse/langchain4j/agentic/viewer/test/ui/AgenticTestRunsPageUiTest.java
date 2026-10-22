@@ -158,6 +158,36 @@ public class AgenticTestRunsPageUiTest {
         assertThat(testRuns().locator("[data-distinct-output-count]")).hasText("2");
     }
 
+    /** A late failure for a system no longer selected does not reach the next one; selecting clears an error (TASK-99). */
+    @Test
+    void aLateFailureOfAnotherSystemIsNotShown() {
+        openSystem(NEWSLETTER);
+        count(1);
+        testRuns().locator("vaadin-text-field[data-input=\"topic\"] input").fill("a pier");
+        testRuns().locator("vaadin-text-area[data-input=\"sources\"] textarea").fill("[\"almanac\"]");
+        submit().click();
+        confirm();
+        assertThat(testRuns().locator("[data-series-status]")).hasAttribute("data-series-status", "SUCCEEDED");
+        assertThat(testRuns().locator("[data-past-series]")).hasCount(1);
+
+        // the approval system's calls fail: at once, then late
+        testRuns().evaluate("(el, a) => { const real = el.jsonRpc; el.failAfter = 0; el.jsonRpc = new Proxy(real, { get: (target, name) => "
+                + "['getTopology', 'getInputSchema', 'listSeries'].includes(name) ? params => params.systemId === a "
+                + "? new Promise((_, reject) => setTimeout(() => reject({ error: { message: 'late failure' } }), el.failAfter)) "
+                + ": target[name](params) : target[name] }); }", APPROVAL);
+        testRuns().locator("select[data-test-system]").selectOption(APPROVAL);
+        assertThat(testRuns().locator(".error")).containsText("late failure");
+        testRuns().locator("select[data-test-system]").selectOption(NEWSLETTER);
+        assertThat(testRuns().locator(".error")).hasCount(0); // selecting clears the error
+
+        testRuns().evaluate("el => el.failAfter = 1500");
+        testRuns().locator("select[data-test-system]").selectOption(APPROVAL);
+        testRuns().locator("select[data-test-system]").selectOption(NEWSLETTER);
+        page.waitForTimeout(2500);
+        assertThat(testRuns().locator(".error")).hasCount(0);
+        assertThat(testRuns().locator("[data-past-series]")).hasCount(1);
+    }
+
     private void openSystem(String systemId) {
         page.navigate(PAGE);
         testRuns().locator("select[data-test-system]").selectOption(systemId);

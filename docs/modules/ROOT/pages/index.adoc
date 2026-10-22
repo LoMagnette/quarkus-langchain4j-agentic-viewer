@@ -233,8 +233,8 @@ agents, a loop runs more or fewer times. The *Agentic Test Runs* page (the secon
 The run going on shows live on the graph; a `@HumanInTheLoop` step waits for your answer on the page, at each run.
 Click a run (or an output or a path) to replay it on the graph and the timeline, tick two to compare them. *Stop* ends
 the run going on and starts no other. The page asks for a confirmation first, as each run calls the models and tools
-for real. The last 5 series of each system are kept; their runs do not appear in the *Recent runs* of the Agentic
-Systems page.
+for real. At most 16 series run at the same time (`max-concurrent-runs`). The last 5 series of each system are kept;
+their runs do not appear in the *Recent runs* of the Agentic Systems page.
 
 == Pattern views
 

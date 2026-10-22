@@ -24,6 +24,7 @@ import io.quarkiverse.langchain4j.agentic.viewer.deployment.topology.TopologyBui
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticSystemRegistry;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.AgenticViewerJsonRpcService;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.AwaitingHumanInput;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.PayloadTruncator;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.RunFinished;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.CdiRunInvoker;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.DevUiAgentListener;
@@ -177,6 +178,59 @@ class SeriesTest {
         for (SeriesRun run : trace.runs()) {
             assertEquals(RunStatus.FAILED, run.status());
             assertTrue(run.error().rootCauseMessage().contains("boom on x"), run.error().toString());
+        }
+    }
+
+    /** Running series are never dropped: once they end, the series of the system are bounded again (TASK-99). */
+    @Test
+    void moreThanFiveSeriesRunningAtOnceAreBoundedWhenTheyEnd() throws Exception {
+        String tripPlanner = systemId("TripPlanner");
+        List<String> ids = new ArrayList<>();
+        for (int i = 0; i < 7; i++) {
+            ids.add(manager.startSeries(tripPlanner, Map.of("wish", "a city by the sea"), 1)); // each waits for its human step
+        }
+        for (String seriesId : ids) {
+            for (int i = 0; i < 300 && !waiting(seriesId); i++) {
+                Thread.sleep(50);
+            }
+        }
+        assertTrue(manager.listSeries(tripPlanner).size() >= 7, "running series are kept");
+
+        ids.forEach(manager::cancelSeries);
+        for (String seriesId : ids) {
+            // ended, or already dropped once ended
+            for (int i = 0; i < 300 && manager.series(seriesId).map(t -> t.status() == RunStatus.RUNNING).orElse(false); i++) {
+                Thread.sleep(50);
+            }
+        }
+
+        assertEquals(5, manager.listSeries(tripPlanner).size());
+        assertTrue(manager.series(ids.get(0)).isEmpty(), "an older one left once ended");
+    }
+
+    /** At most max-concurrent-runs series run at once: no thread for a further one (TASK-99). */
+    @Test
+    void seriesBeyondMaxConcurrentRunsAreRefused() throws Exception {
+        RunManager two = new RunManager(registry::find, new CdiRunInvoker(), PayloadTruncator.DEFAULT_MAX_SIZE, 20, 2);
+        try {
+            RootListeners.attach(registry.systems(), new DevUiAgentListener(two));
+            String tripPlanner = systemId("TripPlanner");
+            String first = two.startSeries(tripPlanner, Map.of("wish", "a city by the sea"), 1);
+            two.startSeries(tripPlanner, Map.of("wish", "a city by the sea"), 1);
+
+            IllegalStateException refused = assertThrows(IllegalStateException.class,
+                    () -> two.startSeries(tripPlanner, Map.of("wish", "a city by the sea"), 1));
+            assertTrue(refused.getMessage().contains("Too many series at once"), refused.getMessage());
+            assertEquals(2, two.listSeries(tripPlanner).size(), "nothing left of the refused one");
+
+            two.cancelSeries(first);
+            for (int i = 0; i < 300 && two.series(first).orElseThrow().status() == RunStatus.RUNNING; i++) {
+                Thread.sleep(50);
+            }
+            String third = two.startSeries(tripPlanner, Map.of("wish", "a city by the sea"), 1);
+            assertNotNull(third, "accepted once one ended");
+        } finally {
+            two.shutdown();
         }
     }
 

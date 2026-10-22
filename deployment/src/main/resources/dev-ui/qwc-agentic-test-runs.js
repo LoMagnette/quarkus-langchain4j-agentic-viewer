@@ -311,21 +311,32 @@ export class QwcAgenticTestRuns extends LitElement {
         this._shownRun = undefined;
         this._events = undefined;
         this._compare = [];
+        this._error = undefined;
         this._lastInputs = session.get(LAST_INPUTS + systemId);
+        // every response is for the system selected when asked: a late one for another system is ignored
+        const current = () => this._systemId === systemId;
         this.jsonRpc.getTopology({ systemId })
             .then(response => {
-                if (this._systemId === systemId) {
+                if (current()) {
                     this._topology = { ...response.result, contributions: {} };
                 }
             })
-            .catch(error => this._error = `Cannot load the system: ${error?.error?.message ?? error?.message ?? error}`);
+            .catch(error => {
+                if (current()) {
+                    this._error = `Cannot load the system: ${error?.error?.message ?? error?.message ?? error}`;
+                }
+            });
         this.jsonRpc.getInputSchema({ systemId })
             .then(response => {
-                if (this._systemId === systemId) {
+                if (current()) {
                     this._schema = response.result;
                 }
             })
-            .catch(error => this._error = `Cannot load the inputs: ${error?.error?.message ?? error?.message ?? error}`);
+            .catch(error => {
+                if (current()) {
+                    this._error = `Cannot load the inputs: ${error?.error?.message ?? error?.message ?? error}`;
+                }
+            });
         this._loadPastSeries();
     }
 
@@ -337,7 +348,11 @@ export class QwcAgenticTestRuns extends LitElement {
                     this._pastSeries = response.result ?? [];
                 }
             })
-            .catch(() => this._pastSeries = []);
+            .catch(() => {
+                if (this._systemId === systemId) {
+                    this._pastSeries = [];
+                }
+            });
     }
 
     render() {
@@ -550,7 +565,11 @@ export class QwcAgenticTestRuns extends LitElement {
                     this._loadPastSeries();
                 }
             })
-            .catch(error => this._error = `Cannot start the series: ${error?.error?.message ?? error?.message ?? error}`);
+            .catch(error => {
+                if (this._systemId === systemId) {
+                    this._error = `Cannot start the series: ${error?.error?.message ?? error?.message ?? error}`;
+                }
+            });
     }
 
     _stop() {
@@ -650,7 +669,11 @@ export class QwcAgenticTestRuns extends LitElement {
             }
             response.result.events.forEach(event => live.apply(event));
             this._events = response.result.events;
-        }).catch(error => this._error = `Cannot open run #${run.index}: ${error?.error?.message ?? error?.message ?? error}`);
+        }).catch(error => {
+            if (this._live === live) {
+                this._error = `Cannot open run #${run.index}: ${error?.error?.message ?? error?.message ?? error}`;
+            }
+        });
     }
 
     _sendAnswer() {
@@ -660,7 +683,11 @@ export class QwcAgenticTestRuns extends LitElement {
         }
         this.jsonRpc.provideHumanInput({ runId, value: this._answer ?? '' })
             .then(() => this._answer = undefined)
-            .catch(error => this._error = error?.error?.message ?? error?.message ?? String(error));
+            .catch(error => {
+                if (this._liveRunId === runId) {
+                    this._error = error?.error?.message ?? error?.message ?? String(error);
+                }
+            });
     }
 
     _toggleCompare(runId, checked) {

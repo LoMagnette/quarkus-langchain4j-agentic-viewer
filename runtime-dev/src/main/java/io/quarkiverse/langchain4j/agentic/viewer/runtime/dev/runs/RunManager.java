@@ -101,6 +101,8 @@ public class RunManager {
     private final Map<String, Deque<String>> seriesHistory = new HashMap<>();
     /** One thread per series running: it starts the series' runs one after the other. */
     private final ExecutorService seriesExecutor;
+    /** Series that may run at once ({@code max-concurrent-runs}): a permit per series, given back when it ends. */
+    private final Semaphore seriesSlots;
     /** Run threads that may be busy at once: a permit is taken before a run exists, given back when its thread returns. */
     private final Semaphore runThreads;
     private final int maxConcurrentRuns;
@@ -158,6 +160,7 @@ public class RunManager {
         this.knownSystems = knownSystems;
         this.maxConcurrentRuns = Math.max(1, maxConcurrentRuns);
         this.runThreads = new Semaphore(this.maxConcurrentRuns);
+        this.seriesSlots = new Semaphore(this.maxConcurrentRuns);
         this.invoker = invoker;
         this.historySize = Math.max(1, historySize);
         this.truncator = new PayloadTruncator(maxPayloadSize);
@@ -273,7 +276,8 @@ public class RunManager {
      *
      * @return the series id
      * @throws IllegalArgumentException for an unknown system or a count out of 1..{@value #MAX_SERIES_RUNS}
-     * @throws IllegalStateException when the manager is shut down
+     * @throws IllegalStateException when {@code max-concurrent-runs} series are running, or the manager is shut down
+     *         (no series is created)
      */
     public String startSeries(String systemId, Map<String, Object> inputs, int count) {
         if (count < 1 || count > MAX_SERIES_RUNS) {
@@ -282,6 +286,10 @@ public class RunManager {
         systems.apply(systemId).orElseThrow(() -> new IllegalArgumentException("Unknown agentic system: " + systemId));
         if (shutdown) {
             throw new IllegalStateException(STOPPING);
+        }
+        if (!seriesSlots.tryAcquire()) {
+            throw new IllegalStateException("Too many series at once: " + maxConcurrentRuns + " are running; stop one or "
+                    + "start it again once one ended, or raise quarkus.langchain4j.agentic.dev-ui.max-concurrent-runs");
         }
         Map<String, Object> seriesInputs = inputs == null ? Map.of()
                 : Collections.unmodifiableMap(new LinkedHashMap<>(inputs));
@@ -295,7 +303,7 @@ public class RunManager {
         try {
             seriesExecutor.execute(() -> execute(started));
         } catch (RejectedExecutionException e) {
-            started.end(RunStatus.CANCELLED, STOPPING);
+            end(started, RunStatus.CANCELLED, STOPPING);
             throw new IllegalStateException(STOPPING, e);
         }
         return started.id();
@@ -333,15 +341,30 @@ public class RunManager {
                     run.completion().get();
                 }
             }
-            of.end(of.cancelled() || shutdown ? RunStatus.CANCELLED : RunStatus.SUCCEEDED, null);
+            end(of, of.cancelled() || shutdown ? RunStatus.CANCELLED : RunStatus.SUCCEEDED, null);
         } catch (CancellationException e) {
-            of.end(RunStatus.CANCELLED, null);
+            end(of, RunStatus.CANCELLED, null);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            of.end(RunStatus.CANCELLED, null);
+            end(of, RunStatus.CANCELLED, null);
         } catch (ExecutionException | RuntimeException e) {
             // e.g. the system is gone (a hot reload)
-            of.end(RunStatus.FAILED, e.getMessage());
+            end(of, RunStatus.FAILED, e.getMessage());
+        }
+    }
+
+    /**
+     * Ends a series: its slot is given back, and the series of its system are bounded again (running ones are never
+     * dropped, so more than {@value #SERIES_KEPT} may have been kept while they ran).
+     */
+    private void end(Series of, RunStatus status, String error) {
+        of.end(status, error);
+        seriesSlots.release();
+        synchronized (seriesHistory) {
+            Deque<String> ids = seriesHistory.get(of.systemId());
+            if (ids != null) {
+                pruneSeries(ids);
+            }
         }
     }
 

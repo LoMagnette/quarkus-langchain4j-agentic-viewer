@@ -227,8 +227,9 @@ Sample: `integration-tests/.../samples/DraftReviewTopology`.
 `AgenticViewerProcessor.registerDevUI()` registers the card with two pages: "Agentic Systems" (`qwc-agentic-systems.js`),
 whose link shows the number of systems known at build time, and "Agentic Test Runs" (`qwc-agentic-test-runs.js`, TASK-98:
 a series, one system run up to 50 times with the same inputs, one run after the other, by `RunManager.startSeries` on a
-series thread; its runs are Dev UI runs carrying the series id, kept with the series and out of the system history, 5
-series kept per system; the page polls `getSeries`, follows the run going on with `streamRun` and groups the results
+series thread; at most `max-concurrent-runs` series run at once (a further one is refused); its runs are Dev UI runs
+carrying the series id, kept with the series and out of the system history, 5 series kept per system (bounded again
+when one ends: running ones are never dropped); the page polls `getSeries`, follows the run going on with `streamRun` and groups the results
 by output and path, computed by `RunManager` from the recorded events). Everything comes over JSON-RPC
 (`AgenticViewerJsonRpcService`: `listSystems`, `getTopology`, `getContributions`, `getInputSchema`, `previewGoalPath`,
 `startRun`, `streamRun`, `listRuns`, `getRun`, `cancelRun`, `provideHumanInput`, `getApplicationRuns`,
