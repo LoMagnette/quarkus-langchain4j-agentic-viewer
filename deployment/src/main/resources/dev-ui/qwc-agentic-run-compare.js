@@ -11,8 +11,8 @@ const GRAPH_STATES = { same: 'diff-same', maybe: 'diff-same', changed: 'diff-cha
 
 /**
  * Comparison of two runs of a system (A, the older, and B): inputs, totals, and each agent invocation matched across
- * them with what changed; the graph is colored by node. Properties: system, runIds ([a, b]), traceA (optional), rpc
- * (getRun), graph.
+ * them with what changed; the graph is colored by node. Shown in a large dialog (the page's): A and B side by side.
+ * Properties: system, runIds ([a, b]), traceA (optional), rpc (getRun), graph.
  * Fires 'close'.
  */
 export class QwcAgenticRunCompare extends LitElement {
@@ -36,12 +36,44 @@ export class QwcAgenticRunCompare extends LitElement {
         table {
             border-collapse: collapse;
             width: 100%;
+            table-layout: fixed;
         }
         th, td {
             text-align: left;
             vertical-align: top;
             padding: 2px var(--lumo-space-xs);
             border-bottom: 1px solid var(--lumo-contrast-10pct);
+            overflow-wrap: anywhere;
+        }
+        col.name {
+            width: 22%;
+        }
+        col.verdict {
+            width: 11em;
+        }
+        /* totals and inputs: A and B line up with the agents' columns */
+        col.label {
+            width: calc(22% + 11em);
+        }
+        .run-label {
+            font-weight: bold;
+        }
+        .origin {
+            margin-left: var(--lumo-space-xs);
+            padding: 0 var(--lumo-space-xs);
+            border-radius: var(--lumo-border-radius-s);
+            background: var(--lumo-contrast-10pct);
+            color: var(--lumo-secondary-text-color);
+            font-size: var(--lumo-font-size-xxs);
+            font-weight: normal;
+            text-transform: uppercase;
+        }
+        h5 {
+            margin: var(--lumo-space-s) 0 0;
+            font-size: var(--lumo-font-size-s);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--lumo-secondary-text-color);
         }
         th {
             color: var(--lumo-secondary-text-color);
@@ -120,7 +152,7 @@ export class QwcAgenticRunCompare extends LitElement {
         const result = this._result;
         return html`
             <div class="head">
-                <h4>A vs B</h4>
+                <h4>${result ? html`${this._label('A', result.a)} vs ${this._label('B', result.b)}` : 'A vs B'}</h4>
                 <vaadin-button theme="tertiary small" data-action="close-compare" @click=${this._close}>Close</vaadin-button>
             </div>
             ${this._error ? html`<div class="error">${this._error}</div>`
@@ -131,13 +163,15 @@ export class QwcAgenticRunCompare extends LitElement {
         const changed = result.rows.filter(row => row.verdict !== 'same').length;
         return html`
             <table data-compare-totals>
-                <tr><th></th><th>A</th><th>B</th></tr>
+                <colgroup><col class="label"><col><col></colgroup>
+                <tr><th></th><th class="run-label">A</th><th class="run-label">B</th></tr>
                 <tr><th>Status</th><td>${result.a.status?.toLowerCase()}</td><td>${result.b.status?.toLowerCase()}</td></tr>
                 <tr><th>Duration</th><td>${this._duration(result.a.duration)}</td><td>${this._duration(result.b.duration)}</td></tr>
                 <tr><th>Tokens</th><td>${result.a.tokens}</td><td>${result.b.tokens}</td></tr>
             </table>
             <h5>Inputs</h5>
             <table data-compare-inputs>
+                <colgroup><col class="label"><col><col></colgroup>
                 ${result.inputs.map(input => html`
                     <tr class=${input.same ? '' : 'differs'} data-input=${input.name}>
                         <th>${input.name}</th>
@@ -147,7 +181,8 @@ export class QwcAgenticRunCompare extends LitElement {
             </table>
             <h5>Agents <span class="muted">· ${changed === 0 ? 'no difference' : `${changed} difference${changed === 1 ? '' : 's'}`}</span></h5>
             <table data-compare-rows>
-                <tr><th>Agent</th><th></th><th>A</th><th>B</th></tr>
+                <colgroup><col class="name"><col class="verdict"><col><col></colgroup>
+                <tr><th>Agent</th><th></th><th class="run-label">A</th><th class="run-label">B</th></tr>
                 ${result.rows.map(row => html`
                     <tr data-compare-row=${row.key} data-node=${row.nodeId} data-verdict=${row.verdict}>
                         <td style="padding-left: ${row.depth * 12 + 4}px">${row.name}${this._where(row)}</td>
@@ -156,6 +191,12 @@ export class QwcAgenticRunCompare extends LitElement {
                         <td>${this._side(row.b)}</td>
                     </tr>`)}
             </table>`;
+    }
+
+    /** A run as named in the title: its letter, start time and origin. */
+    _label(letter, run) {
+        return html`<span class="run-label">${letter}</span>${run.startedAt ? ` (${new Date(run.startedAt).toLocaleTimeString()})` : ''}${
+            run.origin === 'APPLICATION' ? html`<span class="origin">app</span>` : nothing}`;
     }
 
     _where(row) {

@@ -1,5 +1,6 @@
 package io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs;
 
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Type;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -53,14 +54,16 @@ import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeIds;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.NodeKind;
 
 /**
- * Turns the agentic callbacks of Dev UI runs into execution events. Attached to every root agent and inherited by its
+ * Turns the agentic callbacks of runs into execution events. Attached to every root agent and inherited by its
  * sub-agents ({@link RootListeners}). Callbacks run on the agent threads: they only build the event and queue it
  * ({@link RunManager#emit}), never block, and never stringify outputs (a streaming response would block).
  * <p>
- * A run is found through its AgenticScope: the scope is created, or reused (a memory id), by the root call on the run
- * thread, which knows its run; later callbacks, on any thread, carry the scope. A scope belongs to a run until the run
- * ends: an application call reusing it afterwards is not a Dev UI run. Callbacks of invocations not started by the Dev
- * UI are ignored.
+ * A run is found through its AgenticScope: the scope is created, or reused (a memory id), by the root call, which
+ * tells the run; later callbacks, on any thread, carry the scope. The root call of a Dev UI run is on its run thread,
+ * which knows the run. Any other root call of a known system is an application run (when the manager records them),
+ * ended when that call returns or fails, unless it comes from an agent of a run in progress on the same thread (another
+ * system called by a step), which it is part of. A scope belongs to a run until the run ends: a later call reusing it is
+ * another run. Callbacks of invocations of no run are ignored.
  */
 public class DevUiAgentListener implements AgentListener {
 
@@ -81,6 +84,12 @@ public class DevUiAgentListener implements AgentListener {
     private final Map<String, Deque<Invocation>> openInvocations = new HashMap<>();
     private final Map<String, Long> toolStarts = new ConcurrentHashMap<>();
 
+    /**
+     * The scope the current thread just created, with no Dev UI run: the root call that follows may start an application
+     * run, which then tells its creation (weakly: a scope created for anything else is not kept).
+     */
+    private final ThreadLocal<WeakReference<AgenticScope>> createdScope = new ThreadLocal<>();
+
     /** One error observer per run, so the scope's handler is wrapped once. */
     private final Map<String, ErrorHandlers.Observer> errorObservers = new ConcurrentHashMap<>();
 
@@ -99,6 +108,8 @@ public class DevUiAgentListener implements AgentListener {
         final String nodeId;
         final Integer iteration;
         final Integer itemIndex;
+        /** Whether it is the root call of an application run: the run ends with it. */
+        boolean applicationRoot;
         int loopCounter = -1;
         List<Object> items;
         final Set<Integer> takenItems = new HashSet<>();
@@ -179,10 +190,14 @@ public class DevUiAgentListener implements AgentListener {
 
     @Override
     public void afterAgenticScopeCreated(AgenticScope scope) {
-        currentRun().ifPresent(run -> {
+        Optional<Run> devUiRun = currentRun();
+        if (devUiRun.isPresent()) {
+            Run run = devUiRun.get();
             runsByScope.put(scope, run);
             runManager.emit(run, new ScopeCreated(run.id(), now(), String.valueOf(scope.memoryId())));
-        });
+        } else {
+            createdScope.set(new WeakReference<>(scope));
+        }
     }
 
     /**
@@ -238,10 +253,15 @@ public class DevUiAgentListener implements AgentListener {
 
     @Override
     public void beforeAgentInvocation(AgentRequest request) {
-        if (request.agent().parent() == null) {
-            // a root call of a run: its scope may be reused (same memory id) without afterAgenticScopeCreated
-            currentRun().ifPresent(run -> runsByScope.put(request.agenticScope(), run));
-        }
+        beforeAgentInvocation(request, null);
+    }
+
+    /**
+     * @param systemId the system of the root this listener is attached to through ({@link DevUiListeners}), whose
+     *        calls outside a Dev UI run are application runs; null for none
+     */
+    void beforeAgentInvocation(AgentRequest request, String systemId) {
+        boolean applicationRoot = request.agent().parent() == null && rootCall(request, systemId);
         Run run = runOf(request.agenticScope());
         if (run == null) {
             return;
@@ -276,6 +296,7 @@ public class DevUiAgentListener implements AgentListener {
         }
         Invocation invocation = new Invocation(run, agent.agentId(), "inv-" + INVOCATIONS.incrementAndGet(), nodeId,
                 iteration, itemIndex);
+        invocation.applicationRoot = applicationRoot;
         AgentNode node = node(run, nodeId);
         if (node != null && node.kind() == NodeKind.PARALLEL_MAPPER) {
             invocation.items = items(inputs);
@@ -302,6 +323,9 @@ public class DevUiAgentListener implements AgentListener {
                 runManager.emit(run, new ScopeStateChanged(run.id(), now, outputKey, response.output(), false,
                         invocation.nodeId));
             }
+            if (invocation.applicationRoot) {
+                runManager.endApplicationRun(run, response.output(), null);
+            }
         }
     }
 
@@ -312,7 +336,63 @@ public class DevUiAgentListener implements AgentListener {
         if (invocation != null) {
             runManager.emit(run, new AgentFailed(run.id(), now(), invocation.nodeId, invocation.id(),
                     ErrorInfo.of(error.error()), elapsedMillis(invocation)));
+            if (invocation.applicationRoot) {
+                runManager.endApplicationRun(run, null, error.error());
+            }
         }
+    }
+
+    /**
+     * A root call (an agent without parent): tells the run its scope belongs to. Its scope may be reused (same memory
+     * id) without afterAgenticScopeCreated.
+     *
+     * @return whether it starts an application run
+     */
+    private boolean rootCall(AgentRequest request, String systemId) {
+        AgenticScope scope = request.agenticScope();
+        WeakReference<AgenticScope> created = createdScope.get();
+        createdScope.remove();
+        Optional<Run> devUiRun = currentRun();
+        if (devUiRun.isPresent()) {
+            runsByScope.put(scope, devUiRun.get());
+            return false;
+        }
+        Run known = runOf(scope);
+        if (known != null && !known.endClaimed()) {
+            return false; // a scope of a run in progress (a memory id called again meanwhile): part of that run
+        }
+        if (known != null) {
+            runsByScope.remove(scope); // the scope of an ended run, not forgotten yet: this call is another run
+        }
+        if (RunManager.currentRun().isPresent()) {
+            return false; // a Dev UI run of another manager
+        }
+        Invocation enclosing = openOnThisThread();
+        if (enclosing != null) {
+            // another system called from an agent of a run in progress (e.g. a step delegating to a builder system)
+            runsByScope.put(scope, enclosing.run);
+            return false;
+        }
+        Run run = runManager.startApplicationRun(systemId, request.inputs()).orElse(null);
+        if (run == null) {
+            return false;
+        }
+        runsByScope.put(scope, run);
+        if (created != null && created.get() == scope) {
+            runManager.emit(run, new ScopeCreated(run.id(), now(), String.valueOf(scope.memoryId())));
+        }
+        return true;
+    }
+
+    /** @return the innermost invocation in progress on this thread of a run not ended, null for none */
+    private Invocation openOnThisThread() {
+        for (var it = threadInvocations.get().descendingIterator(); it.hasNext();) {
+            Invocation invocation = it.next();
+            if (!invocation.run.endClaimed()) {
+                return invocation;
+            }
+        }
+        return null;
     }
 
     @Override

@@ -13,10 +13,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.events.ExecutionEvent;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.patterns.PatternAdapters;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.ApplicationRuns;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunManager;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunObservation;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunSummary;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.RunTrace;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.SeriesSummary;
+import io.quarkiverse.langchain4j.agentic.viewer.runtime.dev.runs.SeriesTrace;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.spi.TopologyContribution;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgentNode;
 import io.quarkiverse.langchain4j.agentic.viewer.runtime.topology.AgenticSystem;
@@ -214,6 +217,71 @@ public class AgenticViewerJsonRpcService {
     }
 
     /**
+     * Starts a series (Agentic Test Runs page): the system runs {@code count} times with the same inputs, one run after
+     * the other; returns at once.
+     *
+     * @param count 1 to {@value RunManager#MAX_SERIES_RUNS}
+     * @return the series id
+     * @throws IllegalArgumentException for an unknown id or a count out of bounds
+     */
+    public String startSeries(String systemId, Map<String, Object> inputs, int count) {
+        if (observation != null) {
+            observation.ensureObserved();
+        }
+        return runManager.startSeries(systemId, inputs, count);
+    }
+
+    /**
+     * @return the series with the results of its runs so far (status, duration, tokens, output, error, agents invoked)
+     * @throws IllegalArgumentException for an unknown (or dropped) series
+     */
+    public SeriesTrace getSeries(String seriesId) {
+        return runManager.series(seriesId).orElseThrow(() -> new IllegalArgumentException("Unknown series: " + seriesId));
+    }
+
+    /**
+     * @return the series of a system kept, newest first; empty for an unknown system (no series kept)
+     */
+    public List<SeriesSummary> listSeries(String systemId) {
+        return runManager.listSeries(systemId);
+    }
+
+    /**
+     * Stops a series: no further run starts, the one running is cancelled.
+     *
+     * @return whether it was running; false for an unknown or ended series (nothing to stop)
+     */
+    public boolean cancelSeries(String seriesId) {
+        return runManager.cancelSeries(seriesId);
+    }
+
+    /**
+     * @return whether the runs the application starts itself are recorded (config, Dev UI switch), and how many of the
+     *         system were skipped; for any system id (nothing skipped for an unknown one)
+     */
+    public ApplicationRuns getApplicationRuns(String systemId) {
+        return runManager.applicationRuns(systemId);
+    }
+
+    /**
+     * Pauses or resumes the recording of application runs, for every system (nothing when the config turned them off).
+     *
+     * @return the new state, with the skipped runs of the system
+     */
+    public ApplicationRuns setRecordApplicationRuns(String systemId, boolean record) {
+        runManager.recordApplicationRuns(record);
+        return runManager.applicationRuns(systemId);
+    }
+
+    /**
+     * Streams the application runs of a system as they start (their summary), until cancelled: the Dev UI refreshes its
+     * history and may follow them (streamRun).
+     */
+    public Multi<RunSummary> streamApplicationRuns(String systemId) {
+        return runManager.streamApplicationRuns(systemId);
+    }
+
+    /**
      * @return the run with all its events
      * @throws IllegalArgumentException for an unknown (or evicted) run
      */
@@ -224,8 +292,8 @@ public class AgenticViewerJsonRpcService {
     /**
      * Cancels a running run, best effort.
      *
-     * @return whether the run was running and is now cancelled; false for an unknown or evicted run (nothing to
-     *         cancel)
+     * @return whether the run was running and is now cancelled; false for an unknown or evicted run, or an application
+     *         run (nothing to cancel: observed only)
      */
     public boolean cancelRun(String runId) {
         return runManager.cancel(runId);

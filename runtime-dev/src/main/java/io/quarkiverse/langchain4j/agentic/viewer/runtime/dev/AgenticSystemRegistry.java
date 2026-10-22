@@ -120,6 +120,14 @@ public class AgenticSystemRegistry {
         return Optional.ofNullable(systemId).map(systems::get);
     }
 
+    /**
+     * @return the system if it is registered already, without discovering builder systems: callable from the threads
+     *         of the application (it creates no bean)
+     */
+    public Optional<AgenticSystem> known(String systemId) {
+        return Optional.ofNullable(systemId).map(systems::get);
+    }
+
     private void loadBuilderSystems() {
         if (builderSystems == null) {
             return;

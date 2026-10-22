@@ -6,7 +6,7 @@ import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 
 /**
- * Runs of agentic systems started from the Dev UI (dev mode only).
+ * Runs of agentic systems in the Dev UI: started from it, or by the application (dev mode only).
  */
 @ConfigMapping(prefix = "quarkus.langchain4j.agentic.dev-ui")
 @ConfigRoot(phase = ConfigPhase.RUN_TIME)
@@ -34,4 +34,28 @@ public interface AgenticViewerRuntimeConfig {
      */
     @WithDefault("16")
     int maxConcurrentRuns();
+
+    /**
+     * Whether the runs the application starts itself (a REST endpoint or a scheduled job calling an agentic system) are
+     * recorded and shown in the Dev UI, next to the runs started from it. They are observed only: their
+     * human-in-the-loop steps call the application's method and they cannot be cancelled from the Dev UI. The Dev UI
+     * can pause the recording; {@code false} turns it off entirely. A builder system is observed once the Dev UI listed
+     * it.
+     */
+    @WithDefault("true")
+    boolean applicationRuns();
+
+    /**
+     * Ended application runs kept per agentic system, apart from the runs started from the Dev UI (which they never
+     * push out): beyond this number the oldest ended application runs are dropped.
+     */
+    @WithDefault("20")
+    int applicationHistorySize();
+
+    /**
+     * Application runs of one agentic system recorded at the same time: beyond this number a new application run is
+     * not recorded (it runs as usual) and the Dev UI counts it as skipped, so a load test never floods the viewer.
+     */
+    @WithDefault("16")
+    int maxOpenApplicationRuns();
 }

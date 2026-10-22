@@ -44,6 +44,8 @@ mvn test -pl integration-tests -Dtest=SampleRunsTest
 
 # Sample app in dev mode (scripted fake model, no API key): http://localhost:8080/q/dev-ui -> Agentic Systems
 mvn quarkus:dev -pl integration-tests              # add -Ppatterns for the pattern samples
+# Every sample over HTTP too (application runs, shown in the Dev UI; human steps answered by HumanInput):
+# curl localhost:8080/scenarios lists the endpoints (ScenarioResource; /scenarios/patterns with -Ppatterns)
 
 # Native build of the sample app, then NativeArtifactIT checks it has no Dev UI code (local GraalVM/Mandrel, or add
 # -Dquarkus.native.container-build=true); ProdArtifactIT does the same on the JVM package in every build. The sample app
@@ -154,7 +156,8 @@ test checks it).
 ### Configuration
 
 Config roots under `quarkus.langchain4j.agentic.dev-ui`: `enabled` and `builder-discovery` (build time, `deployment/.../AgenticViewerBuildConfig`,
-checked by every dev-only build step through `AgenticViewerEnabled`), `history-size`, `max-payload-size` and `max-concurrent-runs` (run time,
+checked by every dev-only build step through `AgenticViewerEnabled`), `history-size`, `max-payload-size`, `max-concurrent-runs`,
+`application-runs`, `application-history-size` and `max-open-application-runs` (run time,
 `runtime/.../config/AgenticViewerRuntimeConfig`, read by `RunManager`). The extension processor runs on runtime and
 deployment so they are registered and documented.
 
@@ -170,6 +173,16 @@ no completion message: the client stops at `RunFinished` / `RunFailed`. History 
 Event payloads are bounded on the event thread (`events/PayloadTruncator`: cut while Jackson serializes them, through a
 budgeted generator, never as a full tree or text first) and must be plain Java values (maps, lists, strings, numbers): the
 Dev UI serializer writes a Jackson `JsonNode` as a bean.
+Application runs (TASK-95, `RunOrigin.APPLICATION`, on by default): a root call outside a Dev UI run of a known system
+(the per-root `DevUiListeners` carries its system id) is recorded by `DevUiAgentListener` through
+`RunManager.startApplicationRun` (no thread, no permit) and ended when that root call returns or fails; a root called
+from an agent of a run in progress on the same thread joins that run. Observed only: `HumanInTheLoopSteps` intercepts Dev UI
+runs only, `cancel` refuses them. Own history per system (`application-history-size`, never evicts Dev UI runs), at most
+`max-open-application-runs` open per system (beyond, or with the event queue backlogged, skipped and counted). The Dev UI
+pauses them (`setRecordApplicationRuns`) and follows them (`streamApplicationRuns`): the page keeps the run panel
+once a system is open (hidden until shown) so that it follows them without the Run button (`follow-run` event). A manager built in code records none
+unless `enableApplicationRuns` is called (tests). Agent threads look systems up with `AgenticSystemRegistry.known`, which
+never discovers (creates) builder systems.
 `RunManager.shutdown` (@PreDestroy, also on hot reload) ends open runs CANCELLED, completes their streams, releases
 waiting human steps and stops its threads; the registry is rebuilt by the restart.
 
@@ -211,15 +224,22 @@ Sample: `integration-tests/.../samples/DraftReviewTopology`.
 
 ### Dev UI
 
-`AgenticViewerProcessor.registerDevUI()` registers the card with one page, "Agentic Systems" (`qwc-agentic-systems.js`),
-whose link shows the number of systems known at build time. Everything comes over JSON-RPC
+`AgenticViewerProcessor.registerDevUI()` registers the card with two pages: "Agentic Systems" (`qwc-agentic-systems.js`),
+whose link shows the number of systems known at build time, and "Agentic Test Runs" (`qwc-agentic-test-runs.js`, TASK-98:
+a series, one system run up to 50 times with the same inputs, one run after the other, by `RunManager.startSeries` on a
+series thread; its runs are Dev UI runs carrying the series id, kept with the series and out of the system history, 5
+series kept per system; the page polls `getSeries`, follows the run going on with `streamRun` and groups the results
+by output and path, computed by `RunManager` from the recorded events). Everything comes over JSON-RPC
 (`AgenticViewerJsonRpcService`: `listSystems`, `getTopology`, `getContributions`, `getInputSchema`, `previewGoalPath`,
-`startRun`, `streamRun`, `listRuns`, `getRun`, `cancelRun`, `provideHumanInput`; an unknown system or run id is a
-JSON-RPC error, except `listRuns` (empty list: no run kept) and `cancelRun` (false: nothing running to cancel));
+`startRun`, `streamRun`, `listRuns`, `getRun`, `cancelRun`, `provideHumanInput`, `getApplicationRuns`,
+`setRecordApplicationRuns`, `streamApplicationRuns`, `startSeries`, `getSeries`, `listSeries`, `cancelSeries`; an unknown system or run id is a
+JSON-RPC error, except `listRuns` (empty list: no run kept), `cancelRun` (false: nothing running to cancel, or an
+application run) and `getApplicationRuns` (any id: nothing skipped));
 method names are `quarkus-langchain4j-agentic-viewer_<method>`. System page layout (TASK-82): the `qwc-agentic-systems`
 host scrolls; graph and side panel share a band (`.system-body`) sized to the window below the header, or to the height
 dragged on `.band-resizer` (kept in localStorage, double-click resets); the timeline sits below at full width and shows
-every row (no inner scroll). Components (Lit + Vaadin, served by the Dev UI):
+every row (no inner scroll). A run comparison (`qwc-agentic-run-compare`) opens in a modeless, draggable, resizable
+`vaadin-dialog` placed over the graph column (TASK-97), so the run panel beside stays usable. Components (Lit + Vaadin, served by the Dev UI):
 - `qwc-agentic-graph.js`: Cytoscape.js + elkjs (mvnpm). `toGraph()` / `toDataFlowGraph()` map a topology to
   nodes/edges (pattern planners: `goalGraph`, `peerGraph`, `boardGraph`; contributions replace the candidates); each
   compound is laid out separately by ELK to keep declaration order. The live view goes through `highlight`,

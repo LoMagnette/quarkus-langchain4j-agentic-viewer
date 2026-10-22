@@ -877,3 +877,21 @@ cd integration-tests && mvn quarkus:dev # Dev UI: http://localhost:8080/q/dev-ui
   timeline, system list through `AgenticSystemSummary.plannerPatterns`).
 - TASK-81 `FeatureDelivery` sample (patterns profile, 24 nodes): GOAP, voting and BDI planners nested in workflows, with
   a tool, a human step and `@Output`; tested called directly, as a Dev UI run, and for its planners' decisions.
+
+### Sample scenarios over HTTP — TASK-94 (Oct 22, 2026)
+
+- `ScenarioResource` (`GET /scenarios` index) and `PatternScenarioResource` (`/scenarios/patterns`, profile patterns): one
+  GET per sample, query parameters defaulting to inputs the fake model answers; application calls, not Dev UI runs.
+
+### Application runs — TASK-95 (Oct 22, 2026)
+
+- Runs the application starts itself (root call outside a Dev UI run) are recorded by default (`application-runs`),
+  observed only (human steps call the method, no cancel), own bounded history (`application-history-size`), capped per
+  system (`max-open-application-runs`, skipped counted); the run panel tags them, filters the history by origin, pauses
+  the recording and follows new ones live (`streamApplicationRuns`).
+
+### Compare popup, Agentic Test Runs — TASK-96..98 (Oct 22, 2026)
+
+- The run comparison opens in a modeless, draggable, resizable dialog over the graph column (TASK-96, TASK-97).
+- "Agentic Test Runs" page: a system run up to 50 times with the same inputs, one run after the other (series); results
+  grouped by output and path, with duration and token spread; runs replay on the graph, two compare (TASK-98).

@@ -133,5 +133,68 @@ endif::add-copy-button-to-env-var[]
 |int
 |`+++16+++`
 
+a| [[quarkus-langchain4j-agentic-viewer_quarkus-langchain4j-agentic-dev-ui-application-runs]] [.property-path]##link:#quarkus-langchain4j-agentic-viewer_quarkus-langchain4j-agentic-dev-ui-application-runs[`+++quarkus.langchain4j.agentic.dev-ui.application-runs+++`]##
+ifdef::add-copy-button-to-config-props[]
+config_property_copy_button:+++quarkus.langchain4j.agentic.dev-ui.application-runs+++[]
+endif::add-copy-button-to-config-props[]
+
+
+[.description]
+--
+Whether the runs the application starts itself (a REST endpoint or a scheduled job calling an agentic system) are recorded and shown in the Dev UI, next to the runs started from it. They are observed only: their human-in-the-loop steps call the application's method and they cannot be cancelled from the Dev UI. The Dev UI can pause the recording; `false` turns it off entirely. A builder system is observed once the Dev UI listed it.
+
+
+ifdef::add-copy-button-to-env-var[]
+Environment variable: env_var_with_copy_button:+++QUARKUS_LANGCHAIN4J_AGENTIC_DEV_UI_APPLICATION_RUNS+++[]
+endif::add-copy-button-to-env-var[]
+ifndef::add-copy-button-to-env-var[]
+Environment variable: `+++QUARKUS_LANGCHAIN4J_AGENTIC_DEV_UI_APPLICATION_RUNS+++`
+endif::add-copy-button-to-env-var[]
+--
+|boolean
+|`+++true+++`
+
+a| [[quarkus-langchain4j-agentic-viewer_quarkus-langchain4j-agentic-dev-ui-application-history-size]] [.property-path]##link:#quarkus-langchain4j-agentic-viewer_quarkus-langchain4j-agentic-dev-ui-application-history-size[`+++quarkus.langchain4j.agentic.dev-ui.application-history-size+++`]##
+ifdef::add-copy-button-to-config-props[]
+config_property_copy_button:+++quarkus.langchain4j.agentic.dev-ui.application-history-size+++[]
+endif::add-copy-button-to-config-props[]
+
+
+[.description]
+--
+Ended application runs kept per agentic system, apart from the runs started from the Dev UI (which they never push out): beyond this number the oldest ended application runs are dropped.
+
+
+ifdef::add-copy-button-to-env-var[]
+Environment variable: env_var_with_copy_button:+++QUARKUS_LANGCHAIN4J_AGENTIC_DEV_UI_APPLICATION_HISTORY_SIZE+++[]
+endif::add-copy-button-to-env-var[]
+ifndef::add-copy-button-to-env-var[]
+Environment variable: `+++QUARKUS_LANGCHAIN4J_AGENTIC_DEV_UI_APPLICATION_HISTORY_SIZE+++`
+endif::add-copy-button-to-env-var[]
+--
+|int
+|`+++20+++`
+
+a| [[quarkus-langchain4j-agentic-viewer_quarkus-langchain4j-agentic-dev-ui-max-open-application-runs]] [.property-path]##link:#quarkus-langchain4j-agentic-viewer_quarkus-langchain4j-agentic-dev-ui-max-open-application-runs[`+++quarkus.langchain4j.agentic.dev-ui.max-open-application-runs+++`]##
+ifdef::add-copy-button-to-config-props[]
+config_property_copy_button:+++quarkus.langchain4j.agentic.dev-ui.max-open-application-runs+++[]
+endif::add-copy-button-to-config-props[]
+
+
+[.description]
+--
+Application runs of one agentic system recorded at the same time: beyond this number a new application run is not recorded (it runs as usual) and the Dev UI counts it as skipped, so a load test never floods the viewer.
+
+
+ifdef::add-copy-button-to-env-var[]
+Environment variable: env_var_with_copy_button:+++QUARKUS_LANGCHAIN4J_AGENTIC_DEV_UI_MAX_OPEN_APPLICATION_RUNS+++[]
+endif::add-copy-button-to-env-var[]
+ifndef::add-copy-button-to-env-var[]
+Environment variable: `+++QUARKUS_LANGCHAIN4J_AGENTIC_DEV_UI_MAX_OPEN_APPLICATION_RUNS+++`
+endif::add-copy-button-to-env-var[]
+--
+|int
+|`+++16+++`
+
 |===
 

@@ -154,6 +154,8 @@ export class QwcAgenticRunForm extends LitElement {
         schema: { type: Object },
         /** initial values by input name (e.g. the last inputs used): the fields are reset when their content changes */
         values: { type: Object },
+        /** label of the button submitting the form ('Run' by default) */
+        submitLabel: { type: String },
         _texts: { state: true },
         _errors: { state: true },
     };
@@ -212,7 +214,7 @@ export class QwcAgenticRunForm extends LitElement {
             ${properties.length === 0 ? html`<div class="none">This system takes no input.</div>` : nothing}
             ${properties.map(([name, property]) => this._renderField(name, property))}
             <div class="actions">
-                <vaadin-button theme="primary" @click=${this._submit}>Run</vaadin-button>
+                <vaadin-button theme="primary" data-action="submit-form" @click=${this._submit}>${this.submitLabel ?? 'Run'}</vaadin-button>
             </div>`;
     }
 

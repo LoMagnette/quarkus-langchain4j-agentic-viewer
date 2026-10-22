@@ -230,6 +230,11 @@ public class AgenticViewerProcessor {
                 .icon("font-awesome-solid:robot")
                 .staticLabel(String.valueOf(systems.getSystems().size()))
                 .componentLink("qwc-agentic-systems.js"));
+        // Agentic Test Runs (TASK-98): one system run N times with the same inputs, and how the results differ
+        card.addPage(Page.webComponentPageBuilder()
+                .title("Agentic Test Runs")
+                .icon("font-awesome-solid:flask")
+                .componentLink("qwc-agentic-test-runs.js"));
 
         return card;
     }

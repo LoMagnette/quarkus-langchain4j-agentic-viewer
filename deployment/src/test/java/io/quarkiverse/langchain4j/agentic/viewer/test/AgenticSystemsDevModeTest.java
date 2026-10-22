@@ -1,6 +1,7 @@
 package io.quarkiverse.langchain4j.agentic.viewer.test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
@@ -46,6 +47,40 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
 
     public AgenticSystemsDevModeTest() {
         super("quarkus-langchain4j-agentic-viewer");
+    }
+
+    /** A series (Agentic Test Runs page) runs the system N times over JSON-RPC, its runs out of the run history. */
+    @Test
+    void aSeriesRunsTheSystemNTimes() throws Exception {
+        int history = executeJsonRPCMethod("listRuns", Map.of("systemId", ROOT)).size();
+        String seriesId = executeJsonRPCMethod("startSeries", Map.of("systemId", ROOT, "inputs", Map.of("topic", "a mill"),
+                "count", 2)).asText();
+        JsonNode series = null;
+        for (int i = 0; i < 100; i++) {
+            series = executeJsonRPCMethod("getSeries", Map.of("seriesId", seriesId));
+            if (!"RUNNING".equals(series.path("status").asText())) {
+                break;
+            }
+            Thread.sleep(100);
+        }
+        assertEquals("SUCCEEDED", series.path("status").asText(), series::toString);
+        assertEquals(2, series.path("runs").size());
+        assertEquals(seriesId, executeJsonRPCMethod("listSeries", Map.of("systemId", ROOT)).get(0).path("seriesId").asText());
+        assertEquals(history, executeJsonRPCMethod("listRuns", Map.of("systemId", ROOT)).size());
+        assertFalse(executeJsonRPCMethod("cancelSeries", Map.of("seriesId", seriesId)).asBoolean(), "already ended");
+    }
+
+    /** The runs the application starts are recorded by default; the Dev UI switch pauses and resumes them. */
+    @Test
+    void applicationRunsAreRecordedByDefault() throws Exception {
+        JsonNode state = executeJsonRPCMethod("getApplicationRuns", Map.of("systemId", ROOT));
+        assertTrue(state.path("enabled").asBoolean());
+        assertTrue(state.path("recording").asBoolean());
+        assertEquals(0, state.path("skipped").asLong());
+        assertFalse(executeJsonRPCMethod("setRecordApplicationRuns", Map.of("systemId", ROOT, "record", false))
+                .path("recording").asBoolean());
+        assertTrue(executeJsonRPCMethod("setRecordApplicationRuns", Map.of("systemId", ROOT, "record", true))
+                .path("recording").asBoolean());
     }
 
     /** The code behind a node is found in the application sources of dev mode, at the line declaring the method. */

@@ -13,6 +13,10 @@ const LAST_INPUTS = 'agentic-viewer:last-inputs:';
 const TEXT_ANSWERS = ['java.lang.String', 'java.lang.Object', 'java.lang.CharSequence'];
 const CONFIRMED = 'agentic-viewer:tools-confirmed:';
 const WATCH = 'agentic-viewer:rerun-after-reload:';
+const FOLLOW = 'agentic-viewer:follow-application-runs:';
+const FILTER = 'agentic-viewer:history-filter';
+/** History filter values: every run, or the runs of one origin (RunSummary.origin). */
+const FILTERS = [['all', 'All runs'], ['DEV_UI', 'Dev UI runs'], ['APPLICATION', 'Application runs']];
 /** Attempts (500 ms apart) to find the system again after a reload before giving up. */
 const RELOAD_ATTEMPTS = 40;
 
@@ -67,7 +71,9 @@ export function reachableTools(system) {
 /**
  * Run panel of a system: the run form, the confirmation of the reachable tools before the first run of the session,
  * then the live view of the run, which also highlights the graph as events arrive. Fires 'run-updated' (detail:
- * { events, running }) as the run progresses.
+ * { events, running }) as the run progresses. The runs the application starts itself are listed in the history and
+ * followed live as they start (unless turned off), firing 'follow-run' (detail: { runId }) so that the page shows the
+ * panel: observed only, they cannot be cancelled. The page keeps the panel once a system is open, hidden until shown.
  * Properties: system (topology), jsonRpc (the page's client), graph (the qwc-agentic-graph element).
  */
 export class QwcAgenticRunPanel extends LitElement {
@@ -132,6 +138,31 @@ export class QwcAgenticRunPanel extends LitElement {
         }
         .dot.RUNNING {
             background: var(--lumo-primary-color);
+        }
+        .origin {
+            padding: 0 var(--lumo-space-xs);
+            border-radius: var(--lumo-border-radius-s);
+            background: var(--lumo-contrast-10pct);
+            color: var(--lumo-secondary-text-color);
+            font-size: var(--lumo-font-size-xxs);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .history-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--lumo-space-s);
+        }
+        .history-head select {
+            font: inherit;
+            font-size: var(--lumo-font-size-xs);
+        }
+        .application-runs {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            margin-top: var(--lumo-space-s);
         }
         pre {
             margin: 0;
@@ -200,6 +231,12 @@ export class QwcAgenticRunPanel extends LitElement {
         _watch: { state: true },
         /** what the re-run after a reload did or why it did not run */
         _watchMessage: { state: true },
+        /** whether application runs are recorded: { enabled, recording, skipped } (RunManager.applicationRuns) */
+        _applicationRuns: { state: true },
+        /** whether each new application run of the system is opened live (per system, on by default) */
+        _followApplication: { state: true },
+        /** runs shown in the history: 'all', 'DEV_UI' or 'APPLICATION' */
+        _filter: { state: true },
     };
 
     constructor() {
@@ -207,6 +244,7 @@ export class QwcAgenticRunPanel extends LitElement {
         this._mode = 'form';
         this._compare = [];
         this._reloadRun = 0;
+        this._filter = session.get(FILTER) ?? 'all';
     }
 
     willUpdate(changed) {
@@ -222,6 +260,10 @@ export class QwcAgenticRunPanel extends LitElement {
             this._compare = [];
             this._watch = !!session.get(WATCH + this.system.id);
             this._watchMessage = undefined;
+            this._followApplication = session.get(FOLLOW + this.system.id) ?? true; // on unless turned off
+            this._applicationRuns = undefined;
+            this._loadApplicationRuns();
+            this._watchApplicationRuns();
             this._beforeReload = undefined;
             // parsed once: the form resets its fields when given other values
             this._lastInputs = session.get(LAST_INPUTS + this.system.id);
@@ -254,12 +296,21 @@ export class QwcAgenticRunPanel extends LitElement {
                 // the client sets 'connected' right after: re-run once the reload is over
                 setTimeout(() => this._afterReload(), 0);
             }
+            if (connection?.isDisconnected || connection?.isHotreloading) {
+                this._applicationStreamLost = true; // the stream of new application runs ended with the connection
+            } else if (connection?.isConnected && this._applicationStreamLost) {
+                this._applicationStreamLost = false;
+                this._loadApplicationRuns();
+                this._watchApplicationRuns();
+                this._loadHistory();
+            }
         };
         connectionState.addObserver(this._connectionObserver, ['current']);
     }
 
     disconnectedCallback() {
         connectionState.removeObserver(this._connectionObserver);
+        this._stopApplicationStream();
         this._stopStream();
         this._cancelReloadRun();
         super.disconnectedCallback();
@@ -285,6 +336,7 @@ export class QwcAgenticRunPanel extends LitElement {
         return html`
             ${this._mode === 'live' && this._run ? this._renderLive() : this._renderForm()}
             ${this._renderWatch()}
+            ${this._renderApplicationRuns()}
             ${this._renderHistory()}
             <vaadin-dialog header-title="Run ${this.system?.name ?? ''}?" .opened=${!!this._pending}
                     @opened-changed=${e => { if (!e.detail.value) { this._pending = undefined; } }}
@@ -379,17 +431,19 @@ export class QwcAgenticRunPanel extends LitElement {
 
     _renderLive() {
         const run = this._run;
+        const application = run.origin === 'APPLICATION';
         const waiting = run.status === 'running' ? this._waiting : undefined;
         const label = waiting ? 'Waiting for your input'
             : { running: 'Running...', succeeded: 'Succeeded', failed: 'Failed', cancelled: 'Cancelled',
                 lost: 'Connection lost' }[run.status];
         return html`
             <div class="status ${run.status}" data-run-status=${waiting ? 'waiting' : run.status}>
+                ${application ? html`<span class="origin" data-run-origin="APPLICATION" title="Started by the application: observed only">application</span>` : nothing}
                 ${label}${run.duration != null ? html`<span class="muted">in ${formatDuration(run.duration)}</span>` : nothing}
             </div>
             ${run.status === 'running' && !waiting ? html`<vaadin-progress-bar indeterminate></vaadin-progress-bar>` : nothing}
             ${waiting ? this._renderHumanInput(waiting) : nothing}
-            ${run.status === 'running' ? html`
+            ${run.status === 'running' && !application ? html`
                 <div class="actions"><vaadin-button theme="error tertiary" data-action="cancel" ?disabled=${!run.runId}
                         @click=${this._cancel}>Cancel</vaadin-button></div>` : nothing}
             ${run.status === 'succeeded' ? html`<div class="actions"><vaadin-button theme="tertiary" data-action="show-output"
@@ -457,15 +511,25 @@ export class QwcAgenticRunPanel extends LitElement {
         if (!this._history || this._history.length === 0) {
             return nothing;
         }
+        const filtered = this._filter === 'all' ? this._history
+            : this._history.filter(summary => (summary.origin ?? 'DEV_UI') === this._filter);
         return html`
             <div class="history">
-                <h5>Recent runs</h5>
-                ${this._history.map(summary => html`
+                <div class="history-head">
+                    <h5>Recent runs</h5>
+                    <select data-history-filter title="Runs shown" .value=${this._filter}
+                            @change=${e => this._setFilter(e.target.value)}>
+                        ${FILTERS.map(([value, label]) => html`<option value=${value} ?selected=${this._filter === value}>${label}</option>`)}
+                    </select>
+                </div>
+                ${filtered.length === 0 ? html`<div class="muted" data-history-empty>No ${this._filter === 'APPLICATION' ? 'application' : 'Dev UI'} run kept</div>` : nothing}
+                ${filtered.map(summary => html`
                     <div class="history-row ${summary.runId === this._run?.runId ? 'current' : ''}"
-                            data-history-run=${summary.runId} title="Open this run"
+                            data-history-run=${summary.runId} data-history-origin=${summary.origin ?? 'DEV_UI'} title="Open this run"
                             @click=${() => this._openPast(summary.runId)}>
                         <span class="dot ${summary.status}"></span>
-                        <span>${new Date(summary.startedAt).toLocaleTimeString()} · ${summary.status.toLowerCase()}</span>
+                        <span>${new Date(summary.startedAt).toLocaleTimeString()} · ${summary.status.toLowerCase()}
+                            ${summary.origin === 'APPLICATION' ? html`<span class="origin" title="Started by the application">app</span>` : nothing}</span>
                         <span class="muted">${summary.durationMillis != null ? formatDuration(summary.durationMillis) : '…'}</span>
                         <input type="checkbox" data-compare-run=${summary.runId} title="Select to compare"
                                 ?disabled=${summary.status === 'RUNNING'} .checked=${this._compare.includes(summary.runId)}
@@ -475,6 +539,11 @@ export class QwcAgenticRunPanel extends LitElement {
                     <vaadin-button theme="tertiary" data-action="compare" @click=${this._requestCompare}>Compare the 2 runs</vaadin-button>
                 </div>` : this._compare.length === 1 ? html`<div class="muted">Select another run to compare</div>` : nothing}
             </div>`;
+    }
+
+    _setFilter(filter) {
+        this._filter = filter;
+        session.set(FILTER, filter);
     }
 
     /** Two runs at most: a third one replaces the first chosen. */
@@ -518,7 +587,7 @@ export class QwcAgenticRunPanel extends LitElement {
             const summary = trace.summary;
             this._mode = 'live';
             if (summary.status === 'RUNNING') {
-                this._run = { status: 'running', inputs: summary.inputs, runId };
+                this._run = { status: 'running', inputs: summary.inputs, runId, origin: summary.origin };
                 this._events = [];
                 this._publish(true);
                 this._follow(system, runId);
@@ -530,7 +599,8 @@ export class QwcAgenticRunPanel extends LitElement {
             trace.events.forEach(event => live.apply(event));
             this._events = trace.events;
             this._publish(false);
-            this._run = this._ended({ inputs: summary.inputs, runId }, trace.events[trace.events.length - 1]);
+            this._run = this._ended({ inputs: summary.inputs, runId, origin: summary.origin },
+                trace.events[trace.events.length - 1]);
         }).catch(error => {
             if (this._action === action) {
                 this._mode = 'live';
@@ -587,7 +657,7 @@ export class QwcAgenticRunPanel extends LitElement {
         this._answerError = undefined;
         this.graph?.resetRun();
         const system = this.system;
-        this._run = { status: 'running', inputs };
+        this._run = { status: 'running', inputs, origin: 'DEV_UI' };
         this._events = [];
         this._publish(true);
         this._mode = 'live';
@@ -736,6 +806,83 @@ export class QwcAgenticRunPanel extends LitElement {
                 this._reloading = false;
             }
         }
+    }
+
+    _loadApplicationRuns() {
+        const systemId = this.system?.id;
+        this.jsonRpc?.getApplicationRuns?.({ systemId })
+            .then(response => {
+                if (this.system?.id === systemId) {
+                    this._applicationRuns = response.result;
+                }
+            })
+            .catch(() => {});
+    }
+
+    _toggleRecording(record) {
+        const systemId = this.system.id;
+        this.jsonRpc.setRecordApplicationRuns({ systemId, record })
+            .then(response => {
+                if (this.system?.id === systemId) {
+                    this._applicationRuns = response.result;
+                }
+            })
+            .catch(() => this._loadApplicationRuns());
+    }
+
+    _toggleFollow(on) {
+        this._followApplication = on;
+        session.set(FOLLOW + this.system.id, on);
+    }
+
+    /**
+     * Listens for the application runs of the system as they start: the history is refreshed, and with follow on each
+     * new one is opened live, unless the panel shows a run still running (a run of yours is never left for another).
+     */
+    _watchApplicationRuns() {
+        this._stopApplicationStream();
+        const system = this.system;
+        if (!system || !this.jsonRpc?.streamApplicationRuns) {
+            return;
+        }
+        this._applicationObserver = this.jsonRpc.streamApplicationRuns({ systemId: system.id }).onNext(response => {
+            const summary = response.result;
+            if (!summary || this.system !== system) {
+                return;
+            }
+            this._loadHistory();
+            this._loadApplicationRuns();
+            const busy = this._mode === 'live' && this._run?.status === 'running';
+            if (this._followApplication && this._applicationRuns?.recording !== false && !busy && !this._pending) {
+                this.dispatchEvent(new CustomEvent('follow-run', { detail: { runId: summary.runId }, bubbles: true, composed: true }));
+                this._openPast(summary.runId);
+            }
+        });
+    }
+
+    _stopApplicationStream() {
+        this._applicationObserver?.cancel?.();
+        this._applicationObserver = undefined;
+    }
+
+    _renderApplicationRuns() {
+        const state = this._applicationRuns;
+        if (!state) {
+            return nothing;
+        }
+        if (!state.enabled) {
+            return html`<div class="application-runs muted" data-application-runs="off">Runs the application starts are
+                not recorded: <code>quarkus.langchain4j.agentic.dev-ui.application-runs=false</code></div>`;
+        }
+        return html`<div class="application-runs" data-application-runs=${state.recording ? 'recording' : 'paused'}>
+            <label title="Runs the application starts itself (e.g. a REST endpoint): observed only">
+                <input type="checkbox" data-action="record-application-runs" .checked=${state.recording}
+                        @change=${e => this._toggleRecording(e.target.checked)}> Record application runs</label>
+            <label><input type="checkbox" data-action="follow-application-runs" .checked=${!!this._followApplication}
+                    ?disabled=${!state.recording} @change=${e => this._toggleFollow(e.target.checked)}> Follow them live</label>
+            ${state.skipped > 0 ? html`<div class="muted" data-application-skipped=${state.skipped}>${state.skipped} not
+                recorded: too many at once (<code>max-open-application-runs</code>)</div>` : nothing}
+        </div>`;
     }
 
     _renderWatch() {

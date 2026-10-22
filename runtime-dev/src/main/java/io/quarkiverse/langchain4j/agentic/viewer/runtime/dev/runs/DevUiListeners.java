@@ -15,11 +15,17 @@ import dev.langchain4j.agentic.scope.AgenticScope;
  * The Dev UI listeners of one root agent: the hooks (the inherited listener, the human-in-the-loop steps, the planner
  * decorator) are installed once per root and serve every Dev UI listener attached to it, each handling the runs of its
  * own manager. A second attach (tests, several managers) adds a listener instead of stacking hooks; a listener whose
- * manager was shut down leaves the group.
+ * manager was shut down leaves the group. It knows the system of its root: a call of the root outside a Dev UI run is an
+ * application run of that system.
  */
 final class DevUiListeners implements AgentListener {
 
+    private final String systemId;
     private final List<DevUiAgentListener> listeners = new CopyOnWriteArrayList<>();
+
+    DevUiListeners(String systemId) {
+        this.systemId = systemId;
+    }
 
     void add(DevUiAgentListener listener) {
         if (!listeners.contains(listener)) {
@@ -34,15 +40,21 @@ final class DevUiListeners implements AgentListener {
     }
 
     /**
-     * @return the listener whose manager runs the Dev UI run the scope belongs to, null for any other invocation
+     * @return the listener whose manager records the run the scope belongs to, the one of a Dev UI run first; null for
+     *         an invocation no manager records
      */
     DevUiAgentListener owner(AgenticScope scope) {
+        DevUiAgentListener owner = null;
         for (DevUiAgentListener listener : listeners()) {
-            if (listener.run(scope) != null) {
+            Run run = listener.run(scope);
+            if (run != null && run.origin() == RunOrigin.DEV_UI) {
                 return listener;
             }
+            if (run != null && owner == null) {
+                owner = listener;
+            }
         }
-        return null;
+        return owner;
     }
 
     @Override
@@ -62,7 +74,7 @@ final class DevUiListeners implements AgentListener {
 
     @Override
     public void beforeAgentInvocation(AgentRequest request) {
-        listeners().forEach(listener -> listener.beforeAgentInvocation(request));
+        listeners().forEach(listener -> listener.beforeAgentInvocation(request, systemId));
     }
 
     @Override

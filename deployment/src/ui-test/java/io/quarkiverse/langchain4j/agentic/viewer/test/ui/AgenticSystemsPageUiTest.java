@@ -6,11 +6,19 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
@@ -56,7 +64,7 @@ public class AgenticSystemsPageUiTest {
                             ToolPlanner.EntryPoint.class, CompareWorkflow.class, CompareWorkflow.Polish.class,
                             CompareWorkflow.Grow.class, CompareWorkflow.Route.class, CompareWorkflow.Fast.class,
                             CompareWorkflow.Slow.class, CompareWorkflow.EntryPoint.class, LoopingWorkflow.class,
-                            LoopingWorkflow.Reworder.class, LoopingWorkflow.EntryPoint.class)
+                            LoopingWorkflow.Reworder.class, LoopingWorkflow.EntryPoint.class, ApplicationCall.class)
                     // the provider extension is only there to wire the fixture model into the AI agents
                     .addAsResource(new StringAsset("quarkus.langchain4j.openai.enable-integration=false\n"),
                             "application.properties"));
@@ -387,6 +395,73 @@ public class AgenticSystemsPageUiTest {
         waitFor(() -> "running".equals(stateOf(WRITER)), "Writer running");
         assertTrue(halo(RESEARCHER) > 0, "afterglow of the agent that just finished, still");
         assertThat(status()).hasAttribute("data-run-status", "succeeded");
+    }
+
+    /**
+     * A run the application starts itself (TASK-95) shows on its own on the page of its system, without opening the run
+     * form: followed live, listed, and it cannot be cancelled.
+     */
+    @Test
+    void anApplicationRunIsFollowedLive() throws Exception {
+        openSystem();
+        assertThat(page.locator("vaadin-tab[data-tab=\"run\"]")).hasCount(0);
+
+        CompletableFuture<String> call = applicationCall("a beacon");
+        waitFor(() -> "running".equals(stateOf(RESEARCHER)), "Researcher running in the application run");
+        assertThat(panel()).isVisible(); // the run panel came forward
+        assertThat(status()).hasAttribute("data-run-status", "running");
+        Locator applicationRuns = panel().locator("[data-application-runs]");
+        assertThat(applicationRuns).hasAttribute("data-application-runs", "recording");
+        assertTrue(applicationRuns.locator("input[data-action=\"follow-application-runs\"]").isChecked(), "on by default");
+        assertThat(panel().locator("[data-run-origin=\"APPLICATION\"]")).isVisible();
+        assertThat(panel().locator("vaadin-button[data-action=\"cancel\"]")).hasCount(0);
+        waitFor(() -> "running".equals(stateOf(WRITER)), "Writer running");
+        assertThat(status()).hasAttribute("data-run-status", "succeeded");
+        assertTrue(call.get(30, TimeUnit.SECONDS).contains("a beacon"), "the application got its result");
+        assertThat(output()).containsText("a beacon");
+        Locator applicationRows = panel().locator("[data-history-origin=\"APPLICATION\"]");
+        waitFor(() -> applicationRows.count() >= 1, "the application run in the history");
+
+        // the history shows the runs of one origin
+        Locator filter = panel().locator("select[data-history-filter]");
+        filter.selectOption("DEV_UI");
+        assertThat(applicationRows).hasCount(0);
+        filter.selectOption("APPLICATION");
+        assertThat(panel().locator("[data-history-origin=\"DEV_UI\"]")).hasCount(0);
+        int recorded = applicationRows.count();
+        // a finished application run opens again from the history
+        openRunForm();
+        panel().locator("select[data-history-filter]").selectOption("APPLICATION");
+        panel().locator("[data-history-origin=\"APPLICATION\"]").first().click();
+        assertReplayed("a beacon");
+        assertThat(panel().locator("[data-run-origin=\"APPLICATION\"]")).isVisible();
+
+        // follow off: the run is listed, not opened
+        applicationRuns.locator("input[data-action=\"follow-application-runs\"]").evaluate("box => box.click()");
+        String shown = String.valueOf(panel().evaluate("p => p._run?.runId"));
+        assertTrue(applicationCall("a cliff").get(30, TimeUnit.SECONDS).contains("a cliff"));
+        int listed = recorded + 1;
+        waitFor(() -> applicationRows.count() == listed, "the new run listed");
+        assertEquals(shown, String.valueOf(panel().evaluate("p => p._run?.runId")), "not opened");
+
+        // paused: the application's calls are not recorded
+        applicationRuns.locator("input[data-action=\"record-application-runs\"]").evaluate("box => box.click()");
+        assertThat(applicationRuns).hasAttribute("data-application-runs", "paused");
+        assertTrue(applicationCall("a dune").get(30, TimeUnit.SECONDS).contains("a dune"));
+        openRunForm();
+        panel().locator("select[data-history-filter]").selectOption("APPLICATION");
+        assertThat(panel().locator("[data-history-origin=\"APPLICATION\"]")).hasCount(listed);
+        panel().locator("[data-application-runs] input[data-action=\"record-application-runs\"]")
+                .evaluate("box => box.click()");
+        assertThat(panel().locator("[data-application-runs]")).hasAttribute("data-application-runs", "recording");
+    }
+
+    /** The application calls the newsletter system itself (ApplicationCall), on another thread. */
+    private static CompletableFuture<String> applicationCall(String topic) {
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:8080/newsletter?topic="
+                + URLEncoder.encode(topic, StandardCharsets.UTF_8))).build();
+        return HttpClient.newHttpClient().sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .thenApply(HttpResponse::body);
     }
 
     @Test
@@ -932,6 +1007,21 @@ public class AgenticSystemsPageUiTest {
         selectAndCompare(3, 2);
         assertThat(compare.locator("h5", new Locator.LocatorOptions().setHasText("Agents"))).containsText("no difference");
         waitFor(() -> "diff-same".equals(stateOf(root + "/Polish/Grow")), "graph colored as same");
+        // in a dialog over the graph column, wider than the side panel, which stays usable beside it (and resizable)
+        @SuppressWarnings("unchecked")
+        Map<String, Object> box = (Map<String, Object>) compare
+                .evaluate("c => { const r = c.getBoundingClientRect(); return { left: r.left, right: r.right }; }");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> side = (Map<String, Object>) page.locator("qwc-agentic-systems .side")
+                .evaluate("s => { const r = s.getBoundingClientRect(); return { left: r.left, width: r.width }; }");
+        double width = number(box, "right") - number(box, "left");
+        assertTrue(width > number(side, "width"), "compare " + width + " px wide, the side panel " + side);
+        assertTrue(number(box, "right") <= number(side, "left"), "the side panel is not covered: " + box + " " + side);
+        assertThat(page.locator("vaadin-dialog[data-compare-dialog][resizable]")).hasCount(1);
+        assertThat(page.locator("qwc-agentic-timeline")).hasCount(1);
+        assertThat(compare.locator("h4")).containsText("A (");
+        panel().locator("[data-history-run]").first().click(); // not blocked: the panel opens another run meanwhile
+        assertThat(compare).hasCount(1);
 
         selectAndCompare(3, 1);
         assertEquals(List.of("same", "onlyB", "onlyB"), verdicts(compare, root + "/Polish/Grow"),
@@ -960,6 +1050,14 @@ public class AgenticSystemsPageUiTest {
         compare.locator("vaadin-button[data-action=\"close-compare\"]").click();
         assertThat(compare).hasCount(0);
         assertEquals(null, stateOf(root));
+        assertThat(page.locator("vaadin-dialog[data-compare-dialog][opened]")).hasCount(0);
+
+        // Escape closes it too, with the graph colors
+        selectAndCompare(3, 2);
+        waitFor(() -> "diff-same".equals(stateOf(root + "/Polish/Grow")), "graph colored again");
+        page.keyboard().press("Escape");
+        assertThat(compare).hasCount(0);
+        assertEquals(null, stateOf(root + "/Polish/Grow"));
     }
 
     private void compareRun(String text, int limit, boolean urgent) {

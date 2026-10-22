@@ -486,6 +486,7 @@ function totals(trace) {
     const end = events.find(e => e.type === 'RunFinished' || e.type === 'RunFailed');
     return {
         status: trace?.summary?.status, duration: end?.durationMillis ?? trace?.summary?.durationMillis,
+        startedAt: trace?.summary?.startedAt, origin: trace?.summary?.origin,
         tokens: events.filter(e => e.type === 'AgentFinished').reduce((sum, e) => sum + (e.tokens?.totalTokens ?? 0), 0),
         output: end?.type === 'RunFinished' ? end.output : undefined,
     };

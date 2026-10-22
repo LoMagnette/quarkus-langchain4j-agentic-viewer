@@ -175,7 +175,8 @@ candidates. A planner (a `@PlannerAgent` with its own `@PlannerSupplier`) is sho
 numbered step on the graph and a row of the timeline.
 
 A `@HumanInTheLoop` step pauses the run: the Dev UI shows what the step asks and its inputs, and the answer you type
-resumes the run (the annotated method is not called in a run started from the Dev UI; anywhere else it is).
+resumes the run (the annotated method is not called in a run started from the Dev UI; anywhere else it is, in the
+runs the application starts too).
 
 image::human-in-the-loop.png[A run waiting for a human answer]
 
@@ -183,10 +184,31 @@ Errors show the failing agent and the exception; an `@ErrorHandler` that retried
 in the timeline. Past runs stay in the *Recent runs* list (20 per system by default) and can be replayed on the graph,
 also after a page reload.
 
+=== Runs started by the application
+
+The runs your application starts itself, a REST endpoint or a scheduled job calling a system, are recorded too, and
+listed in *Recent runs* with an *app* tag; the list can show all runs, the Dev UI ones or the application ones. With the
+page of a system open, each new application run of that system opens live as it starts, with the same live view as a
+Dev UI run: call your endpoint and watch the graph (a run of yours still running is never left for it). Untick *Follow
+them live* (in the *Run* tab, per system) to only list them; open one from the list to replay it. A system called by an
+agent of a run is part of that run.
+
+They are observed only: a `@HumanInTheLoop` step calls the annotated method, the run cannot be cancelled from the Dev UI,
+and your code gets the same result or exception as without the viewer. They are kept apart from the Dev UI runs (20 per
+system, `application-history-size`), so they never push them out. To keep a load test or a busy job from flooding the
+viewer, at most 16 application runs of a system are recorded at the same time (`max-open-application-runs`): the others
+run as usual, unrecorded, and the Dev UI counts them as skipped.
+
+*Record application runs* pauses and resumes the recording for every system until the application restarts;
+`quarkus.langchain4j.agentic.dev-ui.application-runs=false` turns it off entirely. A builder system is observed once the
+Dev UI listed it, and a system built anew for each call is not observed.
+
 === Comparing two runs
 
-Tick two runs in *Recent runs* and click *Compare*: the *Compare* tab shows their inputs, totals (status, duration,
-tokens) and every agent invocation matched across them (same node, loop iteration and mapper item, under the same
+Tick two runs in *Recent runs* and click *Compare*: the comparison opens in a window over the graph, which you can move
+and resize, and which leaves the rest of the page usable (pick other runs to compare; move it aside to see the graph
+colors). Run A (the older) and run B are side by side: their inputs, totals (status, duration, tokens) and every agent
+invocation matched across them (same node, loop iteration and mapper item, under the same
 parents), with both outputs and what changed. Invocations only one run made (another loop count, another conditional
 branch, another supervisor path) are listed as such, and the graph is colored: same, changed, run by one run only.
 Values cut by the payload limit (`max-payload-size`) that agree up to the cut show as possibly different. Runs are kept
@@ -196,6 +218,23 @@ by the application: a hot reload starts a new history.
 (a reload happens on the next request after a code change, e.g. a browser refresh), and compares the new run with the
 one before the reload, kept in the page. It does not run when the system is gone, its inputs changed, or its tools
 were never confirmed by a run of yours: each run calls the real models and tools.
+
+== Running a system several times
+
+Agentic systems rarely do the same thing twice: a model answers differently, a supervisor or a planner picks other
+agents, a loop runs more or fewer times. The *Agentic Test Runs* page (the second link of the card) runs a system up to
+50 times with the same inputs, one run after the other, and shows how the results differ:
+
+* how many runs succeeded, and the spread of their duration and tokens (min, median, max);
+* the distinct outputs, each with how many runs gave it (failures grouped by their error);
+* the distinct paths: the agents each run invoked, in order;
+* every run, with its status, duration, tokens and output.
+
+The run going on shows live on the graph; a `@HumanInTheLoop` step waits for your answer on the page, at each run.
+Click a run (or an output or a path) to replay it on the graph and the timeline, tick two to compare them. *Stop* ends
+the run going on and starts no other. The page asks for a confirmation first, as each run calls the models and tools
+for real. The last 5 series of each system are kept; their runs do not appear in the *Recent runs* of the Agentic
+Systems page.
 
 == Pattern views
 

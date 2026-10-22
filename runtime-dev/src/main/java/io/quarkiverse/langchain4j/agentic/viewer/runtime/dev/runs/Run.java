@@ -19,6 +19,9 @@ public final class Run {
 
     private final String id;
     private final String systemId;
+    private final RunOrigin origin;
+    /** the series it belongs to, null for none */
+    private final String seriesId;
     private final Map<String, Object> inputs;
     private final long startedAt;
     /** Appended on the event thread, read from any thread: guarded by itself (no copy per event). */
@@ -36,9 +39,15 @@ public final class Run {
     /** Live subscribers; only touched on the event thread of the run manager. */
     private final List<MultiEmitter<? super ExecutionEvent>> subscribers = new ArrayList<>();
 
-    Run(String id, String systemId, Map<String, Object> inputs, long startedAt) {
+    Run(String id, String systemId, RunOrigin origin, Map<String, Object> inputs, long startedAt) {
+        this(id, systemId, origin, null, inputs, startedAt);
+    }
+
+    Run(String id, String systemId, RunOrigin origin, String seriesId, Map<String, Object> inputs, long startedAt) {
         this.id = id;
         this.systemId = systemId;
+        this.origin = origin;
+        this.seriesId = seriesId;
         this.inputs = inputs;
         this.startedAt = startedAt;
     }
@@ -49,6 +58,16 @@ public final class Run {
 
     public String systemId() {
         return systemId;
+    }
+
+    /** @return who started the run: the Dev UI, or the application (observed only) */
+    public RunOrigin origin() {
+        return origin;
+    }
+
+    /** @return the series the run belongs to (Agentic Test Runs), null for none */
+    public String seriesId() {
+        return seriesId;
     }
 
     public Map<String, Object> inputs() {

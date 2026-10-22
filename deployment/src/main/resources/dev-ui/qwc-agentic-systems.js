@@ -4,6 +4,8 @@ import '@vaadin/grid';
 import { columnBodyRenderer } from '@vaadin/grid/lit.js';
 import '@vaadin/button';
 import '@vaadin/icon';
+import '@vaadin/dialog';
+import { dialogRenderer } from '@vaadin/dialog/lit.js';
 import { KIND_LABELS, kindLabel } from './qwc-agentic-graph.js';
 import { findNode } from './qwc-agentic-run-model.js';
 import './qwc-agentic-node-details.js';
@@ -200,6 +202,9 @@ export class QwcAgenticSystems extends LitElement {
         startRun: params => this.jsonRpc.startRun(params),
         streamRun: params => this.jsonRpc.streamRun(params),
         listRuns: params => this.jsonRpc.listRuns(params),
+        getApplicationRuns: params => this.jsonRpc.getApplicationRuns(params),
+        setRecordApplicationRuns: params => this.jsonRpc.setRecordApplicationRuns(params),
+        streamApplicationRuns: params => this.jsonRpc.streamApplicationRuns(params),
         getRun: params => this.jsonRpc.getRun(params),
         cancelRun: params => this.jsonRpc.cancelRun(params),
         provideHumanInput: params => this.jsonRpc.provideHumanInput(params),
@@ -226,6 +231,12 @@ export class QwcAgenticSystems extends LitElement {
 
     updated() {
         this._applyBandHeight();
+        // rendered in the same pass as the graph, the run panel may have been given none yet
+        const panel = this.renderRoot.querySelector('qwc-agentic-run-panel');
+        const graph = this.renderRoot.querySelector('qwc-agentic-graph');
+        if (panel && graph && panel.graph !== graph) {
+            panel.graph = graph;
+        }
     }
 
     /** Sizes the graph band: the height the user dragged, otherwise the window's below the header. */
@@ -352,6 +363,40 @@ export class QwcAgenticSystems extends LitElement {
         this._side = 'run';
     }
 
+    /**
+     * Compares two runs in a dialog that does not block the page, can be moved and resized: it opens over the graph
+     * column, as wide as it and down to the bottom of the window, so the run panel beside stays usable (to pick other
+     * runs to compare).
+     */
+    _compare(runIds, traceA) {
+        if (!this._compareRuns) { // a new comparison while one is open keeps where the user put the dialog
+            const column = this.renderRoot.querySelector('.graph-column')?.getBoundingClientRect();
+            const top = column ? Math.max(8, Math.round(column.top)) : 0;
+            this._compareBox = column ? { left: Math.round(column.left), top, width: Math.max(560, Math.round(column.width)),
+                height: Math.max(360, window.innerHeight - top - 16) } : undefined;
+        }
+        this._compareTraceA = traceA;
+        this._compareRuns = runIds;
+    }
+
+    /** The comparison ends (Close, Escape): the graph loses its verdict colors. */
+    _endCompare() {
+        this._compareRuns = undefined;
+        this._compareTraceA = undefined;
+        this.renderRoot.querySelector('qwc-agentic-graph')?.resetRun();
+    }
+
+    /**
+     * The run panel (always there once a system is open: it watches the runs the application starts) opens an
+     * application run live: its tab shows, and comes forward unless another one is open.
+     */
+    _followRun() {
+        this._runOpened = true;
+        if (!this._side) {
+            this._side = 'run';
+        }
+    }
+
     _open(summary) {
         if (!summary) {
             return;
@@ -432,8 +477,8 @@ export class QwcAgenticSystems extends LitElement {
 
     _renderGraph(system) {
         const tabs = [...(this._runOpened ? ['run'] : []), ...(this._runEvents ? ['output', 'scope'] : []),
-            ...(this._compareRuns ? ['compare'] : []), ...(this._node ? ['details'] : [])];
-        const labels = { run: 'Run', output: 'Output', scope: 'Scope', compare: 'Compare', details: 'Details' };
+            ...(this._node ? ['details'] : [])];
+        const labels = { run: 'Run', output: 'Output', scope: 'Scope', details: 'Details' };
         return html`
             <div class="system-body">
                 <div class="graph-column">
@@ -451,17 +496,13 @@ export class QwcAgenticSystems extends LitElement {
                             .events=${this._runEvents}></qwc-agentic-output>` : ''}
                     ${this._runEvents ? html`<qwc-agentic-scope-state ?hidden=${this._side !== 'scope'}
                             .events=${this._runEvents}></qwc-agentic-scope-state>` : ''}
-                    ${this._runOpened ? html`<qwc-agentic-run-panel ?hidden=${this._side !== 'run'} .system=${system}
+                    <qwc-agentic-run-panel ?hidden=${this._side !== 'run'} .system=${system}
                             @run-updated=${e => { this._runEvents = e.detail.events; this._runRunning = e.detail.running; }}
+                            @follow-run=${this._followRun}
                             @show-output=${() => this._side = 'output'}
-                            @compare-runs=${e => { this._compareTraceA = e.detail.traceA; this._compareRuns = e.detail.runIds;
-                                this._side = 'compare'; }}
+                            @compare-runs=${e => this._compare(e.detail.runIds, e.detail.traceA)}
                             .jsonRpc=${this.rpc} .graph=${this.renderRoot.querySelector('qwc-agentic-graph')}>
-                        </qwc-agentic-run-panel>` : ''}
-                    ${this._compareRuns ? html`<qwc-agentic-run-compare ?hidden=${this._side !== 'compare'} .system=${system}
-                            .runIds=${this._compareRuns} .traceA=${this._compareTraceA} .rpc=${this.rpc} .graph=${this.renderRoot.querySelector('qwc-agentic-graph')}
-                            @close=${() => { this._compareRuns = undefined; this._side = this._runOpened ? 'run' : undefined; }}>
-                        </qwc-agentic-run-compare>` : ''}
+                        </qwc-agentic-run-panel>
                     ${this._node ? html`<qwc-agentic-node-details ?hidden=${this._side !== 'details'} .node=${this._node}
                             .systemId=${this._summary?.id} .rpc=${this.rpc} .warnings=${system.warnings}
                             @close=${this._closeDetails}></qwc-agentic-node-details>` : ''}
@@ -471,7 +512,19 @@ export class QwcAgenticSystems extends LitElement {
                  aria-label="Resize the graph" title="Drag to resize the graph, double-click for the default height"
                  @pointerdown=${this._startBandResize} @dblclick=${this._resetBandHeight} @keydown=${this._bandKey}></div>
             ${this._runEvents ? html`<qwc-agentic-timeline .events=${this._runEvents} .system=${system}
-                    .running=${!!this._runRunning}></qwc-agentic-timeline>` : ''}`;
+                    .running=${!!this._runRunning}></qwc-agentic-timeline>` : ''}
+            <vaadin-dialog modeless draggable resizable header-title="Compare runs" data-compare-dialog
+                    .opened=${!!this._compareRuns}
+                    .left=${this._compareBox ? `${this._compareBox.left}px` : undefined}
+                    .top=${this._compareBox ? `${this._compareBox.top}px` : undefined}
+                    .width=${this._compareBox ? `${this._compareBox.width}px` : '80vw'}
+                    .height=${this._compareBox ? `${this._compareBox.height}px` : '75vh'}
+                    @opened-changed=${e => { if (!e.detail.value && this._compareRuns) { this._endCompare(); } }}
+                    ${dialogRenderer(() => this._compareRuns ? html`<qwc-agentic-run-compare .system=${system}
+                            .runIds=${this._compareRuns} .traceA=${this._compareTraceA} .rpc=${this.rpc}
+                            .graph=${this.renderRoot.querySelector('qwc-agentic-graph')}
+                            @close=${() => this._endCompare()}></qwc-agentic-run-compare>` : '',
+                    [this._compareRuns, this._compareTraceA, system])}></vaadin-dialog>`;
     }
 }
 

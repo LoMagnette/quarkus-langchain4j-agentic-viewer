@@ -105,7 +105,8 @@ final class HumanInTheLoopSteps {
                 throws AgentInvocationException {
             DevUiAgentListener listener = listeners.owner(scope);
             Run run = listener == null ? null : listener.run(scope);
-            if (run == null) {
+            if (run == null || run.origin() != RunOrigin.DEV_UI) {
+                // not a Dev UI run (an application run is observed only): the application's method answers
                 return delegate.invoke(scope, agent, arguments);
             }
             AgentListener agentListener = delegate.listener();

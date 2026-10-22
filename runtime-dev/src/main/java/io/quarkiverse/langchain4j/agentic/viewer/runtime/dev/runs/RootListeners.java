@@ -70,7 +70,7 @@ public final class RootListeners {
         synchronized (HOOKS) {
             hooks = HOOKS.get(root);
             if (hooks == null) {
-                hooks = new DevUiListeners();
+                hooks = new DevUiListeners(systemId);
                 agent.registerInheritedParentListener(hooks);
                 HumanInTheLoopSteps.intercept(root, hooks);
                 PlannerDecisions.decorate(root, hooks);
