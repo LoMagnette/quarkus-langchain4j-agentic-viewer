@@ -30,7 +30,6 @@ public interface TripPlanner {
 
     interface TravelerApproval {
         @HumanInTheLoop(description = "Asks the traveler to approve the destination", outputKey = "approval")
-        @Agent(description = "Asks the traveler to approve the destination")
         static String askTraveler(@V("destination") String destination) {
             return HumanInput.ask("Do you want to travel to " + destination + "?");
         }
