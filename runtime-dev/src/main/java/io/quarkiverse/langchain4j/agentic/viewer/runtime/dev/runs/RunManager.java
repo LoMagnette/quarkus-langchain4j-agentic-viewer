@@ -291,22 +291,59 @@ public class RunManager {
             throw new IllegalStateException("Too many series at once: " + maxConcurrentRuns + " are running; stop one or "
                     + "start it again once one ended, or raise quarkus.langchain4j.agentic.dev-ui.max-concurrent-runs");
         }
-        Map<String, Object> seriesInputs = inputs == null ? Map.of()
-                : Collections.unmodifiableMap(new LinkedHashMap<>(inputs));
-        Series started = new Series(UUID.randomUUID().toString(), systemId, seriesInputs, count, System.currentTimeMillis());
-        series.put(started.id(), started);
-        synchronized (seriesHistory) {
-            Deque<String> ids = seriesHistory.computeIfAbsent(systemId, id -> new ArrayDeque<>());
-            ids.addLast(started.id());
-            pruneSeries(ids);
-        }
+        // all or nothing: until its task is submitted, a failure gives the slot back and leaves no series behind
+        Series started = null;
+        boolean submitted = false;
         try {
-            seriesExecutor.execute(() -> execute(started));
-        } catch (RejectedExecutionException e) {
-            end(started, RunStatus.CANCELLED, STOPPING);
-            throw new IllegalStateException(STOPPING, e);
+            Map<String, Object> seriesInputs = inputs == null ? Map.of()
+                    : Collections.unmodifiableMap(new LinkedHashMap<>(inputs));
+            started = new Series(UUID.randomUUID().toString(), systemId, seriesInputs, count, System.currentTimeMillis());
+            series.put(started.id(), started);
+            synchronized (seriesHistory) {
+                Deque<String> ids = seriesHistory.computeIfAbsent(systemId, id -> new ArrayDeque<>());
+                ids.addLast(started.id());
+                pruneSeries(ids);
+            }
+            Series accepted = started;
+            // from here the task owns the slot: given back last, once the series ended and its system's series were
+            // bounded (the thread is about to be free)
+            seriesExecutor.execute(() -> {
+                try {
+                    execute(accepted);
+                } finally {
+                    try {
+                        if (accepted.status() == RunStatus.RUNNING) {
+                            end(accepted, RunStatus.FAILED, "The series stopped unexpectedly"); // e.g. an Error
+                        }
+                    } finally {
+                        seriesSlots.release();
+                    }
+                }
+            });
+            submitted = true;
+            return started.id();
+        } catch (RuntimeException e) {
+            if (started != null) {
+                forget(started);
+            }
+            throw e instanceof RejectedExecutionException ? new IllegalStateException(STOPPING, e) : e;
+        } finally {
+            if (!submitted) {
+                seriesSlots.release();
+            }
         }
-        return started.id();
+    }
+
+    /** A series that was never accepted (its id was not given out): out of the series and the history. */
+    private void forget(Series never) {
+        never.cancel();
+        series.remove(never.id());
+        synchronized (seriesHistory) {
+            Deque<String> ids = seriesHistory.get(never.systemId());
+            if (ids != null) {
+                ids.remove(never.id());
+            }
+        }
     }
 
     /** Keeps the newest {@value #SERIES_KEPT} series of a system, and every one still running; a dropped one takes its runs. */
@@ -354,12 +391,11 @@ public class RunManager {
     }
 
     /**
-     * Ends a series: its slot is given back, and the series of its system are bounded again (running ones are never
-     * dropped, so more than {@value #SERIES_KEPT} may have been kept while they ran).
+     * Ends a series, then bounds the series of its system again (running ones are never dropped, so more than
+     * {@value #SERIES_KEPT} may have been kept while they ran). Its slot is given back by its task, after this.
      */
     private void end(Series of, RunStatus status, String error) {
         of.end(status, error);
-        seriesSlots.release();
         synchronized (seriesHistory) {
             Deque<String> ids = seriesHistory.get(of.systemId());
             if (ids != null) {

@@ -7,10 +7,14 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.util.AbstractMap;
 import java.util.ArrayList;
+import java.util.ConcurrentModificationException;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.jboss.jandex.Index;
 import org.junit.jupiter.api.AfterAll;
@@ -231,6 +235,60 @@ class SeriesTest {
             assertNotNull(third, "accepted once one ended");
         } finally {
             two.shutdown();
+        }
+    }
+
+    /** A series refused before its task is submitted gives its slot back and leaves nothing behind (TASK-100). */
+    @Test
+    void aSeriesFailingToStartLeavesItsSlotFree() throws Exception {
+        RunManager one = new RunManager(registry::find, new CdiRunInvoker(), PayloadTruncator.DEFAULT_MAX_SIZE, 20, 1);
+        try {
+            String storyWriter = systemId("StoryWriter");
+            Map<String, Object> changing = new AbstractMap<>() {
+                @Override
+                public Set<Entry<String, Object>> entrySet() {
+                    throw new ConcurrentModificationException("changed meanwhile");
+                }
+            };
+
+            assertThrows(ConcurrentModificationException.class, () -> one.startSeries(storyWriter, changing, 2));
+
+            assertTrue(one.listSeries(storyWriter).isEmpty(), "nothing registered");
+            SeriesTrace next = ended(one, one.startSeries(storyWriter, Map.of("bio", "Ada"), 1));
+            assertEquals(RunStatus.SUCCEEDED, next.status(), "the only slot is free");
+        } finally {
+            one.shutdown();
+        }
+    }
+
+    /** A series whose thread dies with an Error ends FAILED and gives its slot back (TASK-100). */
+    @Test
+    void aSeriesDyingWithAnErrorEndsAndFreesItsSlot() throws Exception {
+        AtomicInteger lookups = new AtomicInteger();
+        RunManager one = new RunManager(id -> {
+            if (lookups.incrementAndGet() == 2) {
+                throw new AssertionError("boom"); // the lookup of the first run, on the series thread
+            }
+            return registry.find(id);
+        }, new CdiRunInvoker(), PayloadTruncator.DEFAULT_MAX_SIZE, 20, 1);
+        try {
+            String storyWriter = systemId("StoryWriter");
+            SeriesTrace failed = ended(one, one.startSeries(storyWriter, Map.of("bio", "Ada"), 2));
+            assertEquals(RunStatus.FAILED, failed.status());
+            assertTrue(failed.runs().isEmpty());
+
+            SeriesTrace next = null;
+            for (int i = 0; i < 100 && next == null; i++) { // the slot comes back once its thread is done
+                try {
+                    next = ended(one, one.startSeries(storyWriter, Map.of("bio", "Ada"), 1));
+                } catch (IllegalStateException e) {
+                    Thread.sleep(50);
+                }
+            }
+            assertNotNull(next, "the slot came back");
+            assertEquals(RunStatus.SUCCEEDED, next.status());
+        } finally {
+            one.shutdown();
         }
     }
 
