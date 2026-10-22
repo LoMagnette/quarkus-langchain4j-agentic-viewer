@@ -136,7 +136,7 @@ public class AgenticViewerProcessor {
         recorder.setLoopWarningIterations(config.loopWarningIterations());
         // the application's topology contributors, created and applied in dev mode only (runtime-dev)
         recorder.setTopologyContributors(index.getIndex()
-                .getAllKnownImplementors(DotName.createSimple(AgenticTopologyContributor.class.getName())).stream()
+                .getAllKnownImplementations(DotName.createSimple(AgenticTopologyContributor.class.getName())).stream()
                 .filter(type -> !type.isInterface() && !Modifier.isAbstract(type.flags()))
                 .map(type -> type.name().toString()).sorted().toList());
         // the beans that may be builder systems, by bean identifier; after setSystems, which resets them
