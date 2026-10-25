@@ -302,7 +302,7 @@ public class RunManager {
             synchronized (seriesHistory) {
                 Deque<String> ids = seriesHistory.computeIfAbsent(systemId, id -> new ArrayDeque<>());
                 ids.addLast(started.id());
-                pruneSeries(ids);
+                pruneSeries(ids, null);
             }
             Series accepted = started;
             // from here the task owns the slot: given back last, once the series ended and its system's series were
@@ -346,14 +346,18 @@ public class RunManager {
         }
     }
 
-    /** Keeps the newest {@value #SERIES_KEPT} series of a system, and every one still running; a dropped one takes its runs. */
-    private void pruneSeries(Deque<String> ids) {
-        long kept = ids.size();
-        for (var it = ids.iterator(); kept > SERIES_KEPT && it.hasNext();) {
+    /**
+     * Keeps the newest {@value #SERIES_KEPT} series of a system: an older one leaves once ended (never while running), with
+     * its runs, whatever order they end in.
+     *
+     * @param ending a series ending, dropped as an ended one (null when none)
+     */
+    private void pruneSeries(Deque<String> ids, Series ending) {
+        int older = ids.size() - SERIES_KEPT;
+        for (var it = ids.iterator(); older > 0 && it.hasNext(); older--) {
             Series old = series.get(it.next());
-            if (old == null || old.status() != RunStatus.RUNNING) {
+            if (old == null || old == ending || old.status() != RunStatus.RUNNING) {
                 it.remove();
-                kept--;
                 if (old != null) {
                     series.remove(old.id());
                     old.runIds().forEach(runs::remove);
@@ -391,16 +395,17 @@ public class RunManager {
     }
 
     /**
-     * Ends a series, then bounds the series of its system again (running ones are never dropped, so more than
+     * Ends a series and bounds the series of its system again (running ones are never dropped, so more than
      * {@value #SERIES_KEPT} may have been kept while they ran). Its slot is given back by its task, after this.
      */
     private void end(Series of, RunStatus status, String error) {
-        of.end(status, error);
         synchronized (seriesHistory) {
+            // one step: a series that leaves as it ends is gone before it reads ended
             Deque<String> ids = seriesHistory.get(of.systemId());
             if (ids != null) {
-                pruneSeries(ids);
+                pruneSeries(ids, of);
             }
+            of.end(status, error);
         }
     }
 

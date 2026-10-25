@@ -201,16 +201,25 @@ class SeriesTest {
         }
         assertTrue(manager.listSeries(tripPlanner).size() >= 7, "running series are kept");
 
-        ids.forEach(manager::cancelSeries);
+        // the newer ones end first: the oldest, still running, is not kept in their place
+        List<String> newer = ids.subList(1, ids.size());
+        newer.forEach(manager::cancelSeries);
+        awaitEnded(newer);
+        manager.cancelSeries(ids.getFirst());
+        awaitEnded(ids);
+
+        assertEquals(ids.subList(2, 7).reversed(), manager.listSeries(tripPlanner).stream().map(s -> s.seriesId()).toList(),
+                "the five newest");
+        assertTrue(manager.series(ids.getFirst()).isEmpty(), "an older one left once ended");
+    }
+
+    /** Ended, or already dropped once ended. */
+    private static void awaitEnded(List<String> ids) throws InterruptedException {
         for (String seriesId : ids) {
-            // ended, or already dropped once ended
             for (int i = 0; i < 300 && manager.series(seriesId).map(t -> t.status() == RunStatus.RUNNING).orElse(false); i++) {
                 Thread.sleep(50);
             }
         }
-
-        assertEquals(5, manager.listSeries(tripPlanner).size());
-        assertTrue(manager.series(ids.getFirst()).isEmpty(), "an older one left once ended");
     }
 
     /** At most max-concurrent-runs series run at once: no thread for a further one (TASK-99). */
