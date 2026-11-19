@@ -210,8 +210,9 @@ class JsonRpcEventSequenceTest {
     }
 
     /**
-     * The items run concurrently, so their events interleave: each item writes its own {@code translation_<index>} key,
-     * in whatever order the items complete.
+     * The items run concurrently, so their events interleave: each item writes its own {@code translateAll_<index>} key
+     * (named after the mapper since langchain4j 1.23, before after the sub-agent's output key), in whatever order the
+     * items complete.
      */
     @Test
     void parallelMapper() {
@@ -227,12 +228,12 @@ class JsonRpcEventSequenceTest {
         assertEquals(List.of("AgentFinished /", "ScopeStateChanged / translations", "ScopeDestroyed", "RunFinished"),
                 rest.subList(rest.size() - 4, rest.size()));
         assertEquals(List.of("AgentFinished /Translator", "AgentFinished /Translator", "AgentFinished /Translator",
-                "ScopeStateChanged /Translator translation_0", "ScopeStateChanged /Translator translation_1",
-                "ScopeStateChanged /Translator translation_2"),
+                "ScopeStateChanged /Translator translateAll_0", "ScopeStateChanged /Translator translateAll_1",
+                "ScopeStateChanged /Translator translateAll_2"),
                 rest.subList(3, rest.size() - 4).stream().sorted().toList());
         for (int i = 0; i < 3; i++) {
             assertTrue(lines.indexOf("AgentStarted /Translator item " + i)
-                    < lines.indexOf("ScopeStateChanged /Translator translation_" + i), "item " + i);
+                    < lines.indexOf("ScopeStateChanged /Translator translateAll_" + i), "item " + i);
         }
         assertBranches(lines, rest, items);
     }

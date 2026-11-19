@@ -10,9 +10,11 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import io.quarkiverse.langchain4j.agentic.viewer.test.DevUiBuildTimeData;
 import io.quarkiverse.langchain4j.agentic.viewer.test.StoryWorkflow;
 import io.quarkus.devui.tests.DevUIBuildTimeDataTest;
 import io.quarkus.test.QuarkusDevModeTest;
+import io.quarkus.value.registry.ValueRegistry;
 
 /**
  * quarkus.langchain4j.agentic.dev-ui.enabled=false: no card, no JSON-RPC service, no listener or planner decorators
@@ -39,9 +41,8 @@ public class DisabledDevUiDevModeTest extends DevUIBuildTimeDataTest {
     }
 
     @Test
-    void noBeans() throws Exception {
-        JsonNode beans = new DevUIBuildTimeDataTest("quarkus-arc") {
-        }.getBuildTimeData("beans");
+    void noBeans(ValueRegistry valueRegistry) throws Exception {
+        JsonNode beans = DevUiBuildTimeData.get(valueRegistry, "quarkus-arc", "beans");
         List<String> classes = new ArrayList<>();
         beans.findValues("providerType").forEach(type -> classes.add(type.toString()));
         assertTrue(classes.stream().anyMatch(type -> type.contains("StoryWorkflow")), "the app itself is there: " + classes);

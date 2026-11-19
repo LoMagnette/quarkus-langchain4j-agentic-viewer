@@ -8,16 +8,10 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import dev.langchain4j.agentic.planner.AgentArgument;
 import dev.langchain4j.agentic.planner.AgentInstance;
@@ -74,6 +68,10 @@ public final class BuilderTopology {
     private static final Set<String> DECLARATIVE_WORKFLOWS = Set.of(DECLARATIVE + "SequenceAgent",
             DECLARATIVE + "ParallelAgent", DECLARATIVE + "ParallelMapperAgent", DECLARATIVE + "LoopAgent",
             DECLARATIVE + "ConditionalAgent", DECLARATIVE + "SupervisorAgent", DECLARATIVE + "PlannerAgent");
+    /** The annotations defining an agent method (the scanner's @Agent and WORKFLOW_ANNOTATIONS), not its suppliers. */
+    private static final Set<String> AGENT_ANNOTATIONS = Stream.concat(DECLARATIVE_WORKFLOWS.stream(),
+            Stream.of(AGENT, HUMAN_IN_THE_LOOP, A2A_CLIENT_AGENT, MCP_CLIENT_AGENT, DECLARATIVE + "RegistryAgent"))
+            .collect(Collectors.toUnmodifiableSet());
     private static final String SYSTEM_MESSAGE = "dev.langchain4j.service.SystemMessage";
     private static final String USER_MESSAGE = "dev.langchain4j.service.UserMessage";
     private static final String TOOL = "dev.langchain4j.agent.tool.Tool";
@@ -232,10 +230,10 @@ public final class BuilderTopology {
             return List.of();
         }
         String member = agentMethods(type).stream()
-                .filter(method -> annotations(method).stream().anyMatch(a -> a.annotationType().getName().equals(AGENT)
-                        || a.annotationType().getName().startsWith(DECLARATIVE)))
+                .filter(method -> annotations(method).stream()
+                        .anyMatch(a -> AGENT_ANNOTATIONS.contains(a.annotationType().getName())))
                 .map(Method::getName).findFirst()
-                .orElseGet(() -> type.isInterface() && agentMethods(type).size() == 1 ? agentMethods(type).get(0).getName() : null);
+                .orElseGet(() -> type.isInterface() && agentMethods(type).size() == 1 ? agentMethods(type).getFirst().getName() : null);
         List<CodeRef> code = new ArrayList<>();
         code.add(CodeRef.method(CodeRef.Role.AGENT, type.getName(), member));
         SUPPLIER_ROLES.forEach((annotation, role) -> {
@@ -307,7 +305,7 @@ public final class BuilderTopology {
         Set<String> inputs = new LinkedHashSet<>();
         Set<String> written = new LinkedHashSet<>();
         if (kind != NodeKind.SEQUENCE && kind != NodeKind.LOOP) {
-            children.stream().map(AgentNode::outputKey).filter(key -> key != null).forEach(written::add);
+            children.stream().map(AgentNode::outputKey).filter(Objects::nonNull).forEach(written::add);
         }
         for (AgentNode child : children) {
             child.inputKeys().stream().filter(key -> !written.contains(key)).forEach(inputs::add);

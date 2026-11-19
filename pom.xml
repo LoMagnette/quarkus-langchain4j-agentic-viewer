@@ -24,11 +24,11 @@
         <!-- release, not source/target: compiles against the Java 21 API whatever JDK runs Maven -->
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <quarkus.version>3.33.4</quarkus.version>
-        <quarkus-langchain4j.version>1.14.2</quarkus-langchain4j.version>
+        <quarkus.version>3.40.1.1</quarkus.version>
+        <quarkus-langchain4j.version>1.15.1</quarkus-langchain4j.version>
         <!-- the langchain4j that quarkus-langchain4j brings (keep in sync when upgrading it); the langchain4j-snapshots
              profile replaces it -->
-        <langchain4j.version>1.20.2</langchain4j.version>
+        <langchain4j.version>1.23.0</langchain4j.version>
         <!-- Dev UI graph libraries (mvnpm) -->
         <mvnpm.cytoscape.version>3.34.3</mvnpm.cytoscape.version>
         <mvnpm.elkjs.version>0.12.0</mvnpm.elkjs.version>
@@ -116,7 +116,7 @@
         <profile>
             <id>langchain4j-snapshots</id>
             <properties>
-                <langchain4j.version>1.23.0-SNAPSHOT</langchain4j.version>
+                <langchain4j.version>1.25.0-SNAPSHOT</langchain4j.version>
             </properties>
             <repositories>
                 <repository>

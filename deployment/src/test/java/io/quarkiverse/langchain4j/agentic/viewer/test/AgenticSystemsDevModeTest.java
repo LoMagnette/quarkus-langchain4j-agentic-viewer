@@ -26,9 +26,9 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import io.quarkus.devui.tests.DevUIBuildTimeDataTest;
 import io.quarkus.devui.tests.DevUIJsonRPCTest;
 import io.quarkus.test.QuarkusDevModeTest;
+import io.quarkus.value.registry.ValueRegistry;
 
 /**
  * In dev mode, the Dev UI gets the agentic systems over JSON-RPC from the runtime-dev registry, filled with the
@@ -109,12 +109,11 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
 
     /** Without langchain4j-agentic-patterns: no adapter bean, no goal path preview, nothing about patterns logged. */
     @Test
-    void noPatternAdapterWithoutTheModule() throws Exception {
+    void noPatternAdapterWithoutTheModule(ValueRegistry valueRegistry) throws Exception {
         // the "patterns" build (CI's second configuration) has the module: PatternAdaptersDevModeTest covers it
         assumeFalse(getClass().getClassLoader().getResource(
                 "dev/langchain4j/agentic/patterns/goap/GoalOrientedPlanner.class") != null, "patterns module present");
-        JsonNode beans = new DevUIBuildTimeDataTest("quarkus-arc") {
-        }.getBuildTimeData("beans");
+        JsonNode beans = DevUiBuildTimeData.get(valueRegistry, "quarkus-arc", "beans");
         List<String> classes = new ArrayList<>();
         beans.findValues("providerType").forEach(type -> classes.add(type.toString()));
         assertTrue(classes.stream().anyMatch(type -> type.contains("PatternAdapters")), () -> "registry bean in " + classes);
@@ -332,10 +331,9 @@ public class AgenticSystemsDevModeTest extends DevUIJsonRPCTest {
     }
 
     @Test
-    void cardShowsTheNumberOfSystems() throws Exception {
+    void cardShowsTheNumberOfSystems(ValueRegistry valueRegistry) throws Exception {
         // card pages are build-time data of the Dev UI itself
-        JsonNode extensions = new DevUIBuildTimeDataTest("devui") {
-        }.getBuildTimeData("extensions");
+        JsonNode extensions = DevUiBuildTimeData.get(valueRegistry, "devui", "extensions");
 
         List<String> labels = new ArrayList<>();
         extensions.findParents("title").forEach(page -> {
