@@ -12,9 +12,10 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
-import io.quarkus.devui.tests.DevUIBuildTimeDataTest;
+import io.quarkiverse.langchain4j.agentic.viewer.test.DevUiBuildTimeData;
 import io.quarkus.devui.tests.DevUIJsonRPCTest;
 import io.quarkus.test.QuarkusDevModeTest;
+import io.quarkus.value.registry.ValueRegistry;
 
 /**
  * With langchain4j-agentic-patterns on the class path (profile "patterns"), dev mode registers the six pattern
@@ -33,9 +34,8 @@ public class PatternAdaptersDevModeTest extends DevUIJsonRPCTest {
     }
 
     @Test
-    void adaptersRegistered() throws Exception {
-        JsonNode beans = new DevUIBuildTimeDataTest("quarkus-arc") {
-        }.getBuildTimeData("beans");
+    void adaptersRegistered(ValueRegistry valueRegistry) throws Exception {
+        JsonNode beans = DevUiBuildTimeData.get(valueRegistry, "quarkus-arc", "beans");
         List<String> classes = new ArrayList<>();
         beans.findValues("providerType").forEach(type -> classes.add(type.toString()));
         for (String adapter : List.of("GoapAdapter", "P2PAdapter", "BlackboardAdapter", "BdiAdapter", "DebateAdapter",
